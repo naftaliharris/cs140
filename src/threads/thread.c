@@ -94,7 +94,7 @@ void thread_init (void)
   list_init (&all_list);
 
   /* Set up a thread structure for the running thread. */
-  initial_thread = running_thread ();
+  initial_thread = running_thread (); /*recall that initial_thread is the thread running init.main.c*/
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
@@ -444,6 +444,7 @@ static void init_thread (struct thread *t, const char *name, int priority)
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
+    /*I think we will want to add a call to push to the ready liste here as well */
   intr_set_level (old_level);
 }
 
