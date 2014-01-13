@@ -71,6 +71,8 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+
+
 /* 
  Function: thread_init
  --------------------------------------------------------------------
@@ -108,6 +110,8 @@ void thread_init (void)
 }
 
 
+
+
 /* 
  Function: thread_start
  --------------------------------------------------------------------
@@ -129,11 +133,16 @@ void thread_start (void)
   sema_down (&idle_started);
 }
 
+
+
+
+
+
 /* 
  Function: thread_tick
  --------------------------------------------------------------------
    Called by the timer interrupt handler at each timer tick.
-   Thus, this function runs in an external interrupt context. 
+   Thus, this function runs in an external interrupt context.
  --------------------------------------------------------------------
  */
 void thread_tick (void) 
@@ -152,15 +161,28 @@ void thread_tick (void)
 
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
-    intr_yield_on_return ();
+    intr_yield_on_return (); /*simply sets the boolean yield_on_return to true so 
+                              that the current thread will yield the processor */
 }
 
-/* Prints thread statistics. */
+
+
+
+
+/* 
+ --------------------------------------------------------------------
+ Prints thread statistics. 
+ --------------------------------------------------------------------
+ */
 void thread_print_stats (void) 
 {
   printf ("Thread: %lld idle ticks, %lld kernel ticks, %lld user ticks\n",
           idle_ticks, kernel_ticks, user_ticks);
 }
+
+
+
+
 
 /*
  Function: thread_create
@@ -366,6 +388,12 @@ void thread_exit (void)
    Yields the CPU.  The current thread is not put to sleep and
    may be scheduled again immediately at the scheduler's whim. 
  
+ LP comment: thread_yield is for when we want to swap the current
+            thread for another, and put the old thread back in the 
+            ready list. thread_block is for when we want to change
+            the state of the current thread to THREAD_BLOCKED
+            and then run another thread. 
+ 
  LP comment: So it seems like the chain of calls to schedule a new 
             thread is:
             1. intr_yield_on_return
@@ -383,7 +411,7 @@ void thread_yield (void)
   old_level = intr_disable ();
   if (cur != idle_thread) 
     list_push_back (&ready_list, &cur->elem);
-  cur->status = THREAD_READY; /*what if the thread is blocked by trying to capture a lock? */
+  cur->status = THREAD_READY; /*for blocked threads, we would call thread_block */
   schedule ();
   intr_set_level (old_level); /*we temporarily disable interrupts so that we can swap threads, and then we 
                                restore the previous interrupt level */
@@ -619,7 +647,9 @@ static void init_thread (struct thread *t, const char *name, int priority)
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
-    /*I think we will want to add a call to push to the ready liste here as well */
+    /*this thread is added to the ready list in the thread_unblock
+     function, which is called in thread_create, which calls
+     this function*/
   intr_set_level (old_level);
 }
 

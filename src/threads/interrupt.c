@@ -409,7 +409,10 @@ make_idtr_operand (uint16_t limit, void *base)
 {
   return limit | ((uint64_t) (uint32_t) base << 16);
 }
-
+
+
+
+
 /* Interrupt handlers. */
 
 /* 
@@ -421,8 +424,7 @@ make_idtr_operand (uint16_t limit, void *base)
    interrupted thread's registers. 
  --------------------------------------------------------------------
  */
-void intr_handler (struct intr_frame *frame) 
-{
+void intr_handler (struct intr_frame *frame) {
   bool external;
   intr_handler_func *handler;
 
@@ -466,6 +468,11 @@ void intr_handler (struct intr_frame *frame)
         thread_yield ();
     }
 }
+
+
+
+
+
 
 /* Handles an unexpected interrupt with interrupt frame F.  An
    unexpected interrupt is one that has no registered handler. */
