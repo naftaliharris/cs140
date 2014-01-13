@@ -223,6 +223,8 @@ tid_t thread_create (const char *name, int priority, thread_func *function, void
 }
 
 
+
+
 /* 
  Function: thread_block
  --------------------------------------------------------------------
@@ -243,7 +245,14 @@ void thread_block (void)
   schedule ();
 }
 
-/* Transitions a blocked thread T to the ready-to-run state.
+
+
+
+
+
+/* 
+ --------------------------------------------------------------------
+ Transitions a blocked thread T to the ready-to-run state.
    This is an error if T is not blocked.  (Use thread_yield() to
    make the running thread ready.)
 
@@ -251,6 +260,7 @@ void thread_block (void)
    be important: if the caller had disabled interrupts itself,
    it may expect that it can atomically unblock a thread and
    update other data. 
+ --------------------------------------------------------------------
  */
 void thread_unblock (struct thread *t) 
 {
@@ -265,15 +275,33 @@ void thread_unblock (struct thread *t)
   intr_set_level (old_level);
 }
 
-/* Returns the name of the running thread. */
+
+
+
+
+
+/* 
+ --------------------------------------------------------------------
+ Returns the name of the running thread. 
+ --------------------------------------------------------------------
+ */
 const char * thread_name (void) 
 {
   return thread_current ()->name;
 }
 
-/* Returns the running thread.
+
+
+
+
+
+/* 
+ --------------------------------------------------------------------
+ Returns the running thread.
    This is running_thread() plus a couple of sanity checks.
-   See the big comment at the top of thread.h for details. */
+   See the big comment at the top of thread.h for details. 
+ --------------------------------------------------------------------
+ */
 struct thread * thread_current (void) 
 {
   struct thread *t = running_thread ();
@@ -289,14 +317,28 @@ struct thread * thread_current (void)
   return t;
 }
 
-/* Returns the running thread's tid. */
-tid_t thread_tid (void) 
-{
+
+
+
+/* 
+ --------------------------------------------------------------------
+ Returns the running thread's tid. 
+ --------------------------------------------------------------------
+ */
+tid_t thread_tid (void) {
   return thread_current ()->tid;
 }
 
-/* Deschedules the current thread and destroys it.  Never
-   returns to the caller. */
+
+
+
+
+/* 
+ --------------------------------------------------------------------
+ Deschedules the current thread and destroys it.  Never
+   returns to the caller.
+ --------------------------------------------------------------------
+ */
 void thread_exit (void) 
 {
   ASSERT (!intr_context ());
@@ -341,7 +383,7 @@ void thread_yield (void)
   old_level = intr_disable ();
   if (cur != idle_thread) 
     list_push_back (&ready_list, &cur->elem);
-  cur->status = THREAD_READY;
+  cur->status = THREAD_READY; /*what if the thread is blocked by trying to capture a lock? */
   schedule ();
   intr_set_level (old_level); /*we temporarily disable interrupts so that we can swap threads, and then we 
                                restore the previous interrupt level */
@@ -408,6 +450,7 @@ void thread_set_nice (int nice UNUSED)
 {
   /* Not yet implemented. */
 }
+
 
 
 
@@ -535,7 +578,15 @@ struct thread * running_thread (void)
   return pg_round_down (esp);
 }
 
-/* Returns true if T appears to point to a valid thread. */
+
+
+
+
+/*
+ --------------------------------------------------------------------
+ Returns true if T appears to point to a valid thread.
+ --------------------------------------------------------------------
+ */
 static bool is_thread (struct thread *t)
 {
   return t != NULL && t->magic == THREAD_MAGIC;
