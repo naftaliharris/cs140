@@ -59,10 +59,16 @@ static inline uint64_t make_idtr_operand (uint16_t limit, void *base);
 /* Interrupt handlers. */
 void intr_handler (struct intr_frame *args);
 static void unexpected_interrupt (const struct intr_frame *);
-
-/* Returns the current interrupt status. */
-enum intr_level
-intr_get_level (void) 
+
+
+
+/* 
+ Function: intr_get_level
+ --------------------------------------------------------------------
+ Returns the current interrupt status. 
+ --------------------------------------------------------------------
+ */
+enum intr_level intr_get_level (void) 
 {
   uint32_t flags;
 
@@ -75,15 +81,29 @@ intr_get_level (void)
   return flags & FLAG_IF ? INTR_ON : INTR_OFF;
 }
 
-/* Enables or disables interrupts as specified by LEVEL and
-   returns the previous interrupt status. */
-enum intr_level
-intr_set_level (enum intr_level level) 
+
+
+
+/* 
+ FUNCTION: intr_set_level
+ --------------------------------------------------------------------
+ Enables or disables interrupts as specified by LEVEL and
+   returns the previous interrupt status. 
+ --------------------------------------------------------------------
+ */
+enum intr_level intr_set_level (enum intr_level level) 
 {
   return level == INTR_ON ? intr_enable () : intr_disable ();
 }
 
-/* Enables interrupts and returns the previous interrupt status. */
+
+
+/* 
+ Function: intr_enable
+ --------------------------------------------------------------------
+ Enables interrupts and returns the previous interrupt status.
+ --------------------------------------------------------------------
+ */
 enum intr_level intr_enable (void) 
 {
   enum intr_level old_level = intr_get_level ();
@@ -98,9 +118,15 @@ enum intr_level intr_enable (void)
   return old_level;
 }
 
-/* Disables interrupts and returns the previous interrupt status. */
-enum intr_level
-intr_disable (void) 
+
+
+/* 
+ Function: intr_disable
+ --------------------------------------------------------------------
+ Disables interrupts and returns the previous interrupt status. 
+ --------------------------------------------------------------------
+ */
+enum intr_level intr_disable (void) 
 {
   enum intr_level old_level = intr_get_level ();
 
@@ -111,10 +137,16 @@ intr_disable (void)
 
   return old_level;
 }
-
-/* Initializes the interrupt system. */
-void
-intr_init (void)
+
+
+
+/* 
+ Function: intr_init
+ --------------------------------------------------------------------
+ Initializes the interrupt system. 
+ --------------------------------------------------------------------
+ */
+void intr_init (void)
 {
   uint64_t idtr_operand;
   int i;
@@ -156,12 +188,19 @@ intr_init (void)
   intr_names[19] = "#XF SIMD Floating-Point Exception";
 }
 
-/* Registers interrupt VEC_NO to invoke HANDLER with descriptor
+
+
+
+/* 
+ Function: register_handler
+ --------------------------------------------------------------------
+ Registers interrupt VEC_NO to invoke HANDLER with descriptor
    privilege level DPL.  Names the interrupt NAME for debugging
    purposes.  The interrupt handler will be invoked with
-   interrupt status set to LEVEL. */
-static void
-register_handler (uint8_t vec_no, int dpl, enum intr_level level,
+   interrupt status set to LEVEL.
+ --------------------------------------------------------------------
+ */
+static void register_handler (uint8_t vec_no, int dpl, enum intr_level level,
                   intr_handler_func *handler, const char *name)
 {
   ASSERT (intr_handlers[vec_no] == NULL);
@@ -173,18 +212,31 @@ register_handler (uint8_t vec_no, int dpl, enum intr_level level,
   intr_names[vec_no] = name;
 }
 
-/* Registers external interrupt VEC_NO to invoke HANDLER, which
+
+
+
+/* 
+ Function: intr_register_ext
+ --------------------------------------------------------------------
+ Registers external interrupt VEC_NO to invoke HANDLER, which
    is named NAME for debugging purposes.  The handler will
-   execute with interrupts disabled. */
-void
-intr_register_ext (uint8_t vec_no, intr_handler_func *handler,
+   execute with interrupts disabled. 
+ --------------------------------------------------------------------
+ */
+void intr_register_ext (uint8_t vec_no, intr_handler_func *handler,
                    const char *name) 
 {
   ASSERT (vec_no >= 0x20 && vec_no <= 0x2f);
   register_handler (vec_no, 0, INTR_OFF, handler, name);
 }
 
-/* Registers internal interrupt VEC_NO to invoke HANDLER, which
+
+
+
+/* 
+ Function: intr_register_int
+ --------------------------------------------------------------------
+   Registers internal interrupt VEC_NO to invoke HANDLER, which
    is named NAME for debugging purposes.  The interrupt handler
    will be invoked with interrupt status LEVEL.
 
@@ -196,29 +248,45 @@ intr_register_ext (uint8_t vec_no, intr_handler_func *handler,
    still cause interrupts with DPL==0 to be invoked.  See
    [IA32-v3a] sections 4.5 "Privilege Levels" and 4.8.1.1
    "Accessing Nonconforming Code Segments" for further
-   discussion. */
-void
-intr_register_int (uint8_t vec_no, int dpl, enum intr_level level,
+   discussion. 
+ --------------------------------------------------------------------
+ */
+void intr_register_int (uint8_t vec_no, int dpl, enum intr_level level,
                    intr_handler_func *handler, const char *name)
 {
   ASSERT (vec_no < 0x20 || vec_no > 0x2f);
   register_handler (vec_no, dpl, level, handler, name);
 }
 
-/* Returns true during processing of an external interrupt
-   and false at all other times. */
-bool
-intr_context (void) 
+/* 
+ Boolean: intr_context
+ --------------------------------------------------------------------
+   Returns true during processing of an external interrupt
+   and false at all other times. 
+ --------------------------------------------------------------------
+ */
+bool intr_context (void) 
 {
   return in_external_intr;
 }
 
-/* During processing of an external interrupt, directs the
+/* 
+ Function: intr_yield_on_return
+ --------------------------------------------------------------------
+   During processing of an external interrupt, directs the
    interrupt handler to yield to a new process just before
    returning from the interrupt.  May not be called at any other
-   time. */
-void
-intr_yield_on_return (void) 
+   time.
+ 
+ NOTE: the interrupt handler is defined below as intr_handler
+ 
+ LP comment: so it think how this works is, the boolean yield_on_return
+            instructs the interrupt handler to yield before it returns 
+            and finishes handling the interrupt. I am just a little confused
+            as to how that schedules another thread?
+ --------------------------------------------------------------------
+ */
+void intr_yield_on_return (void) 
 {
   ASSERT (intr_context ());
   yield_on_return = true;
@@ -226,15 +294,19 @@ intr_yield_on_return (void)
 
 /* 8259A Programmable Interrupt Controller. */
 
-/* Initializes the PICs.  Refer to [8259A] for details.
+/* 
+ Function: pic_init
+ --------------------------------------------------------------------
+   Initializes the PICs.  Refer to [8259A] for details.
 
    By default, interrupts 0...15 delivered by the PICs will go to
    interrupt vectors 0...15.  Those vectors are also used for CPU
    traps and exceptions, so we reprogram the PICs so that
    interrupts 0...15 are delivered to interrupt vectors 32...47
-   (0x20...0x2f) instead. */
-static void
-pic_init (void)
+   (0x20...0x2f) instead.
+ --------------------------------------------------------------------
+ */
+static void pic_init (void)
 {
   /* Mask all interrupts on both PICs. */
   outb (PIC0_DATA, 0xff);
@@ -257,11 +329,15 @@ pic_init (void)
   outb (PIC1_DATA, 0x00);
 }
 
-/* Sends an end-of-interrupt signal to the PIC for the given IRQ.
+/* 
+ Function: pic_end_of_interrupt
+ --------------------------------------------------------------------
+ Sends an end-of-interrupt signal to the PIC for the given IRQ.
    If we don't acknowledge the IRQ, it will never be delivered to
-   us again, so this is important.  */
-static void
-pic_end_of_interrupt (int irq) 
+   us again, so this is important.  
+ --------------------------------------------------------------------
+ */
+static void pic_end_of_interrupt (int irq) 
 {
   ASSERT (irq >= 0x20 && irq < 0x30);
 
@@ -336,12 +412,16 @@ make_idtr_operand (uint16_t limit, void *base)
 
 /* Interrupt handlers. */
 
-/* Handler for all interrupts, faults, and exceptions.  This
+/* 
+ Function: intr_handler
+ --------------------------------------------------------------------
+ Handler for all interrupts, faults, and exceptions.  This
    function is called by the assembly language interrupt stubs in
    intr-stubs.S.  FRAME describes the interrupt and the
-   interrupted thread's registers. */
-void
-intr_handler (struct intr_frame *frame) 
+   interrupted thread's registers. 
+ --------------------------------------------------------------------
+ */
+void intr_handler (struct intr_frame *frame) 
 {
   bool external;
   intr_handler_func *handler;
@@ -383,7 +463,7 @@ intr_handler (struct intr_frame *frame)
       pic_end_of_interrupt (frame->vec_no); 
 
       if (yield_on_return) 
-        thread_yield (); 
+        thread_yield ();
     }
 }
 
