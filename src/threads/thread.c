@@ -70,7 +70,8 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
-
+static bool priority_less (const struct list_elem *, const struct list_elem *,
+                           void *);
 
 
 /* 
@@ -452,6 +453,7 @@ void thread_foreach (thread_action_func *func, void *aux)
 void thread_set_priority (int new_priority) 
 {
   thread_current ()->priority = new_priority;
+  thread_yield ();
 }
 
 
@@ -688,15 +690,31 @@ static void * alloc_frame (struct thread *t, size_t size)
  */
 static struct thread * next_thread_to_run (void) 
 {
+  struct list_elem *next;
+
   if (list_empty (&ready_list))
-    return idle_thread;
+    {
+      return idle_thread;
+    }
   else
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+    {
+      next = list_max (&ready_list, priority_less, NULL);
+      list_remove (next);
+      return list_entry (next, struct thread, elem);
+    }
 }
 
 
-
-
+/* Compares thread elements by priority */
+static bool
+priority_less (const struct list_elem *a_, const struct list_elem *b_,
+               void *aux UNUSED) 
+{
+  const struct thread *a = list_entry (a_, struct thread, elem);
+  const struct thread *b = list_entry (b_, struct thread, elem);
+  
+  return a->priority < b->priority;
+}
 
 
 /* 
