@@ -298,6 +298,24 @@ void thread_unblock (struct thread *t)
   intr_set_level (old_level);
 }
 
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: This boolean checks if the current running thread 
+ has a priorityvalue that is lower than the thread passed 
+ in as an argument.
+ USE: upon insertion to the ready_list, if the newly inserted thread
+ has a higher priority than the currently running thread, we need to
+ yield the current thread and schedule the next thread, which will be
+ the newly added thread, as it will have the highest priority. 
+ Author: LP
+ --------------------------------------------------------------------
+ */
+bool has_higher_priority(struct thread *t) {
+    struct thread *currentRunningThread = thread_current();
+    if((currentRunningThread->priority) < (t->priority)) return true;
+    return false;
+}
+
 
 
 
