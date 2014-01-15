@@ -272,6 +272,28 @@ void thread_block (void)
 
 
 
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: This boolean checks if the current running thread
+ has a priorityvalue that is lower than the thread passed
+ in as an argument.
+ USE: upon insertion to the ready_list, if the newly inserted thread
+ has a higher priority than the currently running thread, we need to
+ yield the current thread and schedule the next thread, which will be
+ the newly added thread, as it will have the highest priority.
+ Author: LP
+ --------------------------------------------------------------------
+ */
+static bool has_higher_priority(struct thread *t) {
+    struct thread *currentRunningThread = thread_current();
+    if((currentRunningThread->priority) < (t->priority)) return true;
+    return false;
+}
+
+
+
+
+
 
 /* 
  --------------------------------------------------------------------
@@ -283,6 +305,9 @@ void thread_block (void)
    be important: if the caller had disabled interrupts itself,
    it may expect that it can atomically unblock a thread and
    update other data. 
+ 
+ LP Edit: added the last line to yield, as we now want the highest priority
+ thread to run at all times. If we unblock, it might be this unblocked thread.
  --------------------------------------------------------------------
  */
 void thread_unblock (struct thread *t) 
@@ -296,24 +321,7 @@ void thread_unblock (struct thread *t)
   list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
   intr_set_level (old_level);
-}
-
-/*
- --------------------------------------------------------------------
- DESCRIPTION: This boolean checks if the current running thread 
- has a priorityvalue that is lower than the thread passed 
- in as an argument.
- USE: upon insertion to the ready_list, if the newly inserted thread
- has a higher priority than the currently running thread, we need to
- yield the current thread and schedule the next thread, which will be
- the newly added thread, as it will have the highest priority. 
- Author: LP
- --------------------------------------------------------------------
- */
-bool has_higher_priority(struct thread *t) {
-    struct thread *currentRunningThread = thread_current();
-    if((currentRunningThread->priority) < (t->priority)) return true;
-    return false;
+  //thread_yield();
 }
 
 
@@ -353,6 +361,9 @@ struct thread * thread_current (void)
      of stack, so a few big automatic arrays or moderate
      recursion can cause stack overflow. */
   ASSERT (is_thread (t));
+    if(t->status != THREAD_RUNNING) {
+        debug_backtrace_all();
+    }
   ASSERT (t->status == THREAD_RUNNING);
 
   return t;
@@ -413,11 +424,7 @@ void thread_exit (void)
             the state of the current thread to THREAD_BLOCKED
             and then run another thread. 
  
- LP comment: So it seems like the chain of calls to schedule a new 
-            thread is:
-            1. intr_yield_on_return
-            2. intr_handler
-            3. thread_yield
+ LP comment: note we cannot call this function from an interrupt handler
  --------------------------------------------------------------------
  */
 void thread_yield (void) 
@@ -425,12 +432,12 @@ void thread_yield (void)
   struct thread *cur = thread_current ();
   enum intr_level old_level;
   
-  ASSERT (!intr_context ()); /*This asserts we are not in an external interrupt */
+  ASSERT (!intr_context ()); /*This asserts we are not in an external interrupt handler */
 
   old_level = intr_disable ();
   if (cur != idle_thread) 
     list_push_back (&ready_list, &cur->elem);
-  cur->status = THREAD_READY; /*for blocked threads, we would call thread_block */
+  cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level); /*we temporarily disable interrupts so that we can swap threads, and then we 
                                restore the previous interrupt level */
@@ -664,6 +671,16 @@ static void init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+    
+    //LP Edit
+    t->is_operating_with_donated_priority = false;
+    list_init(&t->priority_list);
+    //now add in the orignial priority
+    struct priority_package *package_ptr = malloc(sizeof(struct priority_package));
+    package_ptr->priority = priority;
+    package_ptr->isDonated = false;
+    list_push_front(&t->priority_list, &package_ptr->elem);
+    //END LP Edit
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
@@ -801,7 +818,7 @@ void thread_schedule_tail (struct thread *prev)
  */
 static void schedule (void) 
 {
-  struct thread *cur = running_thread ();
+  struct thread *cur = running_thread (); //note we cannot call current_thread because schedule might have been preceeded by yield_thread, which sets the state of the currently running thread to THREAD_READY, thus the assert that the state of the current running thread in thread_current is THREAD_RUNNING would fail.
   struct thread *next = next_thread_to_run ();
   struct thread *prev = NULL;
 
@@ -833,6 +850,56 @@ static tid_t allocate_tid (void)
   lock_release (&tid_lock);
 
   return tid;
+}
+
+
+
+
+/*
+ --------------------------------------------------------------------
+ This function makes a new priority_package struct around the 
+ given priority, and sets the isDonated to true. Then adds
+ the priority_package to the list of them in the destination_thread
+ and updates the thread priority. 
+ --------------------------------------------------------------------
+ */
+void donate_priority(struct thread *destination_thread, int priority_to_donate) {
+    struct priority_package *package_ptr = malloc(sizeof(struct priority_package));
+    package_ptr->priority = priority_to_donate;
+    package_ptr->isDonated = true;
+    
+    //update the destination threads necessary fields
+    list_push_front(&destination_thread->priority_list, &package_ptr->elem);
+    destination_thread->priority = priority_to_donate;
+    destination_thread->is_operating_with_donated_priority = true;
+}
+
+/*
+ --------------------------------------------------------------------
+ This function sheds the current priority of the thread. This 
+ function should only be called if the shedding_thread is operating 
+ with a donated priority. 
+ Once we remove the old priority, we update the thread's priority
+ information via its priority_list. 
+ --------------------------------------------------------------------
+ */
+int shed_priority(struct thread *shedding_thread) {
+    ASSERT(shedding_thread->is_operating_with_donated_priority == true);
+    //remove the top level of donated priority
+    struct list_elem *popped_elem = list_pop_front(&shedding_thread->priority_list);
+    struct priority_package* package_to_shed = list_entry(popped_elem, struct priority_package, elem);
+    int returnValue = package_to_shed->priority;
+    free(package_to_shed);
+    
+    //get the next level of priority, but do not remove it from list
+    struct list_elem *next_elem = list_front(&shedding_thread->priority_list);
+    struct priority_package* next_package = list_entry(next_elem, struct priority_package, elem);
+    
+    //update the threads priority fields
+    shedding_thread->priority = next_package->priority;
+    shedding_thread->is_operating_with_donated_priority = next_package->isDonated;
+    
+    return returnValue;
 }
 
 

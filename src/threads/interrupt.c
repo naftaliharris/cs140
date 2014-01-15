@@ -263,6 +263,8 @@ void intr_register_int (uint8_t vec_no, int dpl, enum intr_level level,
  --------------------------------------------------------------------
    Returns true during processing of an external interrupt
    and false at all other times. 
+ 
+ note, external interrupts are hardware related
  --------------------------------------------------------------------
  */
 bool intr_context (void) 
@@ -280,10 +282,12 @@ bool intr_context (void)
  
  NOTE: the interrupt handler is defined below as intr_handler
  
- LP comment: so it think how this works is, the boolean yield_on_return
-            instructs the interrupt handler to yield before it returns 
-            and finishes handling the interrupt. I am just a little confused
-            as to how that schedules another thread?
+ LP comment: The external interrupt handler handles the interrupt
+            and then the calls this function, so that in 
+            intr_handler, the value yield_on_return == true. 
+            thus, intr_handler calls the handler 
+            it executes, and then returns to 
+            intr_handler, which then calls thread_yield() if it should;
  --------------------------------------------------------------------
  */
 void intr_yield_on_return (void) 

@@ -248,16 +248,35 @@ void lock_init (struct lock *lock)
    interrupt handler.  This function may be called with
    interrupts disabled, but interrupts will be turned back on if
    we need to sleep. 
+ 
+ LP Comment: Should we turn off interrupts here? I think YES
  --------------------------------------------------------------------
  */
 void lock_acquire (struct lock *lock)
 {
+    //LP EDIT
+    enum intr_level old_level;
+    old_level = intr_disable ();
+    //END LP EDIT
+    
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
+    //LP EDIT
+    if(lock->holder != NULL) {
+        struct thread *currThread = thread_current();
+        donate_priority(lock->holder, currThread->priority);
+    }
+    //END LP EDIT
+    
+    
   sema_down (&lock->semaphore);
   lock->holder = thread_current ();
+    
+    //LP EDIT
+    intr_set_level(old_level);
+    //END LP EDIT
 }
 
 
@@ -300,15 +319,41 @@ bool lock_try_acquire (struct lock *lock)
    An interrupt handler cannot acquire a lock, so it does not
    make sense to try to release a lock within an interrupt
    handler.
+ 
+ LP Comment: should we disable interrupts? I think YES
  --------------------------------------------------------------------
  */
-void lock_release (struct lock *lock) 
+void lock_release (struct lock *lock)
 {
+    
+    //LP EDIT
+    enum intr_level old_level;
+    old_level = intr_disable ();
+    //END LP EDIT
+    
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
+    
+    
+    //LP EDIT
+    if (lock->holder->is_operating_with_donated_priority) {
+        shed_priority(lock->holder);
+    }
+    //END LP EDIT
 
-  lock->holder = NULL;
+  lock->holder = NULL;    
+    //here we will check if the thread releasing the lock is currently
+    //operating with a donated priority. If it is, then we will need
+    //to call shed_donated_priority, which will remove the topmost level
+    //of donated priorities, and assume the next level of priority
+    //I WILL NEED TO HAVE SOME WAY OF TRACKING ALL DONATED PRIORITIES
+    //IN A THREAD. I AM THINKING ABOUT DEFINING A STRUCT, PRIORITY_STRUCT,
+    //WHICH WILL HAVE AN INT PRIORITY, AND A BOOLEAN IS DONATED. 
   sema_up (&lock->semaphore);
+    
+    //LP EDIT
+    intr_set_level(old_level);
+    //END LP EDIT
 }
 
 
