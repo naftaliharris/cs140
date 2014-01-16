@@ -127,7 +127,16 @@ sema_try_down (struct semaphore *sema)
 
 
 
-
+/* Compares thread elements by priority */
+static bool
+priority_less (const struct list_elem *a_, const struct list_elem *b_,
+               void *aux UNUSED)
+{
+    const struct thread *a = list_entry (a_, struct thread, elem);
+    const struct thread *b = list_entry (b_, struct thread, elem);
+    
+    return a->priority < b->priority;
+}
 
 
 
@@ -147,12 +156,21 @@ void sema_up (struct semaphore *sema)
   ASSERT (sema != NULL);
 
   old_level = intr_disable ();
-  if (!list_empty (&sema->waiters)) 
-    thread_unblock (list_entry (list_pop_front (&sema->waiters),
-                                struct thread, elem));
+    if (!list_empty (&sema->waiters))  {
+        struct list_elem *elem_of_toUnblock = list_max (&sema->waiters, priority_less, NULL);
+        list_remove(elem_of_toUnblock);
+        struct thread *thread_to_unblock = list_entry (elem_of_toUnblock, struct thread, elem);
+        thread_unblock(thread_to_unblock);
+    }
+      
+      
+      
+    //thread_unblock (list_entry (list_pop_front (&sema->waiters),
+                               // struct thread, elem));
   sema->value++;
   intr_set_level (old_level);
 }
+
 
 
 
@@ -337,7 +355,7 @@ void lock_release (struct lock *lock)
     
     //LP EDIT
     if (lock->holder->is_operating_with_donated_priority) {
-        shed_priority(lock->holder);
+        int unused = shed_priority(lock->holder);
     }
     //END LP EDIT
 
