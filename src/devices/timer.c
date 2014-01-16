@@ -3,6 +3,7 @@
 #include <inttypes.h>
 #include <round.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include "devices/pit.h"
 #include "threads/interrupt.h"
 #include "threads/synch.h"
@@ -30,11 +31,21 @@ static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
 
+/* One sleeping thread's semaphore lock, as part of a list */
+struct sleeping_thread {
+  struct list_elem elem; /* List Element */
+  struct semaphore semaphore; /* Semaphore */
+  int64_t wake_time; /* Time to wake this thread */
+};
+
+static struct list sleeping_threads;
+
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
 void
 timer_init (void) 
 {
+  list_init(&sleeping_threads);
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
 }
@@ -90,10 +101,35 @@ void
 timer_sleep (int64_t ticks) 
 {
   int64_t start = timer_ticks ();
-
+  int64_t wake_time = start + ticks;
+  
   ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks) 
-    thread_yield ();
+  
+  struct sleeping_thread sleep;
+  sema_init(&(sleep.semaphore), 0);
+  sleep.wake_time = wake_time;
+
+  enum intr_level old_level = intr_disable (); // disable interrupts
+  bool set_elem = false;
+  struct list_elem *e;
+  for (e = list_begin (&sleeping_threads); e != list_end (&sleeping_threads); e = list_next (e))
+  {
+    struct sleeping_thread *st = list_entry (e, struct sleeping_thread, elem);
+    if(st->wake_time > wake_time) {
+      list_insert(e, &(sleep.elem));
+      set_elem = true;
+      break;
+    }
+  }
+  if(!set_elem)
+  {
+    list_push_back(&sleeping_threads, &(sleep.elem));
+  }
+  intr_set_level (old_level); // enable interrupts
+  
+  //printf("thread waiting\n");
+  sema_down(&(sleep.semaphore));
+  //printf("thread woken\n");
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -172,6 +208,22 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
   thread_tick ();
+  int64_t cur_time = timer_ticks();
+  while(!list_empty(&sleeping_threads))
+  {
+    struct list_elem *e = list_pop_front(&sleeping_threads);
+    struct sleeping_thread *st = list_entry (e, struct sleeping_thread, elem);
+    if(st->wake_time <= cur_time)
+    {
+      //printf("triggering semaphore\n");
+      sema_up(&(st->semaphore));
+    }
+    else
+    {
+      list_push_front(&sleeping_threads, e);
+      break;
+    }
+  }
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
