@@ -664,6 +664,7 @@ static void init_thread (struct thread *t, const char *name, int priority)
   t->magic = THREAD_MAGIC;
     
     t->lock_waiting_on = NULL;
+    t->loco_to_sema_indicator = false;
     list_init(&(t->locks_held));
     struct lock_holder_package *package = malloc(sizeof(struct lock_holder_package));
     package->highest_donated_priority = priority;
@@ -696,6 +697,37 @@ static void * alloc_frame (struct thread *t, size_t size)
 
   t->stack -= size;
   return t->stack;
+}
+
+/*
+ --------------------------------------------------------------------
+ LP: this function returns the highest priority thread in the list
+ and also removes it from the list.
+ 
+ NOTE: Also removes it from the list
+ --------------------------------------------------------------------
+ */
+struct thread* get_highest_priority_thread(struct list *list) {
+    ASSERT (intr_get_level () == INTR_OFF);
+    struct list_elem *curr = list_begin(list);
+    ASSERT(is_head(curr));
+    
+    struct thread *currHighest = NULL;
+    while (true) {
+        curr = list_next(curr);
+        if(is_tail(cur)) break;
+        struct thread *currThread = list_entry(curr, struct thread, elem);
+        if (currHighest == NULL) {
+            currHighest = currThread;
+        } else if (currThread->priority > currHighest->priority) {
+            currHighest = currThread;
+        }
+    }
+    if(currHighest != NULL) {
+        list_remove(&(currHighest->elem));
+    }
+    
+    return currHighest;
 }
 
 

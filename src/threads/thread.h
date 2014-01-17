@@ -94,6 +94,7 @@ struct thread
       
       struct lock *lock_waiting_on;     //LP, pointer to the lock the thread is waiting on, null if the thread is not waiting on a lock.
       struct list locks_held;          //LP, list of lock_holder_packages, that allow for priority donation.
+      bool lock_to_sema_indicator;     //allows communication between lock_release/aqiuire and sema_up/down on when to call donate/shed.
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
