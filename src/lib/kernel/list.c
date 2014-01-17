@@ -41,6 +41,8 @@ is_head (struct list_elem *elem)
   return elem != NULL && elem->prev == NULL && elem->next != NULL;
 }
 
+
+
 /* Returns true if ELEM is an interior element,
    false otherwise. */
 static inline bool
@@ -49,12 +51,17 @@ is_interior (struct list_elem *elem)
   return elem != NULL && elem->prev != NULL && elem->next != NULL;
 }
 
+
+
+
 /* Returns true if ELEM is a tail, false otherwise. */
 static inline bool
 is_tail (struct list_elem *elem)
 {
   return elem != NULL && elem->prev != NULL && elem->next == NULL;
 }
+
+
 
 /* Initializes LIST as an empty list. */
 void
@@ -67,6 +74,8 @@ list_init (struct list *list)
   list->tail.next = NULL;
 }
 
+
+
 /* Returns the beginning of LIST.  */
 struct list_elem *
 list_begin (struct list *list)
@@ -74,6 +83,8 @@ list_begin (struct list *list)
   ASSERT (list != NULL);
   return list->head.next;
 }
+
+
 
 /* Returns the element after ELEM in its list.  If ELEM is the
    last element in its list, returns the list tail.  Results are
@@ -84,6 +95,8 @@ list_next (struct list_elem *elem)
   ASSERT (is_head (elem) || is_interior (elem));
   return elem->next;
 }
+
+
 
 /* Returns LIST's tail.
 
@@ -97,6 +110,9 @@ list_end (struct list *list)
   return &list->tail;
 }
 
+
+
+
 /* Returns the LIST's reverse beginning, for iterating through
    LIST in reverse order, from back to front. */
 struct list_elem *
@@ -105,6 +121,9 @@ list_rbegin (struct list *list)
   ASSERT (list != NULL);
   return list->tail.prev;
 }
+
+
+
 
 /* Returns the element before ELEM in its list.  If ELEM is the
    first element in its list, returns the list head.  Results are
@@ -115,6 +134,10 @@ list_prev (struct list_elem *elem)
   ASSERT (is_interior (elem) || is_tail (elem));
   return elem->prev;
 }
+
+
+
+
 
 /* Returns LIST's head.
 
@@ -136,6 +159,10 @@ list_rend (struct list *list)
   return &list->head;
 }
 
+
+
+
+
 /* Return's LIST's head.
 
    list_head() can be used for an alternate style of iterating
@@ -154,6 +181,10 @@ list_head (struct list *list)
   return &list->head;
 }
 
+
+
+
+
 /* Return's LIST's tail. */
 struct list_elem *
 list_tail (struct list *list) 
@@ -161,6 +192,11 @@ list_tail (struct list *list)
   ASSERT (list != NULL);
   return &list->tail;
 }
+
+
+
+
+
 
 /* Inserts ELEM just before BEFORE, which may be either an
    interior element or a tail.  The latter case is equivalent to
@@ -176,6 +212,9 @@ list_insert (struct list_elem *before, struct list_elem *elem)
   before->prev->next = elem;
   before->prev = elem;
 }
+
+
+
 
 /* Removes elements FIRST though LAST (exclusive) from their
    current list, then inserts them just before BEFORE, which may
@@ -203,6 +242,9 @@ list_splice (struct list_elem *before,
   before->prev = last;
 }
 
+
+
+
 /* Inserts ELEM at the beginning of LIST, so that it becomes the
    front in LIST. */
 void
@@ -211,6 +253,9 @@ list_push_front (struct list *list, struct list_elem *elem)
   list_insert (list_begin (list), elem);
 }
 
+
+
+
 /* Inserts ELEM at the end of LIST, so that it becomes the
    back in LIST. */
 void
@@ -218,6 +263,8 @@ list_push_back (struct list *list, struct list_elem *elem)
 {
   list_insert (list_end (list), elem);
 }
+
+
 
 /* Removes ELEM from its list and returns the element that
    followed it.  Undefined behavior if ELEM is not in a list.
@@ -254,6 +301,9 @@ list_remove (struct list_elem *elem)
   return elem->next;
 }
 
+
+
+
 /* Removes the front element from LIST and returns it.
    Undefined behavior if LIST is empty before removal. */
 struct list_elem *
@@ -263,6 +313,9 @@ list_pop_front (struct list *list)
   list_remove (front);
   return front;
 }
+
+
+
 
 /* Removes the back element from LIST and returns it.
    Undefined behavior if LIST is empty before removal. */
@@ -274,6 +327,9 @@ list_pop_back (struct list *list)
   return back;
 }
 
+
+
+
 /* Returns the front element in LIST.
    Undefined behavior if LIST is empty. */
 struct list_elem *
@@ -283,6 +339,8 @@ list_front (struct list *list)
   return list->head.next;
 }
 
+
+
 /* Returns the back element in LIST.
    Undefined behavior if LIST is empty. */
 struct list_elem *
@@ -291,6 +349,9 @@ list_back (struct list *list)
   ASSERT (!list_empty (list));
   return list->tail.prev;
 }
+
+
+
 
 /* Returns the number of elements in LIST.
    Runs in O(n) in the number of elements. */
@@ -305,12 +366,18 @@ list_size (struct list *list)
   return cnt;
 }
 
+
+
+
 /* Returns true if LIST is empty, false otherwise. */
 bool
 list_empty (struct list *list)
 {
   return list_begin (list) == list_end (list);
 }
+
+
+
 
 /* Swaps the `struct list_elem *'s that A and B point to. */
 static void
@@ -320,6 +387,10 @@ swap (struct list_elem **a, struct list_elem **b)
   *a = *b;
   *b = t;
 }
+
+
+
+
 
 /* Reverses the order of LIST. */
 void
@@ -336,6 +407,8 @@ list_reverse (struct list *list)
     }
 }
 
+
+
 /* Returns true only if the list elements A through B (exclusive)
    are in order according to LESS given auxiliary data AUX. */
 static bool
@@ -348,6 +421,9 @@ is_sorted (struct list_elem *a, struct list_elem *b,
         return false;
   return true;
 }
+
+
+
 
 /* Finds a run, starting at A and ending not after B, of list
    elements that are in nondecreasing order according to LESS
@@ -370,6 +446,9 @@ find_end_of_run (struct list_elem *a, struct list_elem *b,
   while (a != b && !less (a, list_prev (a), aux));
   return a;
 }
+
+
+
 
 /* Merges A0 through A1B0 (exclusive) with A1B0 through B1
    (exclusive) to form a combined range also ending at B1
@@ -397,6 +476,8 @@ inplace_merge (struct list_elem *a0, struct list_elem *a1b0,
         list_splice (a0, list_prev (a1b0), a1b0);
       }
 }
+
+
 
 /* Sorts LIST according to LESS given auxiliary data AUX, using a
    natural iterative merge sort that runs in O(n lg n) time and
@@ -439,6 +520,8 @@ list_sort (struct list *list, list_less_func *less, void *aux)
   ASSERT (is_sorted (list_begin (list), list_end (list), less, aux));
 }
 
+
+
 /* Inserts ELEM in the proper position in LIST, which must be
    sorted according to LESS given auxiliary data AUX.
    Runs in O(n) average case in the number of elements in LIST. */
@@ -457,6 +540,8 @@ list_insert_ordered (struct list *list, struct list_elem *elem,
       break;
   return list_insert (e, elem);
 }
+
+
 
 /* Iterates through LIST and removes all but the first in each
    set of adjacent elements that are equal according to LESS
@@ -485,6 +570,8 @@ list_unique (struct list *list, struct list *duplicates,
       elem = next;
 }
 
+
+
 /* Returns the element in LIST with the largest value according
    to LESS given auxiliary data AUX.  If there is more than one
    maximum, returns the one that appears earlier in the list.  If
@@ -504,6 +591,8 @@ list_max (struct list *list, list_less_func *less, void *aux)
   return max;
 }
 
+
+
 /* Returns the element in LIST with the smallest value according
    to LESS given auxiliary data AUX.  If there is more than one
    minimum, returns the one that appears earlier in the list.  If
@@ -522,3 +611,40 @@ list_min (struct list *list, list_less_func *less, void *aux)
     }
   return min;
 }
+
+
+
+/*
+ --------------------------------------------------------------------
+ LP: this function returns the highest priority thread in the list
+ and also removes it from the list. 
+ 
+ NOTE: Also removes it from the list
+ --------------------------------------------------------------------
+ */
+struct thread* get_highest_priority_thread(struct list *list) {
+    ASSERT (intr_get_level () == INTR_OFF);
+    struct list_elem *curr = list_begin(list);
+    ASSERT(is_head(curr));
+    
+    struct thread *currHighest = NULL;
+    while (true) {
+        curr = list_next(curr);
+        if(is_tail(cur)) break;
+        struct thread *currThread = list_entry(curr, struct thread, elem);
+        if (currHighest == NULL) {
+            currHighest = currThread;
+        } else if (currThread->priority > currHighest->priority) {
+            currHighest = currThread;
+        }
+    }
+    if(currHighest != NULL) {
+        list_remove(&(currHighest->elem));
+    }
+    
+    return currHighest;
+}
+
+
+
+
