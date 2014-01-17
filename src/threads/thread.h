@@ -96,6 +96,7 @@ struct thread
       struct list locks_held;          //LP, list of lock_holder_packages, that allow for priority donation.
       bool lock_to_sema_indicator;     //allows communication between lock_release/aqiuire and sema_up/down on when to call donate/shed.
       struct lock *lock_to_sema_lock;     //so that sema_down can call donate.
+      struct lock_holder_package *original_package;
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */

@@ -3,12 +3,12 @@
 #include <stddef.h>
 #include <random.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
 #include "threads/palloc.h"
+#include "threads/malloc.h"
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
@@ -100,6 +100,7 @@ int get_highest_priority(struct thread *t);
 void thread_init (void) 
 {
   ASSERT (intr_get_level () == INTR_OFF);
+    printf("in thread_init");
 
     /*Here we initialize the thread system, this is a good place to add any
      initialization code we think is necessary */
@@ -129,6 +130,7 @@ void thread_start (void)
   /* Create the idle thread. */
   struct semaphore idle_started;
   sema_init (&idle_started, 0);
+    printf("in thread_start");
   thread_create ("idle", PRI_MIN, idle, &idle_started);
 
   /* Start preemptive thread scheduling. */
@@ -211,6 +213,8 @@ void thread_print_stats (void)
  */
 tid_t thread_create (const char *name, int priority, thread_func *function, void *aux) 
 {
+    printf("int thread_create");
+    
   struct thread *t;
   struct kernel_thread_frame *kf;
   struct switch_entry_frame *ef;
@@ -339,6 +343,12 @@ struct thread * thread_current (void)
      of stack, so a few big automatic arrays or moderate
      recursion can cause stack overflow. */
   ASSERT (is_thread (t));
+    
+    if(t->status != THREAD_RUNNING) {
+        printf("%s", thread_name());
+        printf("%i",t->magic);
+        thread_print_stats();
+    }
    
   ASSERT (t->status == THREAD_RUNNING);
 
@@ -657,6 +667,8 @@ static bool is_thread (struct thread *t)
 static void init_thread (struct thread *t, const char *name, int priority)
 {
   enum intr_level old_level;
+    
+    printf("in init_thread");
 
   ASSERT (t != NULL);
   ASSERT (PRI_MIN <= priority && priority <= PRI_MAX);
@@ -673,10 +685,12 @@ static void init_thread (struct thread *t, const char *name, int priority)
     t->lock_to_sema_indicator = false;
     t->lock_to_sema_lock = NULL;
     list_init(&(t->locks_held));
-    struct lock_holder_package *package = malloc(sizeof(struct lock_holder_package));
-    package->highest_donated_priority = priority;
-    package->lockID = NULL;
-    list_push_back(&(t->locks_held), &(package->elem));
+    //struct lock_holder_package *package = malloc(sizeof(struct lock_holder_package));
+    //package->highest_donated_priority = priority;
+    //package->lockID = NULL;
+    t->original_package->highest_donated_priority = priority;
+    t->original_package->lockID = NULL;
+    list_push_back(&(t->locks_held), &(t->original_package->elem));
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
@@ -717,7 +731,7 @@ static void * alloc_frame (struct thread *t, size_t size)
 struct thread* get_highest_priority_thread(struct list *list) {
     ASSERT (intr_get_level () == INTR_OFF);
     struct list_elem *curr = list_head(list);
-    struct list_elem *tail = list_tail(list);
+    struct list_elem *tail = list_end(list);
     
     struct thread *currHighest = NULL;
     while (true) {
@@ -832,6 +846,7 @@ static void schedule (void)
 {
   struct thread *cur = running_thread ();
   struct thread *next = next_thread_to_run ();
+    ASSERT(next != NULL);
   struct thread *prev = NULL;
 
   ASSERT (intr_get_level () == INTR_OFF);
@@ -875,7 +890,7 @@ static tid_t allocate_tid (void)
  */
 struct lock_holder_package* get_lock_holder_package(struct lock *lock) {
     struct list_elem *curr = list_head(&(lock->holder->locks_held));
-    struct list_elem *tail = list_tail(&(lock->holder->locks_held));
+    struct list_elem *tail = list_end(&(lock->holder->locks_held));
     
     while (true) {
         curr = list_next(curr);
@@ -947,7 +962,7 @@ void donate_priority(struct thread *donater, struct lock *lock_to_aquire) {
  */
 int get_highest_priority(struct thread *t) {
     struct list_elem *curr = list_head(&(t->locks_held));
-    struct list_elem *tail = list_tail(&(t->locks_held));
+    struct list_elem *tail = list_end(&(t->locks_held));
     
     int currHighest = PRI_MIN;
     while (true) {
@@ -980,9 +995,12 @@ void shed_priority(struct lock *lock_being_released) {
     
     struct lock_holder_package *package = get_lock_holder_package(lock_being_released);
     list_remove(&(package->elem));
-    free(package);
+    if(package->lockID != NULL) { //non NULL only for malloced packages
+        free(package);
+    }
     int new_thread_priority = get_highest_priority(thread_current());
     thread_current()->priority = new_thread_priority;
+    //lock_being_released->holder->priority = new_thread_priority;
     
     intr_set_level(old_level);
 }
