@@ -614,37 +614,6 @@ list_min (struct list *list, list_less_func *less, void *aux)
 
 
 
-/*
- --------------------------------------------------------------------
- LP: this function returns the highest priority thread in the list
- and also removes it from the list. 
- 
- NOTE: Also removes it from the list
- --------------------------------------------------------------------
- */
-struct thread* get_highest_priority_thread(struct list *list) {
-    ASSERT (intr_get_level () == INTR_OFF);
-    struct list_elem *curr = list_begin(list);
-    ASSERT(is_head(curr));
-    
-    struct thread *currHighest = NULL;
-    while (true) {
-        curr = list_next(curr);
-        if(is_tail(cur)) break;
-        struct thread *currThread = list_entry(curr, struct thread, elem);
-        if (currHighest == NULL) {
-            currHighest = currThread;
-        } else if (currThread->priority > currHighest->priority) {
-            currHighest = currThread;
-        }
-    }
-    if(currHighest != NULL) {
-        list_remove(&(currHighest->elem));
-    }
-    
-    return currHighest;
-}
-
 
 
 

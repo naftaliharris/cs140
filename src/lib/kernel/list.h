@@ -178,7 +178,5 @@ void list_unique (struct list *, struct list *duplicates,
 struct list_elem *list_max (struct list *, list_less_func *, void *aux);
 struct list_elem *list_min (struct list *, list_less_func *, void *aux);
 
-/* LP Functions */
-struct thread* get_highest_priority_thread(struct list *list);
 
 #endif /* lib/kernel/list.h */
