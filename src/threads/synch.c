@@ -254,6 +254,7 @@ lock_init (struct lock *lock)
   ASSERT (lock != NULL);
 
   lock->holder = NULL;
+    lock->donated_priority = PRI_MIN;
   sema_init (&lock->semaphore, 1);
 }
 
@@ -284,10 +285,9 @@ lock_acquire (struct lock *lock)
     sema_down (&lock->semaphore);
     enum intr_level old_level = intr_disable();
     lock->holder = thread_current ();
-    struct lock_holder_package *package = malloc(sizeof(struct lock_holder_package));
-    package->lockID = lock;
-    package->highest_donated_priority = PRI_MIN;
-    list_push_front(&(thread_current()->locks_held), &(package->elem));
+    //struct lock_holder_package *package = malloc(sizeof(struct lock_holder_package));
+    lock->donated_priority = PRI_MIN;
+    list_push_front(&(thread_current()->locks_held), &(lock->elem));
     intr_set_level(old_level);
 }
 

@@ -73,7 +73,7 @@ void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
 /* LP Functions */
-struct lock_holder_package* get_lock_holder_package(struct lock *lock);
+struct lock* get_lock_holder_package(struct lock *lock);
 int get_highest_priority(struct thread *t);
 
 
@@ -688,8 +688,7 @@ static void init_thread (struct thread *t, const char *name, int priority)
     //struct lock_holder_package *package = malloc(sizeof(struct lock_holder_package));
     //package->highest_donated_priority = priority;
     //package->lockID = NULL;
-    t->original_package->highest_donated_priority = priority;
-    t->original_package->lockID = NULL;
+    t->original_package->donated_priority = priority;
     list_push_back(&(t->locks_held), &(t->original_package->elem));
 
   old_level = intr_disable ();
@@ -888,15 +887,15 @@ static tid_t allocate_tid (void)
  NULL on error. 
  --------------------------------------------------------------------
  */
-struct lock_holder_package* get_lock_holder_package(struct lock *lock) {
+struct lock* get_lock_holder_package(struct lock *lock) {
     struct list_elem *curr = list_head(&(lock->holder->locks_held));
     struct list_elem *tail = list_end(&(lock->holder->locks_held));
     
     while (true) {
         curr = list_next(curr);
         if(curr == tail) break;
-        struct lock_holder_package *package = list_entry(curr, struct lock_holder_package, elem);
-        if(package->lockID == lock) return package;
+        struct lock *package = list_entry(curr, struct lock, elem);
+        if(package == lock) return package;
     }
     return NULL;
 }
@@ -934,13 +933,18 @@ void donate_priority(struct thread *donater, struct lock *lock_to_aquire) {
     struct thread *currThread = donater;
     struct lock *currLockToAquire = lock_to_aquire;
     while (currLockToAquire != NULL) {
-        struct lock_holder_package *package = get_lock_holder_package(currLockToAquire);
-        ASSERT(package != NULL);
-        ASSERT(currThread->priority >= package->highest_donated_priority);
-        package->highest_donated_priority = currThread->priority;
+        struct lock *lock_package = get_lock_holder_package(currLockToAquire);
+        ASSERT(lock_package != NULL);
+        ASSERT(currThread->priority >= lock_package->donated_priority);
+        
+        lock_package->donated_priority = currThread->priority;
+        
         ASSERT(currThread->priority >= currLockToAquire->holder->priority);
+        
         currLockToAquire->holder->priority = currThread->priority;
+        
         currThread = currLockToAquire->holder;
+        
         currLockToAquire = currThread->lock_waiting_on;
         
     }
@@ -968,8 +972,8 @@ int get_highest_priority(struct thread *t) {
     while (true) {
         curr = list_next(curr);
         if(curr == tail) break;
-        struct lock_holder_package *package = list_entry(curr, struct lock_holder_package, elem);
-        if(package->highest_donated_priority > currHighest) currHighest = package->highest_donated_priority;
+        struct lock *lock_package = list_entry(curr, struct lock, elem);
+        if(lock_package->donated_priority > currHighest) currHighest = lock_package->donated_priority;
     }
     return currHighest;
 }
@@ -993,11 +997,9 @@ int get_highest_priority(struct thread *t) {
 void shed_priority(struct lock *lock_being_released) {
     enum intr_level old_level = intr_disable();
     
-    struct lock_holder_package *package = get_lock_holder_package(lock_being_released);
-    list_remove(&(package->elem));
-    if(package->lockID != NULL) { //non NULL only for malloced packages
-        free(package);
-    }
+    struct lock *lock_package = get_lock_holder_package(lock_being_released);
+    list_remove(&(lock_package->elem));
+    
     int new_thread_priority = get_highest_priority(thread_current());
     thread_current()->priority = new_thread_priority;
     //lock_being_released->holder->priority = new_thread_priority;
