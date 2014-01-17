@@ -716,7 +716,8 @@ static struct thread * next_thread_to_run (void)
   if (list_empty (&ready_list))
     return idle_thread;
   else
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+      return get_highest_priority_thread(&ready_list);
+    //return list_entry (list_pop_front (&ready_list), struct thread, elem);
 }
 
 

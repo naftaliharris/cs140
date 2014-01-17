@@ -160,8 +160,9 @@ sema_up (struct semaphore *sema, struct lock* lock_being_released)
 
   old_level = intr_disable ();
     if (!list_empty (&sema->waiters)) {
-        thread_unblock (list_entry (list_pop_front (&sema->waiters),
-                                    struct thread, elem));
+        struct thread *thread_to_unblock = get_highest_priority_thread(&(sema->waiters));
+        thread_unblock(thread_to_unblock);
+        //thread_unblock (list_entry (list_pop_front (&sema->waiters),struct thread, elem));
     }
     if(lock_being_released != NULL) {
         shed_priority(lock_being_released); 
