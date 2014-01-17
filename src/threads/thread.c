@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <random.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "threads/flags.h"
 #include "threads/interrupt.h"
@@ -70,6 +71,10 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
+
+/* LP Functions */
+struct lock_holder_package* get_lock_holder_package(struct lock *lock);
+int get_highest_priority(struct thread *t);
 
 
 
@@ -334,6 +339,7 @@ struct thread * thread_current (void)
      of stack, so a few big automatic arrays or moderate
      recursion can cause stack overflow. */
   ASSERT (is_thread (t));
+   
   ASSERT (t->status == THREAD_RUNNING);
 
   return t;
@@ -664,7 +670,8 @@ static void init_thread (struct thread *t, const char *name, int priority)
   t->magic = THREAD_MAGIC;
     
     t->lock_waiting_on = NULL;
-    t->loco_to_sema_indicator = false;
+    t->lock_to_sema_indicator = false;
+    t->lock_to_sema_lock = NULL;
     list_init(&(t->locks_held));
     struct lock_holder_package *package = malloc(sizeof(struct lock_holder_package));
     package->highest_donated_priority = priority;
@@ -709,13 +716,13 @@ static void * alloc_frame (struct thread *t, size_t size)
  */
 struct thread* get_highest_priority_thread(struct list *list) {
     ASSERT (intr_get_level () == INTR_OFF);
-    struct list_elem *curr = list_begin(list);
-    ASSERT(is_head(curr));
+    struct list_elem *curr = list_head(list);
+    struct list_elem *tail = list_tail(list);
     
     struct thread *currHighest = NULL;
     while (true) {
         curr = list_next(curr);
-        if(is_tail(cur)) break;
+        if(curr == tail) break;
         struct thread *currThread = list_entry(curr, struct thread, elem);
         if (currHighest == NULL) {
             currHighest = currThread;
@@ -867,11 +874,12 @@ static tid_t allocate_tid (void)
  --------------------------------------------------------------------
  */
 struct lock_holder_package* get_lock_holder_package(struct lock *lock) {
-    struct list_elem *curr = list_begin(&(lock->holder->locks_held));
-    ASSERT(is_head(curr));
+    struct list_elem *curr = list_head(&(lock->holder->locks_held));
+    struct list_elem *tail = list_tail(&(lock->holder->locks_held));
+    
     while (true) {
         curr = list_next(curr);
-        if(is_tail(curr)) break;
+        if(curr == tail) break;
         struct lock_holder_package *package = list_entry(curr, struct lock_holder_package, elem);
         if(package->lockID == lock) return package;
     }
@@ -938,14 +946,14 @@ void donate_priority(struct thread *donater, struct lock *lock_to_aquire) {
  --------------------------------------------------------------------
  */
 int get_highest_priority(struct thread *t) {
-    struct list_elem *curr = list_begin(&(t->locks_held));
-    ASSERT(is_head(curr));
+    struct list_elem *curr = list_head(&(t->locks_held));
+    struct list_elem *tail = list_tail(&(t->locks_held));
     
     int currHighest = PRI_MIN;
     while (true) {
         curr = list_next(curr);
-        if(is_tail(curr)) break;
-        struct lock_holder_package *package = list_entry(curr, struct list_holder_package, elem);
+        if(curr == tail) break;
+        struct lock_holder_package *package = list_entry(curr, struct lock_holder_package, elem);
         if(package->highest_donated_priority > currHighest) currHighest = package->highest_donated_priority;
     }
     return currHighest;
@@ -971,7 +979,7 @@ void shed_priority(struct lock *lock_being_released) {
     enum intr_level old_level = intr_disable();
     
     struct lock_holder_package *package = get_lock_holder_package(lock_being_released);
-    list_remove(package->elem);
+    list_remove(&(package->elem));
     free(package);
     int new_thread_priority = get_highest_priority(thread_current());
     thread_current()->priority = new_thread_priority;

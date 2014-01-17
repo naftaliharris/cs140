@@ -95,6 +95,7 @@ struct thread
       struct lock *lock_waiting_on;     //LP, pointer to the lock the thread is waiting on, null if the thread is not waiting on a lock.
       struct list locks_held;          //LP, list of lock_holder_packages, that allow for priority donation.
       bool lock_to_sema_indicator;     //allows communication between lock_release/aqiuire and sema_up/down on when to call donate/shed.
+      struct lock *lock_to_sema_lock;     //so that sema_down can call donate.
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
@@ -124,8 +125,8 @@ struct thread
 struct lock_holder_package {
     int highest_donated_priority; //the highest donated priority for this lock thus far.
     struct lock* lockID;          //pointer to the specific lock held for which this package describes. When donating priorities for a specific lock, we check for mathcing lock pointer to know which package to update.
-    struct list_elem elem         //allows us to link these packages together in a list.
-}
+    struct list_elem elem;         //allows us to link these packages together in a list.
+};
 
 
 
@@ -168,5 +169,6 @@ int thread_get_load_avg (void);
 /*LP functions */
 void donate_priority(struct thread *donater, struct lock *lock_to_aquire);
 void shed_priority(struct lock *lock_being_released);
+struct thread* get_highest_priority_thread(struct list *list);
 
 #endif /* threads/thread.h */

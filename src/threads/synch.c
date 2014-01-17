@@ -56,37 +56,6 @@ sema_init (struct semaphore *sema, unsigned value)
 
 
 
-/*
- --------------------------------------------------------------------
- LP: this function returns the highest priority thread in the list
- and also removes it from the list.
- 
- NOTE: Also removes it from the list
- --------------------------------------------------------------------
- */
-struct thread* get_highest_priority_thread(struct list *list) {
-    ASSERT (intr_get_level () == INTR_OFF);
-    struct list_elem *curr = list_begin(list);
-    ASSERT(is_head(curr));
-    
-    struct thread *currHighest = NULL;
-    while (true) {
-        curr = list_next(curr);
-        if(is_tail(cur)) break;
-        struct thread *currThread = list_entry(curr, struct thread, elem);
-        if (currHighest == NULL) {
-            currHighest = currThread;
-        } else if (currThread->priority > currHighest->priority) {
-            currHighest = currThread;
-        }
-    }
-    if(currHighest != NULL) {
-        list_remove(&(currHighest->elem));
-    }
-    
-    return currHighest;
-}
-
 
 
 /* 
@@ -121,9 +90,10 @@ sema_down (struct semaphore *sema)
   while (sema->value == 0) 
     {
       list_push_back (&sema->waiters, &thread_current ()->elem);
-        if(thread_current->lock_to_sema_indicator == true) {
-            thread_current->lock_to_sema_indicator = false;
-            donate_priority(thread_current(), lock_to_aquire);
+        if(thread_current()->lock_to_sema_indicator == true) {
+            thread_current()->lock_to_sema_indicator = false;
+            donate_priority(thread_current(), thread_current()->lock_to_sema_lock);
+            thread_current()->lock_to_sema_lock = NULL;
         }
       thread_block ();
     }
@@ -196,9 +166,10 @@ sema_up (struct semaphore *sema)
         thread_unblock(thread_to_unblock);
         //thread_unblock (list_entry (list_pop_front (&sema->waiters),struct thread, elem));
     }
-    if(thread_current->lock_to_sema_indicator == true) {
-        thread_current->lock_to_sema_indicator = false;
-        shed_priority(lock_being_released);
+    if(thread_current()->lock_to_sema_indicator == true) {
+        thread_current()->lock_to_sema_indicator = false;
+        shed_priority(thread_current()->lock_to_sema_lock);
+        thread_current()->lock_to_sema_lock = NULL;
     }
   sema->value++;
     
@@ -307,7 +278,8 @@ lock_acquire (struct lock *lock)
     ASSERT (!intr_context ());
     ASSERT (!lock_held_by_current_thread (lock));
     
-    thread_current->lock_to_sema_indicator = true;
+    thread_current()->lock_to_sema_indicator = true;
+    thread_current()->lock_to_sema_lock = lock;
     sema_down (&lock->semaphore);
     enum intr_level old_level = intr_disable();
     lock->holder = thread_current ();
@@ -365,7 +337,8 @@ lock_release (struct lock *lock)
   ASSERT (lock_held_by_current_thread (lock));
 
   lock->holder = NULL;
-    thread_current->lock_to_sema_indicator = true;
+    thread_current()->lock_to_sema_indicator = true;
+    thread_current()->lock_to_sema_lock = lock;
   sema_up (&lock->semaphore);
 }
 
