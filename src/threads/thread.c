@@ -447,6 +447,9 @@ void thread_foreach (thread_action_func *func, void *aux)
  Function: thread_set_priority
  --------------------------------------------------------------------
  Sets the current thread's priority to NEW_PRIORITY.
+ 
+ LP: Will need to protect this function with a priority lock, so that at all times, 
+ only one thread can access another thread's priority. 
  --------------------------------------------------------------------
  */
 void thread_set_priority (int new_priority) 
@@ -459,6 +462,9 @@ void thread_set_priority (int new_priority)
 /* 
  --------------------------------------------------------------------
  Returns the current thread's priority. 
+ 
+ LP: Will need to protect this function with a priority lock, so that at all times,
+ only one thread can access another thread's priority.
  --------------------------------------------------------------------
  */
 int thread_get_priority (void) 
@@ -471,7 +477,10 @@ int thread_get_priority (void)
 
 /* 
  --------------------------------------------------------------------
- Sets the current thread's nice value to NICE. 
+ Sets the current thread's nice value to NICE.
+ 
+ LP: Will need to protect this function with a nice lock, so that at all times,
+ only one thread can access another thread's priority.
  --------------------------------------------------------------------
  */
 void thread_set_nice (int nice UNUSED) 
@@ -486,6 +495,9 @@ void thread_set_nice (int nice UNUSED)
 /*
  --------------------------------------------------------------------
  Returns the current thread's nice value. 
+ 
+ LP: Will need to protect this function with a nice lock, so that at all times,
+ only one thread can access another thread's priority.
  --------------------------------------------------------------------
  */
 int thread_get_nice (void) 
@@ -501,6 +513,9 @@ int thread_get_nice (void)
 /* 
  --------------------------------------------------------------------
  Returns 100 times the system load average. 
+ 
+ LP: Will need to protect this function with a load_avg lock, so that at all times,
+ only one thread can access another thread's priority.
  --------------------------------------------------------------------
  */
 int
@@ -517,6 +532,9 @@ thread_get_load_avg (void)
 /* 
  --------------------------------------------------------------------
  Returns 100 times the current thread's recent_cpu value. 
+ 
+ LP: Will need to protect this function with a recent_cpu lock, so that at all times,
+ only one thread can access another thread's priority.
  --------------------------------------------------------------------
  */
 int thread_get_recent_cpu (void) 
@@ -797,6 +815,74 @@ static tid_t allocate_tid (void)
   lock_release (&tid_lock);
 
   return tid;
+}
+
+/*
+ --------------------------------------------------------------------
+ LP: this function is a helper function for the donate_priority function. 
+ It returns the pointer to the lock_holder_package for the given lock
+ in lock->holder. 
+ 
+ NULL on error. 
+ --------------------------------------------------------------------
+ */
+struct lock_holder_package* get_lock_holder_package(struct lock *lock) {
+    struct list_elem *curr = list_begin(&(lock->holder->locks_held));
+    ASSERT(is_head(curr));
+    while (true) {
+        curr = list_next(curr);
+        if(is_tail(curr)) break;
+        struct lock_holder_package *package = list_entry(curr, struct lock_holder_package, elem);
+        if(package->lockID == lock) return package;
+    }
+    return NULL;
+}
+
+/*
+ --------------------------------------------------------------------
+ LP: This function handles the process of donating a priority to
+ another thread. The process works as follows:
+ 1A. disable interrupts.
+ 1. update donaters->lock_waiting_on field;
+ 2. follow the pointer to lock_to_aquire->holder. find the lock_holder_package
+ for the lock_to_aquire trying to be acquired. Update the priority with the donater
+ priority, and then update lock_waiting_on->holder priority if necessary 
+ (given priority shceduling, will always have to update, as donated will 
+ be higher.) 
+ 3. Check lock_to_aquire->holder->lock_waiting_on
+    if null, exit from function, if non null, repeat steps 2 and 3
+    where lock_to_aquire->holder is now the donater.
+ 
+ //go to the thread with currLockToAquire
+ //find the lock_package for the currLockToAquire
+ //update the priority in the package with currThread->priority
+ //update the priority for currLockToAquire->holder with currThread->priority
+ //update currThread to currLockToAquire->holder
+ //update currLockToAquire to currThread->lock_waiting_on
+ 
+ After the current thread has donated priorty, once it blocks, the highest priority
+ thread will run, which is what we want. This swap will be called by thread_block, which will execute as this thread is blocking. 
+ --------------------------------------------------------------------
+ */
+void donate_priority(struct thread *donater, struct lock *lock_to_aquire) {
+    enum intr_level old_level = intr_disable();
+    
+    donater->lock_waiting_on = lock_to_aquire;
+    struct thread *currThread = donater;
+    struct lock *currLockToAquire = lock_to_aquire;
+    while (currLockToAquire != NULL) {
+        struct lock_holder_package *package = get_lock_holder_package(currLockToAquire);
+        ASSERT(package != NULL);
+        ASSERT(currThread->priority >= package->priority);
+        package->priority = currThread->priority;
+        ASSERT(currThread->priority >= currLockToAquire->holder->priority);
+        currLockToAquire->holder->priority = currThread->priority;
+        currThread = currLockToAquire->holder;
+        currLockToAquire = currThread->lock_waiting_on;
+        
+    }
+    
+    intr_set_level(old_level);
 }
 
 

@@ -79,7 +79,9 @@ typedef int tid_t;
    semaphore wait list (synch.c).  It can be used these two ways
    only because they are mutually exclusive: only a thread in the
    ready state is on the run queue, whereas only a thread in the
-   blocked state is on a semaphore wait list. */
+   blocked state is on a semaphore wait list. 
+ --------------------------------------------------------------------
+ */
 struct thread
   {
     /* Owned by thread.c. */
@@ -89,6 +91,9 @@ struct thread
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
     struct list_elem allelem;           /* List element for all threads list. */
+      
+      struct lock *lock_waiting_on;     //LP, pointer to the lock the thread is waiting on, null if the thread is not waiting on a lock.
+      struct list locks_held;          //LP, list of lock_holder_packages, that allow for priority donation.
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
@@ -101,6 +106,27 @@ struct thread
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
+
+/*
+ --------------------------------------------------------------------
+ Struct definition: this packages the information we need to track for
+ priority donation. In our scheme, we only keep track of the highest 
+ priority donated to a thread pertaiing to a given lock. The lock
+ pointer in this struct serves as the package ID. 
+ 
+ Note, on thread creation, we add a dummy package with the threads 
+ original priority and null for the lock pointer. This allows us to 
+ properly restore the threads original priority as we shed donated 
+ priorities upon releasing locks. 
+ --------------------------------------------------------------------
+ */
+struct lock_holder_package {
+    int highest_donated_priority; //the highest donated priority for this lock thus far.
+    struct lock* lockID;          //pointer to the specific lock held for which this package describes. When donating priorities for a specific lock, we check for mathcing lock pointer to know which package to update.
+    struct list_elem elem         //allows us to link these packages together in a list.
+}
+
+
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
@@ -137,5 +163,8 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+/*LP functions */
+void donate_priority(struct thread *donater, struct lock *lock_to_aquire);
 
 #endif /* threads/thread.h */
