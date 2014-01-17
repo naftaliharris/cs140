@@ -662,6 +662,13 @@ static void init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+    
+    t->lock_waiting_on = NULL;
+    list_init(&(t->locks_held));
+    struct lock_holder_package *package = malloc(sizeof(struct lock_holder_package));
+    package->highest_donated_priority = priority;
+    package->lockID = NULL;
+    list_push_back(&(t->locks_held), &(package->elem));
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
@@ -873,14 +880,68 @@ void donate_priority(struct thread *donater, struct lock *lock_to_aquire) {
     while (currLockToAquire != NULL) {
         struct lock_holder_package *package = get_lock_holder_package(currLockToAquire);
         ASSERT(package != NULL);
-        ASSERT(currThread->priority >= package->priority);
-        package->priority = currThread->priority;
+        ASSERT(currThread->priority >= package->highest_donated_priority);
+        package->highest_donated_priority = currThread->priority;
         ASSERT(currThread->priority >= currLockToAquire->holder->priority);
         currLockToAquire->holder->priority = currThread->priority;
         currThread = currLockToAquire->holder;
         currLockToAquire = currThread->lock_waiting_on;
         
     }
+    
+    intr_set_level(old_level);
+}
+
+
+/*
+ --------------------------------------------------------------------
+ LP: helper function for shed_priority. Becuase interrupts are
+ disabled in shed_priority, no synchronization required. 
+ 
+ Simply returns the highest priority value of all the lock_holder_packages
+ in the t->locks_held. If t is not holding any locks, than the only
+ remaining package will be the thread's initial information, ie its
+ intial priority. 
+ --------------------------------------------------------------------
+ */
+int get_highest_priority(struct thread *t) {
+    struct list_elem *curr = list_begin(&(t->locks_held));
+    ASSERT(is_head(curr));
+    
+    int currHighest = PRI_MIN;
+    while (true) {
+        curr = list_next(curr);
+        if(is_tail(curr)) break;
+        struct lock_holder_package *package = list_entry(curr, struct list_holder_package, elem);
+        if(package->highest_donated_priority > currHighest) currHighest = package->highest_donated_priority;
+    }
+    return currHighest;
+}
+
+
+/*
+ --------------------------------------------------------------------
+ LP: This function undoes the priority donation that pertains to 
+ the lock_being_released. As a consequence of priority scheduling, we
+ only need to track the highest priority donated for a lock. And once 
+ the lock gets released, we do not care about the other priorities that
+ may have been donated previously for the lock_being_released, as the new
+ thread that has aquired the lock is the highest prioty of the bunch by 
+ selection. We do however, need to drop the thread who released
+ lock_being_released priotiyy down to the next highest donated priority,
+ or back to its oringial prioirity if it is no longer holding anymore
+ locks. We also ensure that we call free on the malloc lock_holder_package
+ for the lock_being_released. 
+ --------------------------------------------------------------------
+ */
+void shed_priority(struct lock *lock_being_released) {
+    enum intr_level old_level = intr_disable();
+    
+    struct lock_holder_package *package = get_lock_holder_package(lock_being_released);
+    list_remove(package->elem);
+    free(package);
+    int new_thread_priority = get_highest_priority(thread_current());
+    thread_current()->priority = new_thread_priority;
     
     intr_set_level(old_level);
 }

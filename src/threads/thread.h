@@ -166,5 +166,6 @@ int thread_get_load_avg (void);
 
 /*LP functions */
 void donate_priority(struct thread *donater, struct lock *lock_to_aquire);
+void shed_priority(struct lock *lock_being_released);
 
 #endif /* threads/thread.h */
