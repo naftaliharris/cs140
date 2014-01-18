@@ -95,6 +95,20 @@ timer_elapsed (int64_t then)
   return timer_ticks () - then;
 }
 
+/*
+  TRUE: a < b
+  FALSE: a >= b
+ */
+bool
+sleeping_thread_insert_func (const struct list_elem *a,
+                             const struct list_elem *b,
+                             void *aux)
+{
+  struct sleeping_thread *a_st = list_entry (a, struct sleeping_thread, elem);
+  struct sleeping_thread *b_st = list_entry (b, struct sleeping_thread, elem);
+  return a_st->wake_time < b_st->wake_time;
+}
+
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void
@@ -110,26 +124,10 @@ timer_sleep (int64_t ticks)
   sleep.wake_time = wake_time;
 
   enum intr_level old_level = intr_disable (); // disable interrupts
-  bool set_elem = false;
-  struct list_elem *e;
-  for (e = list_begin (&sleeping_threads); e != list_end (&sleeping_threads); e = list_next (e))
-  {
-    struct sleeping_thread *st = list_entry (e, struct sleeping_thread, elem);
-    if(st->wake_time > wake_time) {
-      list_insert(e, &(sleep.elem));
-      set_elem = true;
-      break;
-    }
-  }
-  if(!set_elem)
-  {
-    list_push_back(&sleeping_threads, &(sleep.elem));
-  }
+  list_insert_ordered(&sleeping_threads, &(sleep.elem), sleeping_thread_insert_func, NULL);
   intr_set_level (old_level); // enable interrupts
   
-  //printf("thread waiting\n");
   sema_down(&(sleep.semaphore));
-  //printf("thread woken\n");
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -215,7 +213,6 @@ timer_interrupt (struct intr_frame *args UNUSED)
     struct sleeping_thread *st = list_entry (e, struct sleeping_thread, elem);
     if(st->wake_time <= cur_time)
     {
-      //printf("triggering semaphore\n");
       sema_up(&(st->semaphore));
     }
     else
