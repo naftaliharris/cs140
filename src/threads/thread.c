@@ -699,7 +699,9 @@ static struct thread * next_thread_to_run (void)
   if (list_empty (&ready_list))
     return idle_thread;
   else
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+    struct thread* next_thread = get_highest_priority_thread(&ready_list);
+    ASSERT(next_thread != NULL);
+    return next_thread;
 }
 
 
@@ -846,6 +848,29 @@ void shed_priority() {
     thread_current()->priority = highest_remaining_priority;
 }
 
+
+/*
+ --------------------------------------------------------------------
+ LP: finds the highest priority thread in the list, removes it from the
+ list, and then returns a pointer to the thread.
+ --------------------------------------------------------------------
+ */
+struct thread* get_highest_priority_thread(struct list* list) {
+    struct list_elem* curr = list_head(list);
+    struct list_elem* tail = list_tail(list);
+    struct thread* currHighest = NULL;
+    while (true) {
+        curr = list_next(curr);
+        if (curr == tail) break;
+        struct thread* currThread = list_entry(curr, struct thread, elem);
+        if (currHighest == NULL) currHighest = currThread;
+        if (currThread->priority > currHighest->priority) {
+            currHighest = currThread;
+        }
+    }
+    if (currHighest != NULL) list_remove(&(currHighest->elem));
+    return currHighest;
+}
 
 
 

@@ -154,6 +154,7 @@ int thread_get_load_avg (void);
 /* LP Functions */
 void donate_priority();
 void shed_priority();
+struct thread* get_highest_priority_thread(struct list* list);
 
 
 #endif /* threads/thread.h */
