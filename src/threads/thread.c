@@ -648,9 +648,9 @@ static void init_thread (struct thread *t, const char *name, int priority)
     list_init(&(t->locks_held));
     t->original_priority_info.priority = priority;
     t->original_priority_info.holder = NULL; //indicates orig priority package.
-    list_push_front(&(t->locks_held), &(t->original_priority_info));
+    list_push_front(&(t->locks_held), &(t->original_priority_info.elem));
     t->lock_waiting_on = NULL;
-    t->being_aquired = NULL;
+    t->lock_being_aquired = NULL;
     t->lock_being_released = NULL;
 
   old_level = intr_disable ();
@@ -696,12 +696,13 @@ static void * alloc_frame (struct thread *t, size_t size)
  */
 static struct thread * next_thread_to_run (void) 
 {
-  if (list_empty (&ready_list))
-    return idle_thread;
-  else
-    struct thread* next_thread = get_highest_priority_thread(&ready_list);
-    ASSERT(next_thread != NULL);
-    return next_thread;
+    if (list_empty (&ready_list)) {
+        return idle_thread;
+    } else {
+        struct thread* next_thread = get_highest_priority_thread(&ready_list);
+        ASSERT(next_thread != NULL);
+        return next_thread;
+    }
 }
 
 
@@ -841,7 +842,7 @@ void shed_priority() {
         curr = list_next(curr);
         if(curr == tail) break;
         struct lock* currLock = list_entry(curr, struct lock, elem);
-        if (lock->priority > highest_remaining_priority) {
+        if (currLock->priority > highest_remaining_priority) {
             highest_remaining_priority = currLock->priority;
         }
     }

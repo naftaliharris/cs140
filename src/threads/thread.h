@@ -3,6 +3,7 @@
 
 #include <debug.h>
 #include <list.h>
+#include <threads/synch.h>
 #include <stdint.h>
 
 /* States in a thread's life cycle. */
@@ -152,9 +153,9 @@ int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
 /* LP Functions */
-void donate_priority();
-void shed_priority();
-struct thread* get_highest_priority_thread(struct list* list);
+void donate_priority(void);
+void shed_priority(void);
+struct thread* get_highest_priority_thread(struct list* );
 
 
 #endif /* threads/thread.h */
