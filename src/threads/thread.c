@@ -807,6 +807,7 @@ static tid_t allocate_tid (void)
   return tid;
 }
 
+
 /*
  --------------------------------------------------------------------
  LP: Donate priority function. Note, because this function is only
@@ -815,7 +816,13 @@ static tid_t allocate_tid (void)
  --------------------------------------------------------------------
  */
 void donate_priority(void) {
-    
+    struct thread* currThread = thread_current();
+    while (currThread->lock_waiting_on != NULL) {
+        struct lock* currLock = currThread->lock_waiting_on;
+        currLock->priority = currThread->priority;
+        currLock->holder->priority = currThread->priority;
+        currThread = currThread->lock_waiting_on->holder;
+    }
 }
 
 
