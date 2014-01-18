@@ -461,10 +461,12 @@ void thread_foreach (thread_action_func *func, void *aux)
 void thread_set_priority (int new_priority) 
 {
     if (intr_context()) {
-        thread_current ()->priority = new_priority;
+        thread_current ()->original_priority_info.priority = new_priority;
+        shed_priority();
     } else {
         enum intr_level old_level = intr_disable();
-        thread_current ()->priority = new_priority;
+        thread_current ()->original_priority_info.priority = new_priority;
+        shed_priority();
         thread_yield();
     }
 }
