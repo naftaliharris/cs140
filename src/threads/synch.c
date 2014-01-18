@@ -122,8 +122,13 @@ sema_up (struct semaphore *sema)
 
   old_level = intr_disable ();
   if (!list_empty (&sema->waiters)) 
-    thread_unblock (list_entry (list_pop_front (&sema->waiters),
-                                struct thread, elem));
+    thread_unblock (list_entry (list_pop_front (&sema->waiters), struct thread, elem));
+    if (thread_current()->lock_being_released != NULL) {
+        thread_current()->lock_being_released->holder = NULL;
+        list_remove(&(thread_current()->lock_being_released->elem));
+        thread_current()->lock_being_released->priority = PRI_MIN;
+        shed_priority();
+    }
   sema->value++;
   intr_set_level (old_level);
 }
@@ -252,8 +257,10 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
+    thread_current->lock_being_released = lock;
   lock->holder = NULL;
   sema_up (&lock->semaphore);
+    thread_current->lock_being_released = NULL;
 }
 
 /* Returns true if the current thread holds LOCK, false

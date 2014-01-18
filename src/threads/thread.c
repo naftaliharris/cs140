@@ -825,6 +825,27 @@ void donate_priority(void) {
     }
 }
 
+/*
+ --------------------------------------------------------------------
+ LP: Final steps to release a lock and remove any donated
+ priority associated with the lock. 
+ --------------------------------------------------------------------
+ */
+void shed_priority() {
+    struct list_elem* curr = list_head(&(thread_current()->locks_held));
+    struct list_elem* tail = list_tail(&(thread_current()->locks_held));
+    int highest_remaining_priority = PRI_MIN;
+    while (true) {
+        curr = list_next(curr);
+        if(curr == tail) break;
+        struct lock* currLock = list_entry(curr, struct lock, elem);
+        if (lock->priority > highest_remaining_priority) {
+            highest_remaining_priority = currLock->priority;
+        }
+    }
+    thread_current()->priority = highest_remaining_priority;
+}
+
 
 
 

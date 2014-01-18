@@ -153,6 +153,7 @@ int thread_get_load_avg (void);
 
 /* LP Functions */
 void donate_priority();
+void shed_priority();
 
 
 #endif /* threads/thread.h */
