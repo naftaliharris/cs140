@@ -243,11 +243,7 @@ tid_t thread_create (const char *name, int priority, thread_func *function, void
   sf->ebp = 0;
 
   /* Add to run queue. */
-  thread_unblock (t);
-    
-    enum intr_level old_level = intr_disable();
-    if(t->priority > thread_current()->priority) thread_yield();
-    intr_set_level(old_level);
+    thread_unblock (t);
     
     
 
@@ -304,8 +300,10 @@ void thread_unblock (struct thread *t)
   ASSERT (t->status == THREAD_BLOCKED);
   list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
-    //if not in interrupt context, yield, else, yiled on return. 
-  intr_set_level (old_level);
+    if (old_level == INTR_ON && t->priority > thread_current()->priority) {
+        thread_yield();
+    }
+    intr_set_level (old_level);
 }
 
 
@@ -462,10 +460,13 @@ void thread_foreach (thread_action_func *func, void *aux)
  */
 void thread_set_priority (int new_priority) 
 {
-    lock_acquire(&priority_lock);
-  thread_current ()->priority = new_priority;
-    lock_release(&priority_lock);
-    thread_yield();
+    if (intr_context()) {
+        thread_current ()->priority = new_priority;
+    } else {
+        enum intr_level old_level = intr_disable();
+        thread_current ()->priority = new_priority;
+        thread_yield();
+    }
 }
 
 
@@ -475,13 +476,9 @@ void thread_set_priority (int new_priority)
  Returns the current thread's priority. 
  --------------------------------------------------------------------
  */
-int thread_get_priority (void) 
+int thread_get_priority (void)
 {
-    lock_acquire(&priority_lock);
-    int priority = thread_current ()->priority;
-    lock_release(&priority_lock);
-    
-    return priority;
+    return thread_current()->priority;
 }
 
 
@@ -714,6 +711,7 @@ static void * alloc_frame (struct thread *t, size_t size)
  */
 static struct thread * next_thread_to_run (void) 
 {
+    
     if (list_empty (&ready_list)) {
         return idle_thread;
     } else {
@@ -879,6 +877,7 @@ void shed_priority() {
  --------------------------------------------------------------------
  */
 struct thread* get_highest_priority_thread(struct list* list) {
+    
     struct list_elem* curr = list_head(list);
     struct list_elem* tail = list_tail(list);
     struct thread* currHighest = NULL;
