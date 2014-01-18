@@ -644,6 +644,13 @@ static void init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+    
+    list_init(&(t->locks_held));
+    t->original_priority_info.priority = priority;
+    t->original_priority_info.holder = NULL; //indicates orig priority package.
+    list_push_front(&(t->locks_held), &(t->original_priority_info));
+    t->lock_waiting_on = NULL;
+    t->aquire_or_release = NULL;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);

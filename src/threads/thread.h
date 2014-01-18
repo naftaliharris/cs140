@@ -89,6 +89,18 @@ struct thread
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
     struct list_elem allelem;           /* List element for all threads list. */
+      
+      
+      struct list locks_held;           /* LP, locks_held by this thread, used for              
+                                         priority donation. */
+      struct lock original_priority_info; /*LP, original priority wrapped in a
+                                           lock struct. */
+      struct lock* lock_waiting_on;     /*LP, The lock this thread is waiting on 
+                                         if any */
+      struct lock* aquire_or_release;   /*LP, used to communicate to sema_up
+                                         sema_down if the thread is releasing
+                                         or aquiring a lock. */
+      
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */

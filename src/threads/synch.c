@@ -171,15 +171,19 @@ sema_test_helper (void *sema_)
    another one "up" it, but with a lock the same thread must both
    acquire and release it.  When these restrictions prove
    onerous, it's a good sign that a semaphore should be used,
-   instead of a lock. */
+   instead of a lock. 
+ */
 void
 lock_init (struct lock *lock)
 {
   ASSERT (lock != NULL);
 
   lock->holder = NULL;
+    lock->priority = PRI_MIN;
   sema_init (&lock->semaphore, 1);
 }
+
+
 
 /* Acquires LOCK, sleeping until it becomes available if
    necessary.  The lock must not already be held by the current
@@ -199,6 +203,7 @@ lock_acquire (struct lock *lock)
   sema_down (&lock->semaphore);
   lock->holder = thread_current ();
 }
+
 
 /* Tries to acquires LOCK and returns true if successful or false
    on failure.  The lock must not already be held by the current
