@@ -650,7 +650,8 @@ static void init_thread (struct thread *t, const char *name, int priority)
     t->original_priority_info.holder = NULL; //indicates orig priority package.
     list_push_front(&(t->locks_held), &(t->original_priority_info));
     t->lock_waiting_on = NULL;
-    t->aquire_or_release = NULL;
+    t->being_aquired = NULL;
+    t->lock_being_released = NULL;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
@@ -805,6 +806,18 @@ static tid_t allocate_tid (void)
 
   return tid;
 }
+
+/*
+ --------------------------------------------------------------------
+ LP: Donate priority function. Note, because this function is only
+ called from sema_down, and sema_down disables interrupts, we do not
+ have to do it here as well. 
+ --------------------------------------------------------------------
+ */
+void donate_priority(void) {
+    
+}
+
 
 
 
