@@ -244,6 +244,12 @@ tid_t thread_create (const char *name, int priority, thread_func *function, void
 
   /* Add to run queue. */
   thread_unblock (t);
+    
+    enum intr_level old_level = intr_disable();
+    if(t->priority > thread_current()->priority) thread_yield();
+    intr_set_level(old_level);
+    
+    
 
   return tid;
 }
@@ -298,6 +304,7 @@ void thread_unblock (struct thread *t)
   ASSERT (t->status == THREAD_BLOCKED);
   list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
+    //if not in interrupt context, yield, else, yiled on return. 
   intr_set_level (old_level);
 }
 
