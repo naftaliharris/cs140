@@ -37,6 +37,9 @@ static struct thread *initial_thread;
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
 
+/* Lock used to protect the thread get and thread set priority */
+static struct lock priority_lock;
+
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame 
   {
@@ -99,6 +102,7 @@ void thread_init (void)
     /*Here we initialize the thread system, this is a good place to add any
      initialization code we think is necessary */
   lock_init (&tid_lock);
+    lock_init (&priority_lock);
   list_init (&ready_list);
   list_init (&all_list);
 
@@ -451,7 +455,10 @@ void thread_foreach (thread_action_func *func, void *aux)
  */
 void thread_set_priority (int new_priority) 
 {
+    lock_acquire(&priority_lock);
   thread_current ()->priority = new_priority;
+    lock_release(&priority_lock);
+    thread_yield();
 }
 
 
@@ -463,7 +470,11 @@ void thread_set_priority (int new_priority)
  */
 int thread_get_priority (void) 
 {
-  return thread_current ()->priority;
+    lock_acquire(&priority_lock);
+    int priority = thread_current ()->priority;
+    lock_release(&priority_lock);
+    
+    return priority;
 }
 
 
@@ -822,8 +833,12 @@ void donate_priority(void) {
     struct thread* currThread = thread_current();
     while (currThread->lock_waiting_on != NULL) {
         struct lock* currLock = currThread->lock_waiting_on;
-        currLock->priority = currThread->priority;
-        currLock->holder->priority = currThread->priority;
+        if (currThread->priority > currLock->priority) {
+            currLock->priority = currThread->priority;
+        }
+        if (currThread->priority > currLock->holder->priority) {
+            currLock->holder->priority = currThread->priority;
+        }
         currThread = currThread->lock_waiting_on->holder;
     }
 }
