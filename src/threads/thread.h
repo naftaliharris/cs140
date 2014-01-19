@@ -95,14 +95,21 @@ struct thread
       struct list locks_held;           /* LP, locks_held by this thread, used for              
                                          priority donation. */
       struct lock original_priority_info; /*LP, original priority wrapped in a
-                                           lock struct. */
+                                           lock struct. Note, reason for using
+                                           this is that it makes the algorithms
+                                           simple. Could have added an orig
+                                           priority int, but that would
+                                           have required several extra checks
+                                           which would have complicated 
+                                           algorith. Thus, we opted to take
+                                           slightly more memory with a 
+                                           lock struct and thus minimize
+                                           the number of instructions that must
+                                           run. Also, it has been advised by the
+                                           course staff to make the 
+                                           algorithm easy to read, which we do.*/
       struct lock* lock_waiting_on;     /*LP, The lock this thread is waiting on 
                                          if any */
-      /*struct lock* lock_being_aquired;*/   /*LP, used to communicate to sema_up
-                                         sema_down if the thread is releasing
-                                         or aquiring a lock. */
-      /*struct lock* lock_being_released;*/ /*LP the lock being released */
-      
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
@@ -155,7 +162,7 @@ int thread_get_load_avg (void);
 /* LP Functions */
 void donate_priority(void);
 void shed_priority(void);
-struct thread* get_highest_priority_thread(struct list* );
+struct thread* get_highest_priority_thread(struct list*, bool should_remove);
 
 
 #endif /* threads/thread.h */

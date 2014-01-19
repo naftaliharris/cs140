@@ -24,7 +24,6 @@ struct lock
     struct semaphore semaphore; /* Binary semaphore controlling access. */
       
       int priority;             /* LP, for donation purposes                */
-      bool is_Aquired;          /*True if currently held, false otherwise   */
       struct list_elem elem;     /* LP, to allow locks to be places in lists */
   };
 
@@ -37,7 +36,9 @@ bool lock_held_by_current_thread (const struct lock *);
 /* Condition variable. */
 struct condition 
   {
-    struct list waiters;        /* List of waiting threads. */
+    struct list waiters;        /* List of waiting threads. (really it is
+                                 a list of semaphore_elems, and the 
+                                 semaphore has a list of waiting threads.) */
   };
 
 void cond_init (struct condition *);
