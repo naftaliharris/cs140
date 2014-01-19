@@ -37,8 +37,6 @@ static struct thread *initial_thread;
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
 
-/* Lock used to protect the thread get and thread set priority */
-static struct lock priority_lock;
 
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame 
@@ -97,20 +95,19 @@ static tid_t allocate_tid (void);
  */
 void thread_init (void) 
 {
-  ASSERT (intr_get_level () == INTR_OFF);
-
+    ASSERT (intr_get_level () == INTR_OFF);
+    
     /*Here we initialize the thread system, this is a good place to add any
      initialization code we think is necessary */
-  lock_init (&tid_lock);
-    lock_init (&priority_lock);
-  list_init (&ready_list);
-  list_init (&all_list);
-
-  /* Set up a thread structure for the running thread. */
-  initial_thread = running_thread (); /*recall that initial_thread is the thread running init.main.c*/
-  init_thread (initial_thread, "main", PRI_DEFAULT);
-  initial_thread->status = THREAD_RUNNING;
-  initial_thread->tid = allocate_tid ();
+    lock_init (&tid_lock);
+    list_init (&ready_list);
+    list_init (&all_list);
+    
+    /* Set up a thread structure for the running thread. */
+    initial_thread = running_thread (); /*recall that initial_thread is the thread running init.main.c*/
+    init_thread (initial_thread, "main", PRI_DEFAULT);
+    initial_thread->status = THREAD_RUNNING;
+    initial_thread->tid = allocate_tid ();
 }
 
 
@@ -302,7 +299,7 @@ void thread_unblock (struct thread *t)
   t->status = THREAD_READY;
     if (old_level == INTR_ON && t->priority > thread_current()->priority) {
         thread_yield();
-    }
+    } //might be able to remove this and call thread_yield on my own after call to thread_unblock in sema_up and thread_create, which are only places function gets called. 
     intr_set_level (old_level);
 }
 
@@ -396,18 +393,6 @@ void thread_exit (void)
  --------------------------------------------------------------------
    Yields the CPU.  The current thread is not put to sleep and
    may be scheduled again immediately at the scheduler's whim. 
- 
- LP comment: thread_yield is for when we want to swap the current
-            thread for another, and put the old thread back in the 
-            ready list. thread_block is for when we want to change
-            the state of the current thread to THREAD_BLOCKED
-            and then run another thread. 
- 
- LP comment: So it seems like the chain of calls to schedule a new 
-            thread is:
-            1. intr_yield_on_return
-            2. intr_handler
-            3. thread_yield
  --------------------------------------------------------------------
  */
 void thread_yield (void) 
@@ -415,15 +400,14 @@ void thread_yield (void)
   struct thread *cur = thread_current ();
   enum intr_level old_level;
   
-  ASSERT (!intr_context ()); /*This asserts we are not in an external interrupt */
+  ASSERT (!intr_context ()); 
 
   old_level = intr_disable ();
   if (cur != idle_thread) 
     list_push_back (&ready_list, &cur->elem);
-  cur->status = THREAD_READY; /*for blocked threads, we would call thread_block */
+  cur->status = THREAD_READY; 
   schedule ();
-  intr_set_level (old_level); /*we temporarily disable interrupts so that we can swap threads, and then we 
-                               restore the previous interrupt level */
+  intr_set_level (old_level); 
 }
 
 
@@ -672,9 +656,6 @@ static void init_thread (struct thread *t, const char *name, int priority)
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
-    /*this thread is added to the ready list in the thread_unblock
-     function, which is called in thread_create, which calls
-     this function*/
   intr_set_level (old_level);
 }
 
@@ -895,9 +876,6 @@ struct thread* get_highest_priority_thread(struct list* list) {
     if (currHighest != NULL) list_remove(&(currHighest->elem));
     return currHighest;
 }
-
-
-
 
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
