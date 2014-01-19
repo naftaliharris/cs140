@@ -3,6 +3,7 @@
 #include <inttypes.h>
 #include <round.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include "devices/pit.h"
 #include "threads/interrupt.h"
 #include "threads/synch.h"
@@ -30,11 +31,21 @@ static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
 
+/* One sleeping thread's semaphore lock, as part of a list */
+struct sleeping_thread {
+  struct list_elem elem; /* List Element */
+  struct semaphore semaphore; /* Semaphore */
+  int64_t wake_time; /* Time to wake this thread */
+};
+
+static struct list sleeping_threads;
+
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
 void
 timer_init (void) 
 {
+  list_init(&sleeping_threads);
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
 }
@@ -84,16 +95,39 @@ timer_elapsed (int64_t then)
   return timer_ticks () - then;
 }
 
+/*
+  TRUE: a < b
+  FALSE: a >= b
+ */
+bool
+sleeping_thread_insert_func (const struct list_elem *a,
+                             const struct list_elem *b,
+                             void *aux)
+{
+  struct sleeping_thread *a_st = list_entry (a, struct sleeping_thread, elem);
+  struct sleeping_thread *b_st = list_entry (b, struct sleeping_thread, elem);
+  return a_st->wake_time < b_st->wake_time;
+}
+
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void
 timer_sleep (int64_t ticks) 
 {
   int64_t start = timer_ticks ();
-
+  int64_t wake_time = start + ticks;
+  
   ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks) 
-    thread_yield ();
+  
+  struct sleeping_thread sleep;
+  sema_init(&(sleep.semaphore), 0);
+  sleep.wake_time = wake_time;
+
+  enum intr_level old_level = intr_disable (); // disable interrupts
+  list_insert_ordered(&sleeping_threads, &(sleep.elem), sleeping_thread_insert_func, NULL);
+  intr_set_level (old_level); // enable interrupts
+  
+  sema_down(&(sleep.semaphore));
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -172,6 +206,21 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
   thread_tick ();
+  int64_t cur_time = timer_ticks();
+  while(!list_empty(&sleeping_threads))
+  {
+    struct list_elem *e = list_pop_front(&sleeping_threads);
+    struct sleeping_thread *st = list_entry (e, struct sleeping_thread, elem);
+    if(st->wake_time <= cur_time)
+    {
+      sema_up(&(st->semaphore));
+    }
+    else
+    {
+      list_push_front(&sleeping_threads, e);
+      break;
+    }
+  }
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
