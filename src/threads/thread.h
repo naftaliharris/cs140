@@ -98,10 +98,10 @@ struct thread
                                            lock struct. */
       struct lock* lock_waiting_on;     /*LP, The lock this thread is waiting on 
                                          if any */
-      struct lock* lock_being_aquired;   /*LP, used to communicate to sema_up
+      /*struct lock* lock_being_aquired;*/   /*LP, used to communicate to sema_up
                                          sema_down if the thread is releasing
                                          or aquiring a lock. */
-      struct lock* lock_being_released;  /*LP the lock being released */
+      /*struct lock* lock_being_released;*/ /*LP the lock being released */
       
 
     /* Shared between thread.c and synch.c. */

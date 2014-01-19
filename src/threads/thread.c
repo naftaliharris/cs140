@@ -452,6 +452,7 @@ void thread_set_priority (int new_priority)
         thread_current ()->original_priority_info.priority = new_priority;
         shed_priority();
         thread_yield();
+        intr_set_level(old_level);
     }
 }
 
@@ -633,30 +634,28 @@ static bool is_thread (struct thread *t)
  */
 static void init_thread (struct thread *t, const char *name, int priority)
 {
-  enum intr_level old_level;
-
-  ASSERT (t != NULL);
-  ASSERT (PRI_MIN <= priority && priority <= PRI_MAX);
-  ASSERT (name != NULL);
-
-  memset (t, 0, sizeof *t);
-  t->status = THREAD_BLOCKED;
-  strlcpy (t->name, name, sizeof t->name);
-  t->stack = (uint8_t *) t + PGSIZE;
-  t->priority = priority;
-  t->magic = THREAD_MAGIC;
+    enum intr_level old_level;
+    
+    ASSERT (t != NULL);
+    ASSERT (PRI_MIN <= priority && priority <= PRI_MAX);
+    ASSERT (name != NULL);
+    
+    memset (t, 0, sizeof *t);
+    t->status = THREAD_BLOCKED;
+    strlcpy (t->name, name, sizeof t->name);
+    t->stack = (uint8_t *) t + PGSIZE;
+    t->priority = priority;
+    t->magic = THREAD_MAGIC;
     
     list_init(&(t->locks_held));
     t->original_priority_info.priority = priority;
     t->original_priority_info.holder = NULL; //indicates orig priority package.
     list_push_front(&(t->locks_held), &(t->original_priority_info.elem));
     t->lock_waiting_on = NULL;
-    t->lock_being_aquired = NULL;
-    t->lock_being_released = NULL;
-
-  old_level = intr_disable ();
-  list_push_back (&all_list, &t->allelem);
-  intr_set_level (old_level);
+    
+    old_level = intr_disable ();
+    list_push_back (&all_list, &t->allelem);
+    intr_set_level (old_level);
 }
 
 

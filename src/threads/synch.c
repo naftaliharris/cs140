@@ -69,12 +69,6 @@ sema_down (struct semaphore *sema)
   while (sema->value == 0) 
     {
       list_push_back (&sema->waiters, &(thread_current()->elem));
-        
-        if(thread_current()->lock_being_aquired != NULL) {
-            thread_current()->lock_waiting_on = thread_current()->lock_being_aquired;
-            donate_priority();
-        }
-        
       thread_block ();
     }
 
@@ -113,30 +107,30 @@ sema_try_down (struct semaphore *sema)
 
    This function may be called from an interrupt handler. */
 void
-sema_up (struct semaphore *sema) 
+sema_up (struct semaphore *sema)
 {
-  enum intr_level old_level;
-
-  ASSERT (sema != NULL);
-
-  old_level = intr_disable ();
+    enum intr_level old_level;
+    
+    ASSERT (sema != NULL);
+    
+    old_level = intr_disable ();
     if (!list_empty (&sema->waiters)) {
         struct thread* thread_to_unblock = get_highest_priority_thread(&sema->waiters);
         ASSERT(thread_to_unblock != NULL);
         thread_unblock(thread_to_unblock);
     }
-    if (thread_current()->lock_being_released != NULL) {
-        thread_current()->lock_being_released->holder = NULL;
-        list_remove(&(thread_current()->lock_being_released->elem));
-        thread_current()->lock_being_released->priority = PRI_MIN;
-        shed_priority();
-    }
-  sema->value++;
-    if (old_level == INTR_ON && thread_current()->lock_being_released == NULL) {
+    
+    sema->value++;
+    
+    if (!intr_context()) { //if not interrupt context, then yield.
         thread_yield();
     }
-  intr_set_level (old_level);
+    intr_set_level (old_level);
 }
+
+
+
+
 
 static void sema_test_helper (void *sema_);
 
@@ -194,11 +188,12 @@ sema_test_helper (void *sema_)
 void
 lock_init (struct lock *lock)
 {
-  ASSERT (lock != NULL);
-
-  lock->holder = NULL;
+    ASSERT (lock != NULL);
+    
+    lock->holder = NULL;
+    lock->is_Aquired = false;
     lock->priority = PRI_MIN;
-  sema_init (&lock->semaphore, 1);
+    sema_init (&lock->semaphore, 1);
 }
 
 
@@ -214,21 +209,22 @@ lock_init (struct lock *lock)
 void
 lock_acquire (struct lock *lock)
 {
-    enum intr_level old_level = intr_disable();
-    
     ASSERT (lock != NULL);
     ASSERT (!intr_context ());
     ASSERT (!lock_held_by_current_thread (lock));
     
-    thread_current()->lock_being_aquired = lock;
+    enum intr_level old_level = intr_disable();
+    
+    if (lock->holder != NULL) {
+        thread_current()->lock_waiting_on = lock;
+        donate_priority();
+    }
+    
     sema_down (&lock->semaphore);
     
     lock->priority = PRI_MIN;
     list_push_front(&(thread_current()->locks_held), &(lock->elem));
-    
-    thread_current()->lock_being_aquired = NULL;
     thread_current()->lock_waiting_on = NULL;
-    
     lock->holder = thread_current ();
     
     intr_set_level(old_level);
@@ -244,16 +240,22 @@ lock_acquire (struct lock *lock)
 bool
 lock_try_acquire (struct lock *lock)
 {
-  bool success;
-
-  ASSERT (lock != NULL);
-  ASSERT (!lock_held_by_current_thread (lock));
-
-  success = sema_try_down (&lock->semaphore);
-  if (success)
-    lock->holder = thread_current ();
-  return success;
+    bool success;
+    
+    ASSERT (lock != NULL);
+    ASSERT (!lock_held_by_current_thread (lock));
+    
+    success = sema_try_down (&lock->semaphore);
+    if (success) {
+        lock->priority = PRI_MIN;
+        list_push_front(&(thread_current()->locks_held), &(lock->elem));
+        thread_current()->lock_waiting_on = NULL;
+        lock->holder = thread_current ();
+    }
+    return success;
 }
+
+
 
 /* Releases LOCK, which must be owned by the current thread.
 
@@ -261,20 +263,23 @@ lock_try_acquire (struct lock *lock)
    make sense to try to release a lock within an interrupt
    handler. */
 void
-lock_release (struct lock *lock) 
+lock_release (struct lock *lock)
 {
+    ASSERT (lock != NULL);
+    ASSERT (lock_held_by_current_thread (lock));
+    //check interrup context.
+    
     enum intr_level old_level = intr_disable();
     
-  ASSERT (lock != NULL);
-  ASSERT (lock_held_by_current_thread (lock));
-
-    thread_current()->lock_being_released = lock;
-  lock->holder = NULL;
-  sema_up (&lock->semaphore);
-    thread_current()->lock_being_released = NULL;
-    thread_yield();
+    list_remove(&(lock->elem)); //remove from thread_current->locks_held
+    lock->priority = PRI_MIN;
+    shed_priority();
+    lock->holder = NULL;
+    sema_up (&lock->semaphore); //contains the thread_yield call.
     intr_set_level(old_level);
 }
+
+
 
 /* Returns true if the current thread holds LOCK, false
    otherwise.  (Note that testing whether some other thread holds

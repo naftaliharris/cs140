@@ -24,6 +24,7 @@ struct lock
     struct semaphore semaphore; /* Binary semaphore controlling access. */
       
       int priority;             /* LP, for donation purposes                */
+      bool is_Aquired;          /*True if currently held, false otherwise   */
       struct list_elem elem;     /* LP, to allow locks to be places in lists */
   };
 
