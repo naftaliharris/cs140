@@ -355,19 +355,21 @@ struct semaphore* get_semaphore_to_signal(struct condition* cond) {
     struct list_elem* tail = list_tail(&(cond->waiters));
     
     int curr_highest_priority = PRI_MIN;
-    struct semaphore* toSignal = NULL;
+    struct semaphore_elem* toSignal = NULL;
     
     while (true) {
         curr = list_next(curr);
         if (curr == tail) break;
         struct semaphore_elem* currSemaElem = list_entry(curr, struct semaphore_elem, elem);
+        ASSERT(currSemaElem != NULL);
         struct thread* currThread = get_highest_priority_thread(&(currSemaElem->semaphore.waiters), false);
         if (currThread->priority > curr_highest_priority || toSignal == NULL) {
             curr_highest_priority = currThread->priority;
-            toSignal = &(currSemaElem->semaphore);
+            toSignal = currSemaElem;
         }
     }
-    return toSignal;
+    list_remove(&(toSignal->elem));
+    return &(toSignal->semaphore);
     
     
     /*struct list_elem* curr = list_pop_front(&(cond->waiters));
