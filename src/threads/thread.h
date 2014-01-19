@@ -3,6 +3,7 @@
 
 #include <debug.h>
 #include <list.h>
+#include <threads/synch.h>
 #include <stdint.h>
 
 /* States in a thread's life cycle. */
@@ -88,21 +89,27 @@ struct thread
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
-    struct list_elem allelem;           /* List element for all threads list
-                                         */
+    struct list_elem allelem;           /* List element for all threads list. */
       
       
-      
-      
-      //LP Edit
-      bool is_operating_with_donated_priority; //true if the current thread priority is donated.
-      struct list priority_list; // a list of priority_packages. After thread initialization, this list will never be empty, as it will always contain the threads priority at creation. 
-      //END LP Edit
-      
-      
-      
-      
-      
+      struct list locks_held;           /* LP, locks_held by this thread, used for              
+                                         priority donation. */
+      struct lock original_priority_info; /*LP, original priority wrapped in a
+                                           lock struct. Note, reason for using
+                                           this is that it makes the algorithms
+                                           simple. Could have added an orig
+                                           priority int, but that would
+                                           have required several extra checks
+                                           which would have complicated 
+                                           algorith. Thus, we opted to take
+                                           slightly more memory with a 
+                                           lock struct and thus minimize
+                                           the number of instructions that must
+                                           run. Also, it has been advised by the
+                                           course staff to make the 
+                                           algorithm easy to read, which we do.*/
+      struct lock* lock_waiting_on;     /*LP, The lock this thread is waiting on 
+                                         if any */
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
@@ -115,26 +122,6 @@ struct thread
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
-
-
-/**
- --------------------------------------------------------------------
- This Struct allows for priority donation. It packages an int, 
- a bool, and a struct list_elem into a single struct. Every thread 
- now has a list of these priority_packages. This list will always have
- at least one element in it because at thread initialization, we add
- the original priority from creation, and the bool is false. Whenever a
- thread recieves a donated priority, a struct gets intialized and added 
- its priority_list, and then the fields for priority get updated. 
- --------------------------------------------------------------------
- */
-struct priority_package {
-    
-    int priority; //priority number
-    bool isDonated; //true if the priority in this package is donated, false otherwise.
-    struct list_elem elem; //for the list to organize
-    
-};
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
@@ -172,9 +159,10 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
-//LP EDit:
-void donate_priority(struct thread *destination_thread, int priority_to_donate);
-int shed_priority(struct thread *shedding_thread);
-//END LP EDIT
+/* LP Functions */
+void donate_priority(void);
+void shed_priority(void);
+struct thread* get_highest_priority_thread(struct list*, bool should_remove);
+
 
 #endif /* threads/thread.h */
