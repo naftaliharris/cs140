@@ -4,6 +4,7 @@
 #include <random.h>
 #include <stdio.h>
 #include <string.h>
+#include "threads/fixed-point.h"
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -223,6 +224,7 @@ tid_t thread_create (const char *name, int priority, thread_func *function, void
   /* Initialize thread. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
+  t->nice = thread_current()->nice;
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
@@ -492,8 +494,7 @@ void thread_set_nice (int nice UNUSED)
  */
 int thread_get_nice (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+    return thread_current()->nice;
 }
 
 
@@ -523,8 +524,7 @@ thread_get_load_avg (void)
  */
 int thread_get_recent_cpu (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+    return fp_to_int (fp_mul_int (thread_current()->recent_cpu, 100));
 }
 
 
@@ -652,6 +652,9 @@ static void init_thread (struct thread *t, const char *name, int priority)
     t->original_priority_info.holder = NULL; //indicates orig priority package.
     list_push_front(&(t->locks_held), &(t->original_priority_info.elem));
     t->lock_waiting_on = NULL;
+
+    t->nice = 0;
+    t->recent_cpu = int_to_fp (0);
     
     old_level = intr_disable ();
     list_push_back (&all_list, &t->allelem);

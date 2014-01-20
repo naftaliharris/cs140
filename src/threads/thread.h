@@ -5,6 +5,7 @@
 #include <list.h>
 #include <threads/synch.h>
 #include <stdint.h>
+#include "threads/fixed-point.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -110,6 +111,8 @@ struct thread
                                            algorithm easy to read, which we do.*/
       struct lock* lock_waiting_on;     /*LP, The lock this thread is waiting on 
                                          if any */
+    int32_t nice;
+    fp_float recent_cpu;
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
