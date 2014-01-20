@@ -106,22 +106,21 @@ sleeping_thread_insert_func (const struct list_elem *a,
 {
   struct sleeping_thread *a_st = list_entry (a, struct sleeping_thread, elem);
   struct sleeping_thread *b_st = list_entry (b, struct sleeping_thread, elem);
-  return a_st->wake_time <= b_st->wake_time;
+  return a_st->wake_time < b_st->wake_time;
 }
 
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void
-timer_sleep (int64_t ticks) 
+timer_sleep (int64_t sleep_ticks) 
 {
   ASSERT (intr_get_level () == INTR_ON);
   
   enum intr_level old_level = intr_disable (); // disable interrupts
-  int64_t start = timer_ticks ();
   
   struct sleeping_thread sleep;
   sema_init(&(sleep.semaphore), 0);
-  sleep.wake_time = start + ticks;
+  sleep.wake_time = timer_ticks() + sleep_ticks;
   
   list_insert_ordered(&sleeping_threads, &(sleep.elem), sleeping_thread_insert_func, NULL);
   intr_set_level (old_level); // enable interrupts
@@ -205,6 +204,8 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
   bool yield = false;
+  thread_tick();
+  barrier();
   while(!list_empty(&sleeping_threads))
   {
     struct list_elem *e = list_pop_front(&sleeping_threads);
@@ -220,10 +221,9 @@ timer_interrupt (struct intr_frame *args UNUSED)
       break;
     }
   }
-  thread_tick ();
   if(yield)
   {
-    intr_yield_on_return();
+    //intr_yield_on_return();
   }
 }
 

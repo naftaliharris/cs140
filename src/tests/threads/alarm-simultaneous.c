@@ -84,11 +84,21 @@ sleeper (void *test_)
   /* Make sure we're at the beginning of a timer tick. */
   timer_sleep (1);
 
+  int64_t sleep_until_a[test->iterations];
+  int64_t woken_at_a[test->iterations];
+  
   for (i = 1; i <= test->iterations; i++) 
     {
       int64_t sleep_until = test->start + i * 10;
       timer_sleep (sleep_until - timer_ticks ());
       *test->output_pos++ = timer_ticks () - test->start;
+      sleep_until_a[i - 1] = sleep_until;
+      woken_at_a[i - 1] = timer_ticks();
       thread_yield ();
     }
+    
+  for (i = 0; i < test->iterations; i++)
+  {
+    printf("sleep until %lld | woken at %lld\n", sleep_until_a[i], woken_at_a[i]);
+  }
 }
