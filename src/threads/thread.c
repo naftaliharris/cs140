@@ -4,6 +4,7 @@
 #include <random.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdbool.h>
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -166,7 +167,11 @@ void thread_tick (void)
                               that the current thread will yield the processor */
 }
 
-
+bool
+on_idle_thread (void)
+{
+  return thread_current() == idle_thread;
+}
 
 
 

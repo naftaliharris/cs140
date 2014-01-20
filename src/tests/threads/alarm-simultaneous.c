@@ -99,6 +99,6 @@ sleeper (void *test_)
     
   for (i = 0; i < test->iterations; i++)
   {
-    printf("sleep until %lld | woken at %lld\n", sleep_until_a[i], woken_at_a[i]);
+    //printf("sleep until %lld | woken at %lld\n", sleep_until_a[i], woken_at_a[i]);
   }
 }

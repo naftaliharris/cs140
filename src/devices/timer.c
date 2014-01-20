@@ -38,14 +38,14 @@ struct sleeping_thread {
   int64_t wake_time; /* Time to wake this thread */
 };
 
-static struct list sleeping_threads;
+static struct list sleeping_threads_list;
 
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
 void
 timer_init (void) 
 {
-  list_init(&sleeping_threads);
+  list_init(&sleeping_threads_list);
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
 }
@@ -122,7 +122,7 @@ timer_sleep (int64_t sleep_ticks)
   sema_init(&(sleep.semaphore), 0);
   sleep.wake_time = timer_ticks() + sleep_ticks;
   
-  list_insert_ordered(&sleeping_threads, &(sleep.elem), sleeping_thread_insert_func, NULL);
+  list_insert_ordered(&sleeping_threads_list, &(sleep.elem), sleeping_thread_insert_func, NULL);
   intr_set_level (old_level); // enable interrupts
   
   sema_down(&(sleep.semaphore));
@@ -206,9 +206,9 @@ timer_interrupt (struct intr_frame *args UNUSED)
   bool yield = false;
   thread_tick();
   barrier();
-  while(!list_empty(&sleeping_threads))
+  while(!list_empty(&sleeping_threads_list))
   {
-    struct list_elem *e = list_pop_front(&sleeping_threads);
+    struct list_elem *e = list_pop_front(&sleeping_threads_list);
     struct sleeping_thread *st = list_entry (e, struct sleeping_thread, elem);
     if(st->wake_time <= ticks)
     {
@@ -217,13 +217,13 @@ timer_interrupt (struct intr_frame *args UNUSED)
     }
     else
     {
-      list_push_front(&sleeping_threads, e);
+      list_push_front(&sleeping_threads_list, e);
       break;
     }
   }
-  if(yield)
+  if(yield && on_idle_thread())
   {
-    //intr_yield_on_return();
+    intr_yield_on_return();
   }
 }
 

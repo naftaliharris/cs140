@@ -5,6 +5,7 @@
 #include <list.h>
 #include <threads/synch.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -143,6 +144,7 @@ void thread_unblock (struct thread *);
 struct thread *thread_current (void);
 tid_t thread_tid (void);
 const char *thread_name (void);
+bool on_idle_thread (void);
 
 void thread_exit (void) NO_RETURN;
 void thread_yield (void);
