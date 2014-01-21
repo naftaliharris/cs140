@@ -518,6 +518,7 @@ int thread_get_priority (void)
 void thread_set_nice (int nice)
 {
     thread_current()->nice = nice;
+    /* TODO: recalculate? */
     thread_yield ();
 }
 
@@ -736,7 +737,14 @@ static void * alloc_frame (struct thread *t, size_t size)
 static struct thread * next_thread_to_run (void) 
 {
     if (thread_mlfqs) {
-        return idle_thread;
+        /* XXX this can't be right */
+        if (list_empty (&ready_list)) {
+            return idle_thread;
+        } else {
+            struct thread* next_thread = get_highest_priority_thread(&ready_list, true);
+            ASSERT(next_thread != NULL);
+            return next_thread;
+        }
     } else {
         if (list_empty (&ready_list)) {
             return idle_thread;
