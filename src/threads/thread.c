@@ -189,11 +189,10 @@ void thread_tick (void)
     {
       if (t != idle_thread) {
           t->recent_cpu = fp_add_int(t->recent_cpu, 1);
+          t->priority = PRI_MAX - 2*t->nice - fp_to_int (fp_div_int (t->recent_cpu, 4));
+          t->priority = t->priority > PRI_MAX ? PRI_MAX : t->priority;
+          t->priority = t->priority < PRI_MIN ? PRI_MIN : t->priority;
       }
-      /*
-      printf("tid %d, recent_cpu %d\n", t->tid, fp_to_int(fp_mul_int(t->recent_cpu, 100)));
-      printf("-----------------------------\n");
-      */
 
       /* Update load_avg and all recent_cpu's once per second */
       if (timer_ticks () % TIMER_FREQ == 0)
@@ -201,13 +200,13 @@ void thread_tick (void)
           fp_float _59_over_60 = fp_div (int_to_fp (59), int_to_fp (60));
           fp_float _1_over_60 = fp_div (int_to_fp (1), int_to_fp (60));
           int32_t ready_threads = (int32_t) list_size (&ready_list);
+
           if (t != idle_thread) {
-              ready_threads++; /* Can there be more than one running thread? */
+              ready_threads++;  // XXX?
           }
-          //printf("ready_threads: %d\n", ready_threads);
+
           load_avg = fp_mul (_59_over_60, load_avg);
           load_avg = fp_add (load_avg, fp_mul_int (_1_over_60, ready_threads));
-          //printf("load_avg: %d\n", thread_get_load_avg ());
 
           fp_float twice_load = fp_mul_int (load_avg, 2);
           fp_float decay = fp_div (twice_load, fp_add_int (twice_load, 1));
@@ -536,8 +535,16 @@ int thread_get_priority (void)
  */
 void thread_set_nice (int nice)
 {
-    thread_current()->nice = nice;
-    /* TODO: recalculate? */
+    int thresholded;
+    struct thread *t;
+
+    thresholded = nice > 20 ? 20 : (nice < -20 ? -20 : nice);
+    t = thread_current();
+    t->nice = thresholded;
+    t->priority = PRI_MAX - 2*t->nice - fp_to_int (fp_div_int (t->recent_cpu, 4));
+    t->priority = t->priority > PRI_MAX ? PRI_MAX : t->priority;
+    t->priority = t->priority < PRI_MIN ? PRI_MIN : t->priority;
+
     thread_yield ();
 }
 
