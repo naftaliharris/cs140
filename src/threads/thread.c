@@ -75,6 +75,7 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+void update_thread_priority (struct thread *t);
 void update_thread_state (struct thread *t, void *aux);
 
 
@@ -142,23 +143,38 @@ void thread_start (void)
 
 
 /*
+ Updates just the thread's priority. Must be called with interrupts off so that
+ a thread in the middle of updating its state won't get clobbered by a timer
+ interrupt that does so.
+ */
+void
+update_thread_priority (struct thread *t)
+{
+  ASSERT (intr_get_level () == INTR_OFF);
+  if (t == idle_thread) {
+      t->priority = PRI_MIN;
+  } else {
+      int32_t recent_cpu_over_4 = fp_to_int (fp_div_int (t->recent_cpu, 4));
+      t->priority = PRI_MAX - 2 * t->nice - recent_cpu_over_4;
+      t->priority = t->priority > PRI_MAX ? PRI_MAX : t->priority;
+      t->priority = t->priority < PRI_MIN ? PRI_MIN : t->priority;
+  }
+}
+
+
+/*
  Updates the recent_cpu and priority for the given thread according to the BSD
- formula. *aux is the decay factor.
+ formula. *aux is the decay factor. Must be called with interrupts off, so that
+ a thread in the middle of updating its state won't be clobbered by a timer
+ interrupt that does so.
  */
 void
 update_thread_state (struct thread *t, void *aux)
 {
+  ASSERT (intr_get_level () == INTR_OFF);
   fp_float decay = *(fp_float *)aux;
   t->recent_cpu = fp_add_int (fp_mul (decay, t->recent_cpu), t->nice);
-  //printf("tid %d, recent_cpu %d\n", t->tid, fp_to_int(fp_mul_int(t->recent_cpu, 100)));
-  if (t == idle_thread) {
-      t->priority = PRI_MIN;
-  } else {
-      t->priority = PRI_MAX - 2*t->nice - fp_to_int (fp_div_int (t->recent_cpu, 4));
-      t->priority = t->priority > PRI_MAX ? PRI_MAX : t->priority;
-      t->priority = t->priority < PRI_MIN ? PRI_MIN : t->priority;
-  }
-  //printf("tid %d, priority %d\n", t->tid, t->priority);
+  update_thread_priority (t);
 }
 
 
@@ -187,12 +203,8 @@ void thread_tick (void)
 
   if (thread_mlfqs)
     {
-      if (t != idle_thread) {
-          t->recent_cpu = fp_add_int(t->recent_cpu, 1);
-          t->priority = PRI_MAX - 2*t->nice - fp_to_int (fp_div_int (t->recent_cpu, 4));
-          t->priority = t->priority > PRI_MAX ? PRI_MAX : t->priority;
-          t->priority = t->priority < PRI_MIN ? PRI_MIN : t->priority;
-      }
+      t->recent_cpu = fp_add_int(t->recent_cpu, 1);
+      update_thread_priority (t);
 
       /* Update load_avg and all recent_cpu's once per second */
       if (timer_ticks () % TIMER_FREQ == 0)
@@ -277,7 +289,7 @@ tid_t thread_create (const char *name, int priority, thread_func *function, void
   /* Initialize thread. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
-  t->nice = thread_current()->nice;  /* XXX Syncronization */
+  t->nice = thread_current()->nice;
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
@@ -540,10 +552,11 @@ void thread_set_nice (int nice)
 
     thresholded = nice > 20 ? 20 : (nice < -20 ? -20 : nice);
     t = thread_current();
+
+    intr_disable ();
     t->nice = thresholded;
-    t->priority = PRI_MAX - 2*t->nice - fp_to_int (fp_div_int (t->recent_cpu, 4));
-    t->priority = t->priority > PRI_MAX ? PRI_MAX : t->priority;
-    t->priority = t->priority < PRI_MIN ? PRI_MIN : t->priority;
+    update_thread_priority (t);
+    intr_enable();
 
     thread_yield ();
 }
@@ -762,23 +775,12 @@ static void * alloc_frame (struct thread *t, size_t size)
  */
 static struct thread * next_thread_to_run (void) 
 {
-    if (thread_mlfqs) {
-        /* XXX this can't be right */
-        if (list_empty (&ready_list)) {
-            return idle_thread;
-        } else {
-            struct thread* next_thread = get_highest_priority_thread(&ready_list, true);
-            ASSERT(next_thread != NULL);
-            return next_thread;
-        }
+    if (list_empty (&ready_list)) {
+        return idle_thread;
     } else {
-        if (list_empty (&ready_list)) {
-            return idle_thread;
-        } else {
-            struct thread* next_thread = get_highest_priority_thread(&ready_list, true);
-            ASSERT(next_thread != NULL);
-            return next_thread;
-        }
+        struct thread* next_thread = get_highest_priority_thread(&ready_list, true);
+        ASSERT(next_thread != NULL);
+        return next_thread;
     }
 }
 
