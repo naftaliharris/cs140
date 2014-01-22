@@ -39,6 +39,11 @@ static struct thread *initial_thread;
 static struct lock tid_lock;
 
 
+
+static fp_float load_average;
+static struct list cpu_changed_list;
+
+
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame 
   {
@@ -73,6 +78,101 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+static void update_thread_priority(struct thread* t);
+static void update_load_average(void);
+static void update_recent_cpu(struct thread* t);
+static void update_changed_cpu_threads(void);
+static void update_running_thread_cpu(struct thread* t);
+static void update_cpu_for_all_threads(void);
+
+
+/*
+ updates the threads priority according to the formula.
+ Use the single list so no need to change queues.
+ */
+static void update_thread_priority(struct thread* t) {
+    int middle_term = fp_to_int(fp_div_int(t->recent_cpu, 4));
+    int new_priority = PRI_MAX - middle_term - (t->nice * 2);
+    if (new_priority > PRI_MAX) {
+        new_priority = PRI_MAX;
+    }
+    if (new_priority < PRI_MIN) {
+        new_priority = PRI_MIN;
+    }
+    t->priority = new_priority;
+}
+
+
+/*
+ Updates the load average
+ */
+static void update_load_average(void) {
+    fp_float lhs_scale = fp_div(int_to_fp(59), int_to_fp(60));
+    fp_float lhs = fp_mul(load_average, lhs_scale);
+    
+    fp_float rhs_scale = fp_div(int_to_fp(1), int_to_fp(60));
+    int num_ready_threads = list_size(&ready_list);
+    if (thread_current() != idle_thread) {
+        num_ready_threads++;
+    }
+    fp_float rhs = fp_mul_int(rhs_scale, num_ready_threads);
+    load_average = fp_add(lhs, rhs);
+}
+
+
+/*
+ updates the recent_cpu value for a thread
+ */
+static void update_recent_cpu(struct thread* t, fp_float cpu_scale) {
+    fp_float lhs = fp_mul(cpu_scale, t->recent_cpu);
+    t->recent_cpu = fp_add_int(lhs, t->nice);
+}
+
+
+/*
+ updates CPU for all threads, called once every second
+ */
+static void update_cpu_for_all_threads(void) {
+    fp_float numerator = fp_mul_int(load_average, 2);
+    fp_float denominator = fp_add_int(numerator, 1);
+    fp_float cpu_scale = fp_div(numerator, denominator);
+    
+    struct list_elem* curr = list_head(&all_list);
+    struct list_tail* tail = list_tail(&all_list);
+    while (true) {
+        curr = list_next(curr);
+        if (curr == tail) break;
+    }
+}
+
+
+/*
+ updates the priorities for the threads whos cpu changed
+ */
+static void update_changed_cpu_threads(void) {
+    struct list_elem* curr = list_head(&cpu_changed_list);
+    struct list_elem* tail = list_tail(&cpu_changed_list);
+    while (true) {
+        curr = list_next(curr);
+        if (curr == tail) break;
+        struct thread* t = list_entry(curr, struct thread, cpu_list_elem);
+        update_thread_priority(t);
+        list_remove(&t->cpu_list_elem);
+        t->cpu_has_changed = false;
+    }
+}
+
+/*
+ incriments the running threads recent cpu by 1
+ */
+static void update_running_thread_cpu(struct thread* t) {
+    t->recent_cpu = fp_add_int(t->recent_cpu, 1);
+    if (t->cpu_has_changed == false) {
+        t->cpu_has_changed = true;
+        list_push_back(&cpu_changed_list, &t->cpu_list_elem);
+    }
+}
+
 
 
 /* 
@@ -103,6 +203,8 @@ void thread_init (void)
     lock_init (&tid_lock);
     list_init (&ready_list);
     list_init (&all_list);
+    list_init (&cpu_changed_list);
+    load_average = 0;
     
     /* Set up a thread structure for the running thread. */
     initial_thread = running_thread (); /*recall that initial_thread is the thread running init.main.c*/
@@ -160,11 +262,25 @@ void thread_tick (void)
 #endif
   else
     kernel_ticks++;
+    
+    //here we update load average and cpu when necessary
+    if (t != idle_thread) {
+        update_running_thread_cpu(thread_current());
+    }
+    
+    if (/*check for 1 second */) {
+        //update load average
+        //update cpu for all threads
+        update_cpu_for_all_threads();
+    }
+    
 
   /* Enforce preemption. */
-  if (++thread_ticks >= TIME_SLICE)
-    intr_yield_on_return (); /*simply sets the boolean yield_on_return to true so 
-                              that the current thread will yield the processor */
+    if (++thread_ticks >= TIME_SLICE) {
+        //here calculate priority for each thread in cpu_changed_list
+        update_changed_cpu_threads();
+         intr_yield_on_return (); 
+    }
 }
 
 
@@ -480,7 +596,11 @@ int thread_get_priority (void)
  */
 void thread_set_nice (int nice UNUSED) 
 {
-  /* Not yet implemented. */
+    intr_level old_level = intr_disable();
+    thread_current()->nice = nice;
+    update_thread_priority(thread_current());
+    thread_yield();
+    intr_set_level(old_level);
 }
 
 
@@ -646,6 +766,19 @@ static void init_thread (struct thread *t, const char *name, int priority)
     t->stack = (uint8_t *) t + PGSIZE;
     t->priority = priority;
     t->magic = THREAD_MAGIC;
+    
+    if (thread_mlfqs) {
+        if (t == initial_thread) {
+            //initial thread initialization
+            t->nice = 0;
+            t->recent_cpu = 0;
+        } else {
+            //regular thread init
+            t->nice = thread_current()->nice;
+            t->recent_cpu = thread_current()->recent_cpu;
+        }
+        update_thread_priority(t);
+    }
     
     list_init(&(t->locks_held));
     t->original_priority_info.priority = priority;

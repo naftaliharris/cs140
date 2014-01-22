@@ -111,8 +111,10 @@ struct thread
                                            algorithm easy to read, which we do.*/
       struct lock* lock_waiting_on;     /*LP, The lock this thread is waiting on 
                                          if any */
-    int32_t nice;
+    int nice;
     fp_float recent_cpu;
+      struct list_elem cpu_list_elem;
+      bool cpu_has_changed;
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
