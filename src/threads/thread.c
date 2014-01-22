@@ -161,7 +161,8 @@ void thread_tick (void)
     kernel_ticks++;
 
   /* Enforce preemption. */
-  if (++thread_ticks >= TIME_SLICE)
+    thread_ticks++;
+  if (thread_ticks >= TIME_SLICE)
     intr_yield_on_return (); /*simply sets the boolean yield_on_return to true so 
                               that the current thread will yield the processor */
 }

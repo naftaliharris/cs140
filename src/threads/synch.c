@@ -124,6 +124,8 @@ sema_up (struct semaphore *sema)
     
     if (!intr_context()) { //if not interrupt context, then yield.
         thread_yield();
+    } else {
+        intr_yield_on_return();
     }
     intr_set_level (old_level);
 }
