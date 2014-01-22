@@ -113,6 +113,7 @@ struct thread
                                          if any */
     int nice;
     fp_float recent_cpu;
+      struct lock nice_lock;
       struct list_elem cpu_list_elem;
       bool cpu_has_changed;
 

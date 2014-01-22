@@ -619,11 +619,13 @@ int thread_get_priority (void)
  */
 void thread_set_nice (int nice UNUSED) 
 {
-    enum intr_level old_level = intr_disable();
+    //enum intr_level old_level = intr_disable();
+    lock_acquire(&thread_current()->nice_lock);
     thread_current()->nice = nice;
     update_thread_priority(thread_current());
     thread_yield();
-    intr_set_level(old_level);
+    lock_release(&thread_current()->nice_lock);
+    //intr_set_level(old_level);
 }
 
 
@@ -635,9 +637,12 @@ void thread_set_nice (int nice UNUSED)
  Returns the current thread's nice value. 
  --------------------------------------------------------------------
  */
-int thread_get_nice (void) 
+int thread_get_nice (void)
 {
-    return thread_current()->nice;
+    lock_acquire(&thread_current()->nice_lock);
+    int val = thread_current()->nice;
+    lock_release(&thread_current()->nice_lock);
+    return val;
 }
 
 
@@ -804,6 +809,7 @@ static void init_thread (struct thread *t, const char *name, int priority)
             t->recent_cpu = thread_current()->recent_cpu;
         }
         update_thread_priority(t);
+        lock_init(&t->nice_lock);
     }
     
     list_init(&(t->locks_held));
@@ -1033,6 +1039,9 @@ struct thread* get_highest_priority_thread(struct list* list, bool should_remove
         }
     }
     if (currHighest != NULL && should_remove) list_remove(&(currHighest->elem));
+    if (currHighest->priority == PRI_MAX) {
+        return currHighest;
+    }
     return currHighest;
 }
 
