@@ -162,6 +162,7 @@ static void update_changed_cpu_threads(void) {
     while (true) {
         curr = list_next(curr);
         if (curr == tail) break;
+        ASSERT(curr != NULL);
         struct thread* t = list_entry(curr, struct thread, cpu_list_elem);
         update_thread_priority(t);
         list_remove(&t->cpu_list_elem);
@@ -509,7 +510,13 @@ void thread_exit (void)
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
   intr_disable ();
+    ASSERT(thread_current() != NULL);
   list_remove (&thread_current()->allelem);
+    if (thread_mlfqs) {
+        if (thread_current()->cpu_has_changed) {
+            list_remove(&thread_current()->cpu_list_elem);
+        }
+    }
   thread_current ()->status = THREAD_DYING;
   schedule ();
   NOT_REACHED ();
@@ -639,9 +646,14 @@ int thread_get_nice (void)
  --------------------------------------------------------------------
  */
 int
-thread_get_load_avg (void) 
+thread_get_load_avg (void)
 {
-  return fp_to_int (fp_mul_int (load_average, 100));
+
+    int val = fp_to_int (fp_mul_int (load_average, 100));
+    if (val == 2484) {
+        val = val;
+    }
+  return val;
 }
 
 
@@ -797,8 +809,6 @@ static void init_thread (struct thread *t, const char *name, int priority)
     list_push_front(&(t->locks_held), &(t->original_priority_info.elem));
     t->lock_waiting_on = NULL;
 
-    t->nice = 0;
-    t->recent_cpu = int_to_fp (0);
     
     old_level = intr_disable ();
     list_push_back (&all_list, &t->allelem);
