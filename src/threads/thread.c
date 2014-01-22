@@ -12,6 +12,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "devices/timer.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -80,7 +81,7 @@ static tid_t allocate_tid (void);
 
 static void update_thread_priority(struct thread* t);
 static void update_load_average(void);
-static void update_recent_cpu(struct thread* t);
+static void update_recent_cpu(struct thread* t, fp_float cpu_scale);
 static void update_changed_cpu_threads(void);
 static void update_running_thread_cpu(struct thread* t);
 static void update_cpu_for_all_threads(void);
@@ -138,10 +139,16 @@ static void update_cpu_for_all_threads(void) {
     fp_float cpu_scale = fp_div(numerator, denominator);
     
     struct list_elem* curr = list_head(&all_list);
-    struct list_tail* tail = list_tail(&all_list);
+    struct list_elem* tail = list_tail(&all_list);
     while (true) {
         curr = list_next(curr);
         if (curr == tail) break;
+        struct thread* t = list_entry(curr, struct thread, allelem);
+        update_recent_cpu(t, cpu_scale);
+        if (t->cpu_has_changed == false) {
+            t->cpu_has_changed = true;
+            list_push_back(&cpu_changed_list, &t->cpu_list_elem);
+        }
     }
 }
 
@@ -263,22 +270,27 @@ void thread_tick (void)
   else
     kernel_ticks++;
     
-    //here we update load average and cpu when necessary
-    if (t != idle_thread) {
-        update_running_thread_cpu(thread_current());
-    }
     
-    if (/*check for 1 second */) {
-        //update load average
-        //update cpu for all threads
-        update_cpu_for_all_threads();
+    if (thread_mlfqs) {
+        //here we update load average and cpu when necessary
+        if (t != idle_thread) {
+            update_running_thread_cpu(thread_current());
+        }
+        if (timer_ticks () % TIMER_FREQ == 0) {
+            //update load average
+            //update cpu for all threads
+            update_load_average();
+            update_cpu_for_all_threads();
+        }
     }
     
 
   /* Enforce preemption. */
     if (++thread_ticks >= TIME_SLICE) {
-        //here calculate priority for each thread in cpu_changed_list
-        update_changed_cpu_threads();
+        if (thread_mlfqs) {
+            //here calculate priority for each thread in cpu_changed_list
+            update_changed_cpu_threads();
+        }
          intr_yield_on_return (); 
     }
 }
@@ -596,7 +608,7 @@ int thread_get_priority (void)
  */
 void thread_set_nice (int nice UNUSED) 
 {
-    intr_level old_level = intr_disable();
+    enum intr_level old_level = intr_disable();
     thread_current()->nice = nice;
     update_thread_priority(thread_current());
     thread_yield();
@@ -629,8 +641,7 @@ int thread_get_nice (void)
 int
 thread_get_load_avg (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return fp_to_int (fp_mul_int (load_average, 100));
 }
 
 

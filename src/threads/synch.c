@@ -215,8 +215,10 @@ lock_acquire (struct lock *lock)
     enum intr_level old_level = intr_disable();
     
     if (lock->holder != NULL) {
-        thread_current()->lock_waiting_on = lock;
-        donate_priority();
+        if (!thread_mlfqs) {
+            thread_current()->lock_waiting_on = lock;
+            donate_priority();
+        }
     }
     
     sema_down (&lock->semaphore);
@@ -272,7 +274,9 @@ lock_release (struct lock *lock)
     
     list_remove(&(lock->elem)); //remove from thread_current->locks_held
     lock->priority = PRI_MIN;
-    shed_priority();
+    if (!thread_mlfqs) {
+        shed_priority();
+    }
     lock->holder = NULL;
     sema_up (&lock->semaphore); //contains the thread_yield call.
     intr_set_level(old_level);
