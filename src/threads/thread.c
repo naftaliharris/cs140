@@ -274,7 +274,7 @@ void thread_print_stats (void)
  */
 tid_t thread_create (const char *name, int priority, thread_func *function, void *aux) 
 {
-  struct thread *t;
+  struct thread *t, *parent;
   struct kernel_thread_frame *kf;
   struct switch_entry_frame *ef;
   struct switch_threads_frame *sf;
@@ -290,7 +290,13 @@ tid_t thread_create (const char *name, int priority, thread_func *function, void
   /* Initialize thread. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
-  t->nice = thread_current()->nice;
+
+  if (thread_mlfqs) {
+      parent = thread_current ();
+      t->nice = parent->nice;
+      t->recent_cpu = parent->recent_cpu;
+      t->priority = parent->priority;
+  }
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
