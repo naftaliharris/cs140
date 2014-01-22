@@ -43,6 +43,7 @@ static struct lock tid_lock;
 
 static fp_float load_average;
 static struct list cpu_changed_list;
+static struct lock load_average_lock;
 
 
 /* Stack frame for kernel_thread(). */
@@ -212,6 +213,7 @@ void thread_init (void)
     list_init (&ready_list);
     list_init (&all_list);
     list_init (&cpu_changed_list);
+    lock_init (&load_average_lock);
     load_average = 0;
     
     /* Set up a thread structure for the running thread. */
@@ -283,15 +285,17 @@ void thread_tick (void)
             update_load_average();
             update_cpu_for_all_threads();
         }
+        if (timer_ticks() % 4) {
+            //here calculate priority for each thread in cpu_changed_list
+            update_changed_cpu_threads();
+        }
     }
+    
+    
     
 
   /* Enforce preemption. */
     if (++thread_ticks >= TIME_SLICE) {
-        if (thread_mlfqs) {
-            //here calculate priority for each thread in cpu_changed_list
-            update_changed_cpu_threads();
-        }
          intr_yield_on_return (); 
     }
 }
@@ -649,10 +653,9 @@ int
 thread_get_load_avg (void)
 {
 
+    lock_acquire(&load_average_lock);
     int val = fp_to_int (fp_mul_int (load_average, 100));
-    if (val == 2484) {
-        val = val;
-    }
+    lock_release(&load_average_lock);
   return val;
 }
 
