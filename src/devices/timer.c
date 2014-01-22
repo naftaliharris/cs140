@@ -114,14 +114,25 @@ sleeping_thread_insert_func (const struct list_elem *a,
 void
 timer_sleep (int64_t sleep_ticks) 
 {
+  int64_t start = timer_ticks();
+  
   ASSERT (intr_get_level () == INTR_ON);
   
-  enum intr_level old_level = intr_disable (); // disable interrupts
+  if(sleep_ticks <= 0)
+  {
+    return;
+  }
   
   struct sleeping_thread sleep;
   sema_init(&(sleep.semaphore), 0);
-  sleep.wake_time = timer_ticks() + sleep_ticks;
+  sleep.wake_time = start + sleep_ticks;
   
+  if(sleep.wake_time < timer_ticks())
+  {
+    return;
+  }
+  
+  enum intr_level old_level = intr_disable (); // disable interrupts
   list_insert_ordered(&sleeping_threads_list, &(sleep.elem), sleeping_thread_insert_func, NULL);
   intr_set_level (old_level); // enable interrupts
   
