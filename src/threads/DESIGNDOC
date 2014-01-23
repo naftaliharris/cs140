@@ -95,6 +95,21 @@ Connor Woodson <cwoodson@stanford.edu>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+We inserted nice and recent_cpu fields into each thread struct to keep track
+of these values for each thread.
+
+struct thread
+  {
+    ...
+    int32_t nice;                       /* Nice value for BSD scheduler */
+    fp_float recent_cpu;                /* Recent cpu used for BSD scheduler */
+    ...
+  };
+
+We keep track of the global load average:
+
+static fp_float load_avg;
+
 ---- ALGORITHMS ----
 
 >> C2: Suppose threads A, B, and C have nice values 0, 1, and 2.  Each
@@ -105,23 +120,51 @@ Connor Woodson <cwoodson@stanford.edu>
 timer  recent_cpu    priority   thread
 ticks   A   B   C   A   B   C   to run
 -----  --  --  --  --  --  --   ------
- 0
- 4
- 8
-12
-16
-20
-24
-28
-32
-36
+ 0      0   0   0  63  61  59     A
+ 4      4   0   0  62  61  59     A
+ 8      8   0   0  61  61  59     B
+12      8   4   0  61  60  59     A
+16      12  4   0  60  60  59     B
+20      12  8   0  60  59  59     A
+24      16  8   0  59  59  59     C
+28      16  8   4  59  59  58     B
+32      16  12  4  59  58  58     A
+36      20  12  4  58  58  58     C
 
 >> C3: Did any ambiguities in the scheduler specification make values
 >> in the table uncertain?  If so, what rule did you use to resolve
 >> them?  Does this match the behavior of your scheduler?
 
+Yes: When a thread's priority changes, the spec was unclear as to where in the
+new queue it ought to be placed. Our implementation used just one ready queue,
+and after thread_yield it would place the yielding thread in the back of the
+queue. The resulting behavior is equivalent to having 64 queues and placing a
+thread with a new priority in the back of the queue. This is the same rule we
+applied to the above table.
+
 >> C4: How is the way you divided the cost of scheduling between code
 >> inside and outside interrupt context likely to affect performance?
+
+The code that updates the recent_cpu and priority of the threads occurs in the
+timer interrupt handler. It has to, because it must happen every fixed number of
+ticks. The scheduling logic, however, where we select which thread to run,
+happens outside of an interrupt context.
+
+Every four ticks, we need to adjust the priority for the threads that had their
+recent_cpu adjusted. This has negligible cost, since this could have been
+adjusted for at most four threads, and so the fact that it occurs in an
+interrupt context has no substantial performance cost.
+
+Every second, we must also adjust the recent_cpu and priority of all the
+threads.  This also occurs in the interrupt context, but since it happens only
+once a second, it does not introduce substantial performance loss. We also take
+care to compute relatively efficiently when updating the recent_cpu and
+priority in the timer interrupt; in particular we compute the 2 * load_factor /
+(2 * load_factor + 1) value and use it for all threads.
+
+Since we only use one queue, the scheduler runs in time proportional to the
+number of processes in the READY state. If we had many such processes, this
+could potentially take a while, leading to performance degradation.
 
 ---- RATIONALE ----
 
@@ -129,6 +172,17 @@ ticks   A   B   C   A   B   C   to run
 >> disadvantages in your design choices.  If you were to have extra
 >> time to work on this part of the project, how might you choose to
 >> refine or improve your design?
+
+Having one ready queue instead of 64 is less efficient where there are a large
+number of processes. However, if only the bottom ready queues had threads in
+them, perhaps because all of ready threads had large nice values, then you would
+need to loop through the top ready queue until you found the first non-empty
+queue.
+
+Because of this, if we had extra time we would have implemented the 64
+ready queues, but also included a global max_priority variable, which would
+indicate the largest thready priority, to avoid the above problem with empty
+high-priority queues.
 
 >> C6: The assignment explains arithmetic for fixed-point math in
 >> detail, but it leaves it open to you to implement it.  Why did you
@@ -155,6 +209,9 @@ the quarter.
 >> Is there some particular fact or hint we should give students in
 >> future quarters to help them solve the problems?  Conversely, did you
 >> find any of our guidance to be misleading?
+
+Yes! Some of our tests failed with jitter. We debugged them for hours until we
+figured out that the bugs were actually in the tests, not our code.
 
 >> Do you have any suggestions for the TAs to more effectively assist
 >> students, either for future quarters or the remaining projects?
