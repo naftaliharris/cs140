@@ -284,8 +284,7 @@ void thread_tick (void)
             update_load_average();
             update_cpu_for_all_threads();
             update_changed_cpu_threads();
-        }
-        if (timer_ticks() % 4) {
+        } else if (timer_ticks() % 4) {
             update_changed_cpu_threads();
         }
     }
