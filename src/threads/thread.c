@@ -807,14 +807,13 @@ static void init_thread (struct thread *t, const char *name, int priority)
         }
         update_thread_priority(t);
         lock_init(&t->nice_lock);
+    } else {
+        list_init(&(t->locks_held));
+        t->original_priority_info.priority = priority;
+        t->original_priority_info.holder = NULL; //indicates orig priority package.
+        list_push_front(&(t->locks_held), &(t->original_priority_info.elem));
+        t->lock_waiting_on = NULL;
     }
-    
-    list_init(&(t->locks_held));
-    t->original_priority_info.priority = priority;
-    t->original_priority_info.holder = NULL; //indicates orig priority package.
-    list_push_front(&(t->locks_held), &(t->original_priority_info.elem));
-    t->lock_waiting_on = NULL;
-
     
     old_level = intr_disable ();
     list_push_back (&all_list, &t->allelem);
