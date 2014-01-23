@@ -164,7 +164,6 @@ static void update_changed_cpu_threads(void) {
     while (true) {
         curr = list_next(curr);
         if (curr == tail) break;
-        //ASSERT(curr != NULL);
         struct thread* t = list_entry(curr, struct thread, cpu_list_elem);
         update_thread_priority(t);
         list_remove(&t->cpu_list_elem);
@@ -355,7 +354,6 @@ tid_t thread_create (const char *name, int priority, thread_func *function, void
   /* Initialize thread. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
-  t->nice = thread_current()->nice;
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
@@ -419,19 +417,19 @@ void thread_block (void)
    update other data. 
  --------------------------------------------------------------------
  */
-void thread_unblock (struct thread *t) 
+void thread_unblock (struct thread *t)
 {
-  enum intr_level old_level;
-
-  ASSERT (is_thread (t));
-
-  old_level = intr_disable ();
-  ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
-  t->status = THREAD_READY;
+    enum intr_level old_level;
+    
+    ASSERT (is_thread (t));
+    
+    old_level = intr_disable ();
+    ASSERT (t->status == THREAD_BLOCKED);
+    list_push_back (&ready_list, &t->elem);
+    t->status = THREAD_READY;
     if (old_level == INTR_ON && t->priority > thread_current()->priority) {
         thread_yield();
-    } //might be able to remove this and call thread_yield on my own after call to thread_unblock in sema_up and thread_create, which are only places function gets called. 
+    }
     intr_set_level (old_level);
 }
 
@@ -582,6 +580,7 @@ void thread_foreach (thread_action_func *func, void *aux)
  */
 void thread_set_priority (int new_priority) 
 {
+    ASSERT(!thread_mlfqs);
     if (intr_context()) {
         thread_current ()->original_priority_info.priority = new_priority;
         shed_priority();
@@ -617,11 +616,9 @@ int thread_get_priority (void)
 void thread_set_nice (int nice UNUSED) 
 {
     enum intr_level old_level = intr_disable();
-    //lock_acquire(&thread_current()->nice_lock);
     thread_current()->nice = nice;
     update_thread_priority(thread_current());
     thread_yield();
-    //lock_release(&thread_current()->nice_lock);
     intr_set_level(old_level);
 }
 
@@ -636,10 +633,7 @@ void thread_set_nice (int nice UNUSED)
  */
 int thread_get_nice (void)
 {
-    //lock_acquire(&thread_current()->nice_lock);
-    int val = thread_current()->nice;
-    //lock_release(&thread_current()->nice_lock);
-    return val;
+    return thread_current()->nice;;
 }
 
 
@@ -654,11 +648,7 @@ int thread_get_nice (void)
 int
 thread_get_load_avg (void)
 {
-
-    //lock_acquire(&load_average_lock);
-    int val = fp_to_int (fp_mul_int (load_average, 100));
-    //lock_release(&load_average_lock);
-  return val;
+    return fp_to_int (fp_mul_int (load_average, 100));
 }
 
 
