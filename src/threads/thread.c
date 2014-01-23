@@ -252,49 +252,55 @@ void thread_start (void)
 
 
 
-/* 
+/*
  Function: thread_tick
  --------------------------------------------------------------------
-   Called by the timer interrupt handler at each timer tick.
-   Thus, this function runs in an external interrupt context.
+ Called by the timer interrupt handler at each timer tick.
+ Thus, this function runs in an external interrupt context.
  --------------------------------------------------------------------
  */
-void thread_tick (void) 
+void thread_tick (void)
 {
-  struct thread *t = thread_current ();
-
-  /* Update statistics. */
+    struct thread *t = thread_current ();
+    int64_t ticks = timer_ticks();
+    
+    /* Update statistics. */
     if (t == idle_thread) {
         idle_ticks++;
         intr_yield_on_return();
     }
 #ifdef USERPROG
-  else if (t->pagedir != NULL)
-    user_ticks++;
+    else if (t->pagedir != NULL)
+        user_ticks++;
 #endif
-  else
-    kernel_ticks++;
+    else
+        kernel_ticks++;
     
     
     if (thread_mlfqs) {
         if (t != idle_thread) {
-            update_running_thread_cpu(t);
+            t->recent_cpu = fp_add_int(t->recent_cpu, 1);
+            if (t->cpu_has_changed == false) {
+                t->cpu_has_changed = true;
+                list_push_back(&cpu_changed_list, &t->cpu_list_elem);
+            }
         }
-        if (timer_ticks () % TIMER_FREQ == 0) {
+        if (ticks % TIMER_FREQ == 0) {
             update_load_average();
             update_cpu_for_all_threads();
-            update_changed_cpu_threads();
-        } else if (timer_ticks() % 4) {
+            //update_changed_cpu_threads();
+        }
+        if (ticks % 4) {
             update_changed_cpu_threads();
         }
     }
     
     
     
-
-  /* Enforce preemption. */
+    
+    /* Enforce preemption. */
     if (++thread_ticks >= TIME_SLICE) {
-         intr_yield_on_return (); 
+        intr_yield_on_return ();
     }
 }
 
