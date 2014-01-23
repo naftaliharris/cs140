@@ -278,7 +278,7 @@ void thread_tick (void)
     
     if (thread_mlfqs) {
         if (t != idle_thread) {
-            update_running_thread_cpu(thread_current());
+            update_running_thread_cpu(t);
         }
         if (timer_ticks () % TIMER_FREQ == 0) {
             update_load_average();
@@ -645,7 +645,7 @@ void thread_set_nice (int nice UNUSED)
  */
 int thread_get_nice (void)
 {
-    return thread_current()->nice;;
+    return thread_current()->nice;
 }
 
 
