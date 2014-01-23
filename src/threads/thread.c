@@ -46,6 +46,7 @@ static struct list cpu_changed_list;
 static struct lock load_average_lock;
 
 
+
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame 
   {
@@ -93,8 +94,8 @@ static void update_cpu_for_all_threads(void);
  Use the single list so no need to change queues.
  */
 static void update_thread_priority(struct thread* t) {
-    int middle_term = fp_to_int(fp_div_int(t->recent_cpu, 4));
-    int new_priority = PRI_MAX - middle_term - (t->nice * 2);
+    //int middle_term = fp_to_int(fp_div_int(t->recent_cpu, 4));
+    int new_priority = PRI_MAX - fp_to_int(fp_div_int(t->recent_cpu, 4)) - (t->nice * 2);
     if (new_priority > PRI_MAX) {
         new_priority = PRI_MAX;
     }
@@ -109,16 +110,16 @@ static void update_thread_priority(struct thread* t) {
  Updates the load average
  */
 static void update_load_average(void) {
-    fp_float lhs_scale = fp_div(int_to_fp(59), int_to_fp(60));
-    fp_float lhs = fp_mul(load_average, lhs_scale);
+    //fp_float lhs_scale = fp_div(int_to_fp(59), int_to_fp(60));
+    //fp_float lhs = fp_mul(load_average, fp_div(int_to_fp(59), int_to_fp(60)));
     
-    fp_float rhs_scale = fp_div(int_to_fp(1), int_to_fp(60));
+    //fp_float rhs_scale = fp_div(int_to_fp(1), int_to_fp(60));
     int num_ready_threads = list_size(&ready_list);
     if (thread_current() != idle_thread) {
         num_ready_threads++;
     }
-    fp_float rhs = fp_mul_int(rhs_scale, num_ready_threads);
-    load_average = fp_add(lhs, rhs);
+    //fp_float rhs = fp_mul_int(fp_div(int_to_fp(1), int_to_fp(60)), num_ready_threads);
+    load_average = fp_add(fp_mul(load_average, fp_div(int_to_fp(59), int_to_fp(60))), fp_mul_int(fp_div(int_to_fp(1), int_to_fp(60)), num_ready_threads));
 }
 
 
@@ -126,8 +127,8 @@ static void update_load_average(void) {
  updates the recent_cpu value for a thread
  */
 static void update_recent_cpu(struct thread* t, fp_float cpu_scale) {
-    fp_float lhs = fp_mul(cpu_scale, t->recent_cpu);
-    t->recent_cpu = fp_add_int(lhs, t->nice);
+    //fp_float lhs = fp_mul(cpu_scale, t->recent_cpu);
+    t->recent_cpu = fp_add_int(fp_mul(cpu_scale, t->recent_cpu), t->nice);
 }
 
 
@@ -136,8 +137,8 @@ static void update_recent_cpu(struct thread* t, fp_float cpu_scale) {
  */
 static void update_cpu_for_all_threads(void) {
     fp_float numerator = fp_mul_int(load_average, 2);
-    fp_float denominator = fp_add_int(numerator, 1);
-    fp_float cpu_scale = fp_div(numerator, denominator);
+    //fp_float denominator = fp_add_int(numerator, 1);
+    fp_float cpu_scale = fp_div(numerator, fp_add_int(numerator, 1));
     
     struct list_elem* curr = list_head(&all_list);
     struct list_elem* tail = list_tail(&all_list);
@@ -163,7 +164,7 @@ static void update_changed_cpu_threads(void) {
     while (true) {
         curr = list_next(curr);
         if (curr == tail) break;
-        ASSERT(curr != NULL);
+        //ASSERT(curr != NULL);
         struct thread* t = list_entry(curr, struct thread, cpu_list_elem);
         update_thread_priority(t);
         list_remove(&t->cpu_list_elem);
@@ -275,18 +276,15 @@ void thread_tick (void)
     
     
     if (thread_mlfqs) {
-        //here we update load average and cpu when necessary
         if (t != idle_thread) {
             update_running_thread_cpu(thread_current());
         }
         if (timer_ticks () % TIMER_FREQ == 0) {
-            //update load average
-            //update cpu for all threads
             update_load_average();
             update_cpu_for_all_threads();
+            update_changed_cpu_threads();
         }
         if (timer_ticks() % 4) {
-            //here calculate priority for each thread in cpu_changed_list
             update_changed_cpu_threads();
         }
     }
@@ -400,7 +398,6 @@ void thread_block (void)
 {
   ASSERT (!intr_context ());
   ASSERT (intr_get_level () == INTR_OFF);
-
   thread_current ()->status = THREAD_BLOCKED;
   schedule ();
 }
@@ -619,13 +616,13 @@ int thread_get_priority (void)
  */
 void thread_set_nice (int nice UNUSED) 
 {
-    //enum intr_level old_level = intr_disable();
-    lock_acquire(&thread_current()->nice_lock);
+    enum intr_level old_level = intr_disable();
+    //lock_acquire(&thread_current()->nice_lock);
     thread_current()->nice = nice;
     update_thread_priority(thread_current());
     thread_yield();
-    lock_release(&thread_current()->nice_lock);
-    //intr_set_level(old_level);
+    //lock_release(&thread_current()->nice_lock);
+    intr_set_level(old_level);
 }
 
 
@@ -639,9 +636,9 @@ void thread_set_nice (int nice UNUSED)
  */
 int thread_get_nice (void)
 {
-    lock_acquire(&thread_current()->nice_lock);
+    //lock_acquire(&thread_current()->nice_lock);
     int val = thread_current()->nice;
-    lock_release(&thread_current()->nice_lock);
+    //lock_release(&thread_current()->nice_lock);
     return val;
 }
 
@@ -658,9 +655,9 @@ int
 thread_get_load_avg (void)
 {
 
-    lock_acquire(&load_average_lock);
+    //lock_acquire(&load_average_lock);
     int val = fp_to_int (fp_mul_int (load_average, 100));
-    lock_release(&load_average_lock);
+    //lock_release(&load_average_lock);
   return val;
 }
 
