@@ -264,8 +264,10 @@ void thread_tick (void)
   struct thread *t = thread_current ();
 
   /* Update statistics. */
-  if (t == idle_thread)
-    idle_ticks++;
+    if (t == idle_thread) {
+        idle_ticks++;
+        intr_yield_on_return();
+    }
 #ifdef USERPROG
   else if (t->pagedir != NULL)
     user_ticks++;
@@ -615,10 +617,21 @@ int thread_get_priority (void)
  */
 void thread_set_nice (int nice UNUSED) 
 {
+    struct thread* curr = thread_current();
     enum intr_level old_level = intr_disable();
-    thread_current()->nice = nice;
-    update_thread_priority(thread_current());
-    thread_yield();
+    if (nice > 20) {
+        nice = 20;
+    } else if (nice < -20) {
+        nice = -20;
+    }
+    curr->nice = nice;
+    update_thread_priority(curr);
+    struct thread* highest_priority = get_highest_priority_thread(&ready_list, false);
+    if (highest_priority != NULL) {
+        if (curr->priority < highest_priority->priority) {
+            thread_yield();
+        }
+    }
     intr_set_level(old_level);
 }
 
@@ -649,6 +662,7 @@ int
 thread_get_load_avg (void)
 {
     return fp_to_int (fp_mul_int (load_average, 100));
+    
 }
 
 
@@ -796,7 +810,6 @@ static void init_thread (struct thread *t, const char *name, int priority)
             t->recent_cpu = thread_current()->recent_cpu;
         }
         update_thread_priority(t);
-        lock_init(&t->nice_lock);
     } else {
         list_init(&(t->locks_held));
         t->original_priority_info.priority = priority;
@@ -1023,11 +1036,9 @@ struct thread* get_highest_priority_thread(struct list* list, bool should_remove
         if (currThread->priority > currHighest->priority) {
             currHighest = currThread;
         }
+        if (currHighest->priority == PRI_MAX) break;
     }
     if (currHighest != NULL && should_remove) list_remove(&(currHighest->elem));
-    if (currHighest->priority == PRI_MAX) {
-        return currHighest;
-    }
     return currHighest;
 }
 
