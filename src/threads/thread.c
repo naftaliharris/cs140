@@ -817,7 +817,7 @@ static void init_thread (struct thread *t, const char *name, int priority)
     t->magic = THREAD_MAGIC;
     
     if (thread_mlfqs) {
-        if (t == initial_thread) {
+        if (t == initial_thread) { //special inittial_thread init
             t->nice = 0;
             t->recent_cpu = 0;
         } else {
@@ -839,10 +839,6 @@ static void init_thread (struct thread *t, const char *name, int priority)
     intr_set_level (old_level);
 }
 
-
-
-
-
 /* 
  --------------------------------------------------------------------
  Allocates a SIZE-byte frame at the top of thread T's stack and
@@ -861,8 +857,6 @@ static void * alloc_frame (struct thread *t, size_t size)
 
 
 
-
-
 /* 
  --------------------------------------------------------------------
  Chooses and returns the next thread to be scheduled.  Should
@@ -870,6 +864,19 @@ static void * alloc_frame (struct thread *t, size_t size)
    empty.  (If the running thread can continue running, then it
    will be in the run queue.)  If the run queue is empty, return
    idle_thread. 
+ NOTE: In order to keep the code clean and simple, we used the same
+    ready list for both priority donation and the bsd_scheduler. 
+ NOTE: There are several methods of keeping this list. One way to do
+    it is to order the list at all times, so that list_pop_front
+    always returns the highest priority thread. The advantage to 
+    this approach is that it is very fast to remove elements. The 
+    downside is that the whenver thread priorities change or when 
+    a thread gets added to the list, it has to be updated, and 
+    re-ordered. The second method of keeping the list is to leave it
+    in any state, and then search for the next thread to run when
+    necessary. The advantage of this approach is that list insertion
+    and priority re-ordering is hastle free and very fast. The downside
+    is that getting the next thread requires a search. 
  --------------------------------------------------------------------
  */
 static struct thread * next_thread_to_run (void) 
@@ -883,11 +890,6 @@ static struct thread * next_thread_to_run (void)
         return next_thread;
     }
 }
-
-
-
-
-
 
 /* 
  --------------------------------------------------------------------
@@ -938,10 +940,6 @@ void thread_schedule_tail (struct thread *prev)
     }
 }
 
-
-
-
-
 /* 
  --------------------------------------------------------------------
  Schedules a new process.  At entry, interrupts must be off and
@@ -968,10 +966,6 @@ static void schedule (void)
   thread_schedule_tail (prev);
 }
 
-
-
-
-
 /* 
  --------------------------------------------------------------------
  Returns a tid to use for a new thread. 
@@ -989,15 +983,28 @@ static tid_t allocate_tid (void)
   return tid;
 }
 
-
 /*
  --------------------------------------------------------------------
- LP: Donate priority function. Note, because this function is only
- called from sema_down, and sema_down disables interrupts, we do not
- have to do it here as well. 
+ LP Description: Donate priority function. A thread the is aquiring
+    a locked lock will donate its priority to the lock-holder. 
+    Then, this donated priority will propogate up to the thread that
+    is not locked by following the struct lock* lock_waiting_on
+    field within each struct. If this field is NULL, we can end 
+    priority donation
+ Note, because this function is only
+    called from sema_down, and sema_down disables interrupts, we do not
+    have to do it here as well. 
+ NOTE: As mentioned in the design doc, we cannot use a lock or a 
+    semaphore here, because we do not know if a thread's priority
+    field will be accessed by an interrupt handler, and interrupt
+    handlers cannot aquire locks/semaphores...Thus, our only
+    concurreny option is to disable interrupts, which happens
+    in the lock_aquire, which is the only placed this function is 
+    called. 
  --------------------------------------------------------------------
  */
 void donate_priority(void) {
+    ASSERT(intr_get_level() == INTR_OFF);
     struct thread* currThread = thread_current();
     while (currThread->lock_waiting_on != NULL) {
         struct lock* currLock = currThread->lock_waiting_on;
@@ -1013,13 +1020,23 @@ void donate_priority(void) {
 
 /*
  --------------------------------------------------------------------
- LP: Final steps to release a lock and remove any donated
- priority associated with the lock. 
+ LP Description: Final steps to release a lock and remove any donated
+    priority associated with the lock. 
+ NOTE: this function is only called from lock_release, which disables
+    interrupts as required, for the same reasons mentioned in the 
+    comment above. 
+ NOTE: by design, at thread creation, each thread is given a dummy
+    lock, which holds the thread's original priority. Thus dummy
+    lock is always an element of the threads locks_held list, and thus
+    will restore the thread back to its oringinal priority once
+    the thread has released all of its locks that it is holding. 
  --------------------------------------------------------------------
  */
 void shed_priority() {
-    struct list_elem* curr = list_head(&(thread_current()->locks_held));
-    struct list_elem* tail = list_tail(&(thread_current()->locks_held));
+    ASSERT(intr_get_level() == INTR_OFF);
+    struct thread* curr_t = thread_current();
+    struct list_elem* curr = list_head(&(curr_t->locks_held));
+    struct list_elem* tail = list_tail(&(curr_t->locks_held));
     int highest_remaining_priority = PRI_MIN;
     while (true) {
         curr = list_next(curr);
@@ -1029,7 +1046,7 @@ void shed_priority() {
             highest_remaining_priority = currLock->priority;
         }
     }
-    thread_current()->priority = highest_remaining_priority;
+    curr_t->priority = highest_remaining_priority;
 }
 
 
