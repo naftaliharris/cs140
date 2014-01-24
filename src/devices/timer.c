@@ -42,14 +42,14 @@ struct sleeping_thread {
 };
 
 /* A list of sleeping threads */
-static struct list sleeping_threads;
+static struct list sleeping_threads_list;
 
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
 void
 timer_init (void) 
 {
-  list_init(&sleeping_threads);
+  list_init(&sleeping_threads_list);
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
 }
@@ -100,16 +100,20 @@ timer_elapsed (int64_t then)
 }
 
 /*
-  TRUE: a < b
-  FALSE: a >= b
+  List_Insert_Ordered comparator function
+  Compares two struct sleeping_thread's by their wake_time
+  TRUE: a < b : a wakes earlier
+  FALSE: a >= b : b wakes earlier (or at same time)
  */
 bool
 sleeping_thread_insert_func (const struct list_elem *a,
                              const struct list_elem *b,
                              void *aux UNUSED)
 {
-  struct sleeping_thread *a_st = list_entry (a, struct sleeping_thread, elem);
-  struct sleeping_thread *b_st = list_entry (b, struct sleeping_thread, elem);
+  struct sleeping_thread *a_st =
+      list_entry (a, struct sleeping_thread, elem);
+  struct sleeping_thread *b_st =
+      list_entry (b, struct sleeping_thread, elem);
   return a_st->wake_time < b_st->wake_time;
 }
 
@@ -133,18 +137,32 @@ sleeping_thread_insert_func (const struct list_elem *a,
  --------------------------------------------------------------------
  */
 void
-timer_sleep (int64_t ticks) 
+timer_sleep (int64_t sleep_ticks) 
 {
-  int64_t wake_time = timer_ticks () + ticks;
+  int64_t start = timer_ticks();
   
   ASSERT (intr_get_level () == INTR_ON);
   
+  // Return if we don't need to sleep
+  if(sleep_ticks <= 0)
+  {
+    return;
+  }
+  
   struct sleeping_thread sleep;
   sema_init(&(sleep.semaphore), 0);
-  sleep.wake_time = wake_time;
-
+  sleep.wake_time = start + sleep_ticks;
+  
+  // Slightly redundant, but one final check
+  // to see if we can avoid sleeping
+  if(sleep.wake_time <= timer_ticks())
+  {
+    return;
+  }
+  
   enum intr_level old_level = intr_disable (); // disable interrupts
-  list_insert_ordered(&sleeping_threads, &(sleep.elem), sleeping_thread_insert_func, NULL);
+  list_insert_ordered(&sleeping_threads_list, &(sleep.elem),
+      sleeping_thread_insert_func, NULL);
   intr_set_level (old_level); // enable interrupts
   
   sema_down(&(sleep.semaphore));
@@ -220,24 +238,31 @@ timer_print_stats (void)
   printf ("Timer: %"PRId64" ticks\n", timer_ticks ());
 }
 
-/* Timer interrupt handler. */
+/* Timer interrupt handler.
+   Increase global count of ticks, calls thread_tick() to
+   run thread-specific code
+   Grabs the first sleeping thread - if it should wake up,
+   do so and repeat.
+   Else, push it back on top of list and break
+ */
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
   thread_tick ();
-  int64_t cur_time = timer_ticks();
-  while(!list_empty(&sleeping_threads))
+  barrier();
+  while(!list_empty(&sleeping_threads_list))
   {
-    struct list_elem *e = list_pop_front(&sleeping_threads);
-    struct sleeping_thread *st = list_entry (e, struct sleeping_thread, elem);
-    if(st->wake_time <= cur_time)
+    struct list_elem *e = list_pop_front(&sleeping_threads_list);
+    struct sleeping_thread *st =
+        list_entry (e, struct sleeping_thread, elem);
+    if(st->wake_time <= ticks)
     {
       sema_up(&(st->semaphore));
     }
     else
     {
-      list_push_front(&sleeping_threads, e);
+      list_push_front(&sleeping_threads_list, e);
       break;
     }
   }
