@@ -45,6 +45,9 @@ static fp_float load_average;
 /* LP A list of threads who's recent_cpu value has changed */
 static struct list cpu_changed_list;
 
+/* Allows us to coordinate thread updating outside of interrupt context */
+static bool should_update_thread_priorities;
+
 
 
 
@@ -133,7 +136,10 @@ static void update_load_average(void) {
     if (thread_current() != idle_thread) {
         num_ready_threads++;
     }
-    load_average = fp_add(fp_mul(load_average, fp_div(int_to_fp(59), int_to_fp(60))), fp_mul_int(fp_div(int_to_fp(1), int_to_fp(60)), num_ready_threads));
+    load_average = fp_add(fp_mul(load_average,
+                                 fp_div(int_to_fp(59), int_to_fp(60))),
+                          fp_mul_int(fp_div(int_to_fp(1), int_to_fp(60)),
+                                     num_ready_threads));
 }
 
 
@@ -223,7 +229,6 @@ UNUSED static void update_running_thread_cpu(struct thread* t) {
         list_push_back(&cpu_changed_list, &t->cpu_list_elem);
     }
 }
-
 
 /* 
  --------------------------------------------------------------------
@@ -328,7 +333,7 @@ void thread_tick (void)
             update_cpu_for_all_threads();
         }
         if (ticks % 4) {
-            update_changed_cpu_threads();
+            should_update_thread_priorities = true;
         }
     }
     /* Enforce preemption. */
@@ -951,19 +956,25 @@ void thread_schedule_tail (struct thread *prev)
    has completed. 
  --------------------------------------------------------------------
  */
-static void schedule (void) 
+static void schedule (void)
 {
-  struct thread *cur = running_thread ();
-  struct thread *next = next_thread_to_run ();
-  struct thread *prev = NULL;
-
-  ASSERT (intr_get_level () == INTR_OFF);
-  ASSERT (cur->status != THREAD_RUNNING);
-  ASSERT (is_thread (next));
-
-  if (cur != next)
-    prev = switch_threads (cur, next);
-  thread_schedule_tail (prev);
+    if (thread_mlfqs) {
+        if (should_update_thread_priorities) {
+            should_update_thread_priorities = false;
+            update_changed_cpu_threads();
+        }
+    }
+    struct thread *cur = running_thread ();
+    struct thread *next = next_thread_to_run ();
+    struct thread *prev = NULL;
+    
+    ASSERT (intr_get_level () == INTR_OFF);
+    ASSERT (cur->status != THREAD_RUNNING);
+    ASSERT (is_thread (next));
+    
+    if (cur != next)
+        prev = switch_threads (cur, next);
+    thread_schedule_tail (prev);
 }
 
 /* 

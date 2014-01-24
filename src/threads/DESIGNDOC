@@ -320,11 +320,57 @@ contained in thread.c, where the bulk of the donation process takes place.
 >> B3: How do you ensure that the highest priority thread waiting for
 >> a lock, semaphore, or condition variable wakes up first?
 
+In every location where we need to return the highest priority thread from a 
+list of threads, we use the function:
+
+struct thread* get_highest_priority_thread(struct list*, bool should_remove);
+
+For a complete description of the function, please consult the comments in thread.c.
+
+Our design is as follows: When a thread is added to a list, it is always inserted at the
+back. get_highest_priority_thread begins its search at the front of the list, thus 
+ensuring round Robin scheduling of same priority threads.
+
+Every list of threads is not ordered. The reason for this is that thread priority is
+volatile due to priority donation and bad which we will address in the subsequent section. 
+Thus, to keep the list ordered, we would have to constantly reorder on list insertion, 
+and in all places where priority changes. 
+
+To avoid this, we allow the list to be without order, thus allowing insertion to take place in constant time. We do require O(n) in list removal in the worst case, however, 
+this is better than sorting as, insertion would require time to insert the swapped thread on each thread yield. Indeed, we implemented both versions in our testing, and found 
+that list sorting was indeed slower than the method we currently employ, in which list
+order is not tracked, and a linear search of the list at list removal ensures highest priority thread is removed. 
+
+We also ensure that race conditions would not interrupt the execution of get_highest_priority_thread by disabling interrupts in the function. This ensures the linear search will not be corrupted by a preemption allowing possibility of thread priority changing, and for the non-highest priority thread to be returned. Note, in order to accomplish this, we have to disable interrupts, as this function is called from timer interrupt handler (in waking threads for example), and interrupt handlers cannot acquire locks, semaphores…
+
 >> B4: Describe the sequence of events when a call to lock_acquire()
 >> causes a priority donation.  How is nested donation handled?
 
+Thread A is running as it is the highest priority thread. Thread A tries to acquire lock1. Lock1 is held by Thread B. 
+
+When thread A calls lock-acquire, it checks the lock->holder field in the lock it is trying to acquire. If this field is non-null, than thread A knows the lock is currently held, and it must donate priority. It then donates priority via the algorithm described above, and in the code 
+void donate_priority(void)
+
+Essentially, Thread A will follow pointer to lock1->holder, and update lock1->priority and lock1->holder->priority to thread A's priority. Then, A will check lock1->holder->waiting_on. If non -null, the donated priority from A to B propagates to the lock and thread B is waiting in the same manner. Process ends when a lock_waiting_on field is null. 
+
+This process is also diagramed in the diagram for part B3. 
+
+Nested donation is achieved via the lock_waiting_on pointer in each thread. This allows us to access the thread and lock that a given thread is waiting on, and thus create a chain from one acquiring thread to the thread that is currently not blocked, to which we need to donate to in a nested fashion. 
+
+Once lock1 is released, thread A acquires it and adds the lock1 to its list of locks held. 
+
 >> B5: Describe the sequence of events when lock_release() is called
 >> on a lock that a higher-priority thread is waiting for.
+
+Carrying over the example from above, this is the process in which thread B would release lock1. 
+1. remove lock1 from the list of locks held by thread B.
+2. restore the lock1->priority to PRI_MIN so that priority donation can resume from scratch for next lock that acquires lock1. 
+3. Call shed priority. Having previously released lock1, thread B now must assume either the highest remaining priority donated for the remaining locks it currently holds, or restore its original priority, contained in the dummy lock that every thread gets on thread_create. 
+4. set lock1->holder to null. 
+5. Then sema_up the semaphore in the lock to signal the highest thread waiting on the lock. The sema_up code calls get_highest_prioty, and unblocks the thread returned. In this case, it would be thread A. 
+6. From the problem description, thread A is a higher priority thread, and thus it runs. It now acquires lock1, adds it to its list of locks_held, and continues with its execution. 
+7. Thread B is in the ready_list but does not run unless it receives a priority donation and is scheduled at next call to schedule, or thread A exits and B is the next highest priority thread. 
+
 
 ---- SYNCHRONIZATION ----
 
@@ -332,10 +378,29 @@ contained in thread.c, where the bulk of the donation process takes place.
 >> how your implementation avoids it.  Can you use a lock to avoid
 >> this race?
 
+One potential race condition that could occur is as follows: a thread is trying to set its priority, it gets preempted mid execution, a new thread runs, that donates its priority to the preempted thread. the preempted thread then runs and finishes setting its priority, thus overriding the donation. For example, consider the following: 
+
+Thread A and thread B both have priority 7. Thread A is currently running and thread B is next in the ready_list. Thread A calls set_thread_priority(5), but gets preempted before it can update its priority info. Thread B then gets scheduled due to round robbin of same priority threads, and blocks on a lock that A holds. Thus B donates priority to A of 7. A then runs, and completes its run of set_thread_priorty, thus lowering its priority back to 5. 
+
+Our implementation avoids this by only allowing thread_set_priority to update the dummy lock which contains the threads base priority, and then calling shed priority, which sets the threads actual operating priority to be the highest priority among its locks held and its dummy base priority lock. Essentialy, by segmenting the priorities into locks, donation only updates the priority for the lock, and set_priority for the dummy lock of base. Then, shed priory picks the highest from among the donated and base priority. 
+
+
+In general, we cannot use locks to protect thread priority, because thread priority is accessed in the timer interrupt handler, and interrupt handlers cannot acquire locks, semaphores… Specifically, when timer_interrupt handler wakes up sleeping threads, it signals a semaphore, which in turn checks thread priority for the list of its waiters to ensure the highest priority gets awoken first. If we were to protect priority with a lock, we would need to acquire it here, which we cannot do in an interrupt handler. Therefore, our only option is to disable interrupts. 
+
 ---- RATIONALE ----
 
 >> B7: Why did you choose this design?  In what ways is it superior to
 >> another design you considered?
+
+We chose this design for priority donation scheduling because it minimized the amount of in thread data structures, thus allowing for a big stack space, and also was the fastest of the options we considered. 
+
+Another alternative we considered was keeping the list of ready_threads ordered at all times. In a system in which thread priority does not change much, this design might be a good approach as list_order would not have to be invoked often, and list insertion could be made using efficient insertion algorithms based on the order structure. 
+
+However, given the priority donation system of this design we are required to use, the changing priorities make for list_ordering a common occurrence. Therefore, it would be more costly to keep the list ordered given the frequency with which priority changes occur. (We tested both systems performance for the given tests, and found our current approach of non-ordered lists to be faster than keeping order). Thus, keeping the list in un-ordered fashion and searching the highest priority was a better design than ordering because it was faster in the given environment of priority donation. 
+
+Another reason we chose this design is because it allows us to take advantage of existing data structures instead of creating new ones. For example, we were considering creating a struct for a donated priory and a received priority, and keeping a list of each in each thread so as to allow for donation undoing and nested donation. However, we then realized that the lock had a holder field which would allow us to accomplish nesting, and also realized that at all times a thread can wait on exactly one lock, which reduced the list of priority donated out structs to a simple pointer to a lock waiting on. 
+
+Finally, we considered adding a baseline priority field and an effective priority field to  the threads. This would allow us to resort to the baseline priority when all donated priorities had been released. However, this would have added several conditional checks to the code in shed priority, which would have slowed execution for a non-program-work task (i.e. internal to the system management). Thus, we opted to create the baseline dummy lock and add it to the list of locks held. This allowed us to treat the baseline priority as a if it were a donated priority, thus reducing the shed priority process to simply picking the highest value from a list of values, (list of locks held). 
 
 			  ADVANCED SCHEDULER
 			  ==================
@@ -347,19 +412,45 @@ contained in thread.c, where the bulk of the donation process takes place.
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
 We inserted nice and recent_cpu fields into each thread struct to keep track
-of these values for each thread.
+of these values for each thread. We also added list_elem cpu_list_elem and bool cpu_has_changed. the list allows the thread to be placed in a list of threads to update priority for. The boolean allows us to only add a thread once. For example, in one time slice, a thread's recent cpu is updated 4 times, yet we add it to the list once. 
 
 struct thread
   {
     ...
-    int32_t nice;                       /* Nice value for BSD scheduler */
-    fp_float recent_cpu;                /* Recent cpu used for BSD scheduler */
+  /* threads nice value. For bsd_scheduler */
+    int nice;
+    
+    /* Thread's recent cpu. For the bsd_scheduler */
+    fp_float recent_cpu;
+    
+    /* Allows this thread to be placed in a list of threads who's */
+    /* recent cpu value has changed */
+    struct list_elem cpu_list_elem;
+    
+    /* True if the threads recent_cpu has changed and the thread */
+    /* has not been updated yet */
+    bool cpu_has_changed;
     ...
   };
+
+
 
 We keep track of the global load average:
 
 static fp_float load_avg;
+
+
+/* Allows us to coordinate thread updating outside of interrupt context */
+static bool should_update_thread_priorities;
+
+Purpose: move code to update thread priority out of being called in the interrupt handler. 
+
+
+
+/* LP A list of threads who's recent_cpu value has changed */
+static struct list cpu_changed_list;
+
+Purpose: used to track the threads who's recent cpu has changed, thus necessitating a priority update. 
 
 ---- ALGORITHMS ----
 
@@ -402,9 +493,7 @@ ticks. The scheduling logic, however, where we select which thread to run,
 happens outside of an interrupt context.
 
 Every four ticks, we need to adjust the priority for the threads that had their
-recent_cpu adjusted. This has negligible cost, since this could have been
-adjusted for at most four threads, and so the fact that it occurs in an
-interrupt context has no substantial performance cost.
+recent_cpu adjusted. This check has to happen in the timer interrupt handler, however, the calculation of the new priority can happen outside of the interrupt handler. This reduces the amount of code that has to execute in the timer interrupt handler, which reduces the chance we miss a tick. 
 
 Every second, we must also adjust the recent_cpu and priority of all the
 threads.  This also occurs in the interrupt context, but since it happens only
@@ -428,12 +517,17 @@ Having one ready queue instead of 64 is less efficient where there are a large
 number of processes. However, if only the bottom ready queues had threads in
 them, perhaps because all of ready threads had large nice values, then you would
 need to loop through the top ready queue until you found the first non-empty
-queue.
+queue. 
 
 Because of this, if we had extra time we would have implemented the 64
 ready queues, but also included a global max_priority variable, which would
 indicate the largest thready priority, to avoid the above problem with empty
 high-priority queues.
+
+An additional point of defense of our single queue as opposed to 64 is that it unifies the code between the two scheduling systems we implemented, donation and bsd. This makes the code easier to read, and reduces the chance for bugs, as we only have to keep track of a single list, instead of switching between the two based on the scheduler being operated. 
+
+Our use of a boolean to indicate should update priority, which allows us to move priority updating outside of the interrupt handler is a good thing as it minimizes the amount of code that runs in the interrupt context. 
+
 
 >> C6: The assignment explains arithmetic for fixed-point math in
 >> detail, but it leaves it open to you to implement it.  Why did you
@@ -441,6 +535,17 @@ high-priority queues.
 >> abstraction layer for fixed-point math, that is, an abstract data
 >> type and/or a set of functions or macros to manipulate fixed-point
 >> numbers, why did you do so?  If not, why not?
+
+We created a set of simple functions implementing the same mathematical
+functions laid out in the reference materials. The reason for this was
+so that we could more directly implement the algorithms for BSD
+scheduling as laid out in the reference materials. We did not create
+any abstract data types, as the math deals with using everything as
+an int32_t. We could have optionally used #define macros; however,
+we decided that functions were just as easy, and provided sanity
+type checking. We also used a typedef to make a new type that is
+synonymous with int32_t for the same reason of code clarity and
+sanity checking.
 
 			   SURVEY QUESTIONS
 			   ================
@@ -461,7 +566,8 @@ the quarter.
 >> future quarters to help them solve the problems?  Conversely, did you
 >> find any of our guidance to be misleading?
 
-Yes! Some of our tests failed with jitter. We debugged them for hours until we
+
+Yes! Some of our tests failed with jitter. We debugged them for two days until we
 figured out that the bugs were actually in the tests, not our code.
 
 >> Do you have any suggestions for the TAs to more effectively assist
@@ -469,5 +575,7 @@ figured out that the bugs were actually in the tests, not our code.
 
 We felt that the introductory session should have been more an introduction to
 the homework assignment, rather than an overview of threads.
+
+It is also hard to distinguish between instructors and students on the google group we are using. On piazza for example, instructor responses and student responses are marked as such. Would it be possible to make the switch to piazza. I personally feel it is a much better system and easier to keep track of. 
 
 >> Any other comments?
