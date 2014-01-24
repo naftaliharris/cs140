@@ -145,7 +145,7 @@ static void update_load_average(void) {
     left in place for future modifications of desired. 
  --------------------------------------------------------------------
  */
-static void update_recent_cpu(struct thread* t, fp_float cpu_scale) {
+UNUSED static void update_recent_cpu(struct thread* t, fp_float cpu_scale) {
     t->recent_cpu = fp_add_int(fp_mul(cpu_scale, t->recent_cpu), t->nice);
 }
 
@@ -216,7 +216,7 @@ static void update_changed_cpu_threads(void) {
     add it to the cpu's changed list once. 
  --------------------------------------------------------------------
  */
-static void update_running_thread_cpu(struct thread* t) {
+UNUSED static void update_running_thread_cpu(struct thread* t) {
     t->recent_cpu = fp_add_int(t->recent_cpu, 1);
     if (t->cpu_has_changed == false) {
         t->cpu_has_changed = true;
@@ -1053,11 +1053,18 @@ void shed_priority() {
 /*
  --------------------------------------------------------------------
  LP: finds the highest priority thread in the list, removes it from the
- list, and then returns a pointer to the thread.
+    list if it should, and then returns a pointer to the thread.
+ NOTE: this is the worker for our scheudler system. Given the random
+    order in which the list of threads could be in, this function
+    ensures that the highest_priority_thread is always returned. 
+ NOTE: because the list passed in to this function might be accessed
+    by an interrupt handler, we cannot use locks and sempahores to 
+    prevent concurrency issues. Thus, disabling interrupts is the only
+    option for this function. 
  --------------------------------------------------------------------
  */
 struct thread* get_highest_priority_thread(struct list* list, bool should_remove) {
-    
+    enum intr_level old_level = intr_disable();
     struct list_elem* curr = list_head(list);
     struct list_elem* tail = list_tail(list);
     struct thread* currHighest = NULL;
@@ -1072,6 +1079,7 @@ struct thread* get_highest_priority_thread(struct list* list, bool should_remove
         if (currHighest->priority == PRI_MAX) break;
     }
     if (currHighest != NULL && should_remove) list_remove(&(currHighest->elem));
+    intr_set_level(old_level);
     return currHighest;
 }
 
