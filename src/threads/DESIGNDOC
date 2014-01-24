@@ -271,6 +271,8 @@ list_elem: allows the lock to be inserted into a list.
 >> Use ASCII art to diagram a nested donation.  (Alternately, submit a
 >> .png file.)
 
+For image files, please see Nested_Donate_Diagram_1/2/3/4.png. please note that there are 4 images, in ascending order.
+
 In designing our system of priority donation, we had two goals in mind. The 
 first was to ensure that we addressed all the cases of priority donation specified
 in the lab section and in the handout, namely multiple donation, standard donation, 
