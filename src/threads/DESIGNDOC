@@ -87,11 +87,13 @@ respect to the process of timer_sleep, the timer interrupt handler is
 responsible for waking up the threads who's wake times have been reached. To
 reduce the amount of time spent in the timer interrupt handler with this task,
 we do the following:
+
 - When adding a new sleeping_thread to the sleeping_threads_list, we use the
   insert comparison function sleeping_thread_insert_func, to ensure that
 threads are inserted in order according to their wake_time. The earliest wake
 times are placed at the front of the list, and the later the times, the farther
 back in the list the thread will be. 
+
 - When the timer interrupt handler reaches the code to wake up the sleeping
 threads, it looks at the front of the list only. If the wake time of the
 thread at the front of the list has been reached, the timer interrupt handler
@@ -153,7 +155,34 @@ problem, as the logic of computing wake_time is only dependent on this initial "
 at which timer_sleep is called. 
 
 As described above, if the timer interrupt were to fire mid execution of the 
-timer_sleep function, than it would 
+timer_sleep function, than it could cause preemption to occur. As stated above, 
+the only issue with preemption involves inserting a sleeping_thread struct into
+the list of sleeping_threads_list. However, because we disable interrupts, we
+neutralize this issue. 
+
+Furthermore, if a timer_interrupt were to fire mid execution of the timer_sleep()
+function, than the timer interrupt handler would run. Without any concurrency 
+directives in place, this would present an issue, as the timer interrupt handler
+accesses the list of sleeping_threads to wake the ones who's time has come. 
+However, because we disable interrupts when accessing the list of 
+sleeping_threads in the timer_sleep function, and because interrupts are obviously 
+disabled in interrupt handlers, the issue is neutralized. 
+
+Thus at all times, at most one person can be accessing the list of 
+sleeping_threads. 
+
+Finally, we also address the case where the timer interrupt is fired mid execution 
+of timer_sleep, before the sleeping_thread struct is added to the list
+of sleeping_threads. If an interrupt fires before this point, it is possible that
+the currently executing thread get preempted, and not run again until its wake time 
+has been met, or that the single timer interrupt was the only sleep time 
+requested. In such a case, we check if the current value of timer ticks equals 
+the wake time. If it indeed does, or if the current time is greater than the wake time
+we can return from the function and avoid the unnecessary adding of the sleeping_thread
+to the list, only to have it signaled and removed on the following timer 
+interrupt. 
+
+
 
 
 ---- RATIONALE ----
@@ -170,9 +199,82 @@ timer_sleep function, than it would
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+struct thread
+{
+    /* Owned by thread.c. */
+    tid_t tid;                          /* Thread identifier. */
+    enum thread_status status;          /* Thread state. */
+    char name[16];                      /* Name (for debugging purposes). */
+    uint8_t *stack;                     /* Saved stack pointer. */
+    int priority;                       /* Priority. */
+    struct list_elem allelem;           /* List element for all threads list. */
+    
+    /* List of locks this thread currently holds */
+    /* Used for priority donationa */
+    struct list locks_held;
+    
+    /* Dummy lock containing this threads original priority */
+    struct lock original_priority_info;
+    
+    /* The lock this thread is waiting on. Null if not waiting */
+    struct lock* lock_waiting_on;
+    
+    /* threads nice value. For bsd_scheduler */
+    int nice;
+    
+    /* Thread's recent cpu. For the bsd_scheduler */
+    fp_float recent_cpu;
+    
+    /* Allows this thread to be placed in a list of threads who's */
+    /* recent cpu value has changed */
+    struct list_elem cpu_list_elem;
+    
+    /* True if the threads recent_cpu has changed and the thread */
+    /* has not been updated yet */
+    bool cpu_has_changed;
+    
+    /* Shared between thread.c and synch.c. */
+    struct list_elem elem;              /* List element. */
+    
+#ifdef USERPROG
+    /* Owned by userprog/process.c. */
+    uint32_t *pagedir;                  /* Page directory. */
+#endif
+    
+    /* Owned by thread.c. */
+    unsigned magic;                     /* Detects stack overflow. */
+};
+
+Purpose: We added a list of locks, a lock, and a pointer to a lock to the thread struct.
+locks_held = allows us to track the highest priority donated for each lock
+		currently held by the thread.
+original_priority_info = dummy lock inserted into locks_held, containing the threads
+		original priority info. Allows for easy priority shedding.
+lock_waiting_on = pointer to the lock this thread is currently waiting on, null if non. 
+		Allows for priority donation to propagate in the nested case.
+
+/* Lock. */
+struct lock
+{
+    struct thread *holder;      /* Thread holding lock (for debugging). */
+    struct semaphore semaphore; /* Binary semaphore controlling access. */
+    
+    int priority;             /* LP for donation purposes */
+    struct list_elem elem;     /* LP to allow locks to be placed in lists */
+};
+
+Purpose: we added an int priority and a list_elem.
+priority: allows us to track the highest priority donated for this lock.
+list_elem: allows the lock to be inserted into a list.
+
 >> B2: Explain the data structure used to track priority donation.
 >> Use ASCII art to diagram a nested donation.  (Alternately, submit a
 >> .png file.)
+
+In designing our system of priority donation, we had two goals in mind. The 
+first was to ensure that we addressed all the cases of priority donation specified
+in the lab section and in the handout, namely multiple donation, standard donation, 
+and nested donation. 
 
 ---- ALGORITHMS ----
 
