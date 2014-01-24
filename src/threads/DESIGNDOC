@@ -365,10 +365,10 @@ Once lock1 is released, thread A acquires it and adds the lock1 to its list of l
 >> on a lock that a higher-priority thread is waiting for.
 
 Carrying over the example from above, this is the process in which thread B would release lock1. 
-1. remove lock1 from the list of locks held by thread B.
-2. restore the lock1->priority to PRI_MIN so that priority donation can resume from scratch for next lock that acquires lock1. 
+1. Remove lock1 from the list of locks held by thread B.
+2. Restore the lock1->priority to PRI_MIN so that priority donation can resume from scratch for next lock that acquires lock1. 
 3. Call shed priority. Having previously released lock1, thread B now must assume either the highest remaining priority donated for the remaining locks it currently holds, or restore its original priority, contained in the dummy lock that every thread gets on thread_create. 
-4. set lock1->holder to null. 
+4. Set lock1->holder to null. 
 5. Then sema_up the semaphore in the lock to signal the highest thread waiting on the lock. The sema_up code calls get_highest_prioty, and unblocks the thread returned. In this case, it would be thread A. 
 6. From the problem description, thread A is a higher priority thread, and thus it runs. It now acquires lock1, adds it to its list of locks_held, and continues with its execution. 
 7. Thread B is in the ready_list but does not run unless it receives a priority donation and is scheduled at next call to schedule, or thread A exits and B is the next highest priority thread. 
@@ -382,9 +382,9 @@ Carrying over the example from above, this is the process in which thread B woul
 
 One potential race condition that could occur is as follows: a thread is trying to set its priority, it gets preempted mid execution, a new thread runs, that donates its priority to the preempted thread. the preempted thread then runs and finishes setting its priority, thus overriding the donation. For example, consider the following: 
 
-Thread A and thread B both have priority 7. Thread A is currently running and thread B is next in the ready_list. Thread A calls set_thread_priority(5), but gets preempted before it can update its priority info. Thread B then gets scheduled due to round robbin of same priority threads, and blocks on a lock that A holds. Thus B donates priority to A of 7. A then runs, and completes its run of set_thread_priorty, thus lowering its priority back to 5. 
+Thread A and thread B both have priority 7. Thread A is currently running and thread B is next in the ready_list. Thread A calls set_thread_priority(5), but gets preempted before it can update its priority info. Thread B then gets scheduled due to round robin of same priority threads, and blocks on a lock that A holds. Thus B donates priority to A of 7. A then runs, and completes its run of set_thread_priorty, thus lowering its priority back to 5. 
 
-Our implementation avoids this by only allowing thread_set_priority to update the dummy lock which contains the threads base priority, and then calling shed priority, which sets the threads actual operating priority to be the highest priority among its locks held and its dummy base priority lock. Essentialy, by segmenting the priorities into locks, donation only updates the priority for the lock, and set_priority for the dummy lock of base. Then, shed priory picks the highest from among the donated and base priority. 
+Our implementation avoids this by only allowing thread_set_priority to update the dummy lock which contains the threads base priority, and then calling shed priority, which sets the threads actual operating priority to be the highest priority among its locks held and its dummy base priority lock. Essentially, by segmenting the priorities into locks, donation only updates the priority for the lock, and set_priority for the dummy lock of base. Then, shed priory picks the highest from among the donated and base priority. 
 
 
 In general, we cannot use locks to protect thread priority, because thread priority is accessed in the timer interrupt handler, and interrupt handlers cannot acquire locks, semaphores… Specifically, when timer_interrupt handler wakes up sleeping threads, it signals a semaphore, which in turn checks thread priority for the list of its waiters to ensure the highest priority gets awoken first. If we were to protect priority with a lock, we would need to acquire it here, which we cannot do in an interrupt handler. Therefore, our only option is to disable interrupts. 
@@ -572,7 +572,7 @@ the quarter.
 Yes! Some of our tests failed with jitter. We debugged them for two days until we
 figured out that the bugs were actually in the tests, not our code.
 
->> Do you have any suggestions for the TAs to more effectively assist
+>> Do you have any suggestions for the TA's to more effectively assist
 >> students, either for future quarters or the remaining projects?
 
 We felt that the introductory session should have been more an introduction to
