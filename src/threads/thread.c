@@ -1049,7 +1049,6 @@ void shed_priority() {
     curr_t->priority = highest_remaining_priority;
 }
 
-
 /*
  --------------------------------------------------------------------
  LP: finds the highest priority thread in the list, removes it from the
