@@ -83,7 +83,7 @@ typedef int tid_t;
    ready state is on the run queue, whereas only a thread in the
    blocked state is on a semaphore wait list. */
 struct thread
-  {
+{
     /* Owned by thread.c. */
     tid_t tid;                          /* Thread identifier. */
     enum thread_status status;          /* Thread state. */
@@ -91,40 +91,42 @@ struct thread
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
     struct list_elem allelem;           /* List element for all threads list. */
-      
-      
-      struct list locks_held;           /* LP, locks_held by this thread, used for              
-                                         priority donation. */
-      struct lock original_priority_info; /*LP, original priority wrapped in a
-                                           lock struct. Note, reason for using
-                                           this is that it makes the algorithms
-                                           simple. Could have added an orig
-                                           priority int, but that would
-                                           have required several extra checks
-                                           which would have complicated 
-                                           algorith. Thus, we opted to take
-                                           slightly more memory with a 
-                                           lock struct and thus minimize
-                                           the number of instructions that must
-                                           run. Also, it has been advised by the
-                                           course staff to make the 
-                                           algorithm easy to read, which we do.*/
-      struct lock* lock_waiting_on;     /*LP, The lock this thread is waiting on 
-                                         if any */
-    int32_t nice;                       /* Nice value for BSD scheduler */
-    fp_float recent_cpu;                /* Recent cpu used for BSD scheduler */
-
+    
+    /* List of locks this thread currently holds */
+    /* Used for priority donationa */
+    struct list locks_held;
+    
+    /* Dummy lock containing this threads original priority */
+    struct lock original_priority_info;
+    
+    /* The lock this thread is waiting on. Null if not waiting */
+    struct lock* lock_waiting_on;
+    
+    /* threads nice value. For bsd_scheduler */
+    int nice;
+    
+    /* Thread's recent cpu. For the bsd_scheduler */
+    fp_float recent_cpu;
+    
+    /* Allows this thread to be placed in a list of threads who's */
+    /* recent cpu value has changed */
+    struct list_elem cpu_list_elem;
+    
+    /* True if the threads recent_cpu has changed and the thread */
+    /* has not been updated yet */
+    bool cpu_has_changed;
+    
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
-
+    
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
 #endif
-
+    
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
-  };
+};
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
