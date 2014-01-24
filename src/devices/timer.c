@@ -133,7 +133,7 @@ sleeping_thread_insert_func (const struct list_elem *a,
     with the list of threads. Therefore, when waking threads, the 
     interrupt handler may stop traversing the list when it gets to the
     first thread who's wake time has not been reached yet, as all 
-    other threads in the list behind will have later wake times. 
+    other threads in the list behind will have later wake times.
  --------------------------------------------------------------------
  */
 void
