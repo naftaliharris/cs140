@@ -93,10 +93,10 @@ threads are inserted in order according to their wake_time. The earliest wake
 times are placed at the front of the list, and the later the times, the farther
 back in the list the thread will be. 
 - When the timer interrupt handler reaches the code to wake up the sleeping
-  threads, it looks at the front of the list only. If the wake time of the
+threads, it looks at the front of the list only. If the wake time of the
 thread at the front of the list has been reached, the timer interrupt handler
-will singal that thread to wake up by calling sema_up on the semaphore in the
-sleeping_thread.  The timer interrupt hanlder than repeats this process, until
+will signal that thread to wake up by calling sema_up on the semaphore in the
+sleeping_thread.  The timer interrupt handler than repeats this process, until
 it reaches a thread who's wake time has not been reached, or gets to the end of
 the list. In the case of the first wake time that has not been reached, because
 the sleeping_thread_list is ordered by wake time, we know all sleeping_threads
@@ -109,8 +109,52 @@ interrupt handler.
 >> A4: How are race conditions avoided when multiple threads call
 >> timer_sleep() simultaneously?
 
+Within our implementation of timer_sleep, the only critical region of the 
+code that is subject to race conditions is the call to list_insert_ordered, 
+adding our new sleeping thread to the global static list. 
+To avoid race conditions, we disable interrupts around this function call.
+Therefore, at most one thread at a time can insert into the list of sleeping
+threads from timer_sleep. If multiple threads were to call the function, each would
+set up its own sleeping thread on its stack and get its own timer tick value, and
+then one at a time would insert into the list of sleeping_threads due to the 
+interrupts being disabled. 
+
+The reason that we disable interrupts is because it is our only option 
+in this case. Given that the sleeping_threads_list is accessed in the timer
+interrupt handler, we cannot use locks, semaphores… because the interrupt
+handler cannot block or sleep. Therefore, our only option to avoid synchronization
+issues is to disable interrupts when inserting a sleeping_thread struct into
+this list, thus ensuring that the thread who disabled the interrupts will not
+get preempted while it is inserting into the list. 
+
+Immediately after we insert the sleeping_thread struct into the list, we
+restore interrupts to their old level, thus reducing the amount of 
+code that operates with interrupts disabled to a bare minimum. 
+
+Finally, we note that there are no race conditions any where else in the 
+timer_sleep function, as the sleeping_thread struct is created on the 
+stack, and is thus internal to the executing thread, and timer_ticks(), 
+which we use to get the time at which the sleep was called, is itself 
+locked down with interrupts disabled (given in the source code), therefore
+eliminating race conditions or concurrency issues there as well. 
+
 >> A5: How are race conditions avoided when a timer interrupt occurs
 >> during a call to timer_sleep()?
+
+If a timer interrupt were to occur during a call to timer sleep, there are 
+several potential issues. 
+
+The first is that the value of timer ticks could be skewed, as it is read in
+timer_sleep, and incremented in the timer interrupt handler. However, the source
+addresses this concurrency issue by disabling interrupts in the timer ticks function.
+After we get the initial timer_ticks() value as the "time" at which the timer_sleep 
+function was invoked, if a timer interrupt were to fire after this, it would not be a 
+problem, as the logic of computing wake_time is only dependent on this initial "time"
+at which timer_sleep is called. 
+
+As described above, if the timer interrupt were to fire mid execution of the 
+timer_sleep function, than it would 
+
 
 ---- RATIONALE ----
 
