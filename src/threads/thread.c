@@ -105,7 +105,8 @@ static void update_cpu_for_all_threads(void);
  --------------------------------------------------------------------
  */
 static void update_thread_priority(struct thread* t) {
-    int new_priority = PRI_MAX - fp_to_int(fp_div_int(t->recent_cpu, 4)) - (t->nice * 2);
+    int new_priority = PRI_MAX - fp_to_int(fp_div_int(t->recent_cpu, 4))
+                               - (t->nice * 2);
     if (new_priority > PRI_MAX) {
         new_priority = PRI_MAX;
     }
@@ -133,7 +134,12 @@ static void update_load_average(void) {
     if (thread_current() != idle_thread) {
         num_ready_threads++;
     }
-    load_average = fp_add(fp_mul(load_average, fp_div(int_to_fp(59), int_to_fp(60))), fp_mul_int(fp_div(int_to_fp(1), int_to_fp(60)), num_ready_threads));
+
+    fp_float _59_60 = fp_div(int_to_fp(59), int_to_fp(60));
+    fp_float _01_60 = fp_div(int_to_fp(1), int_to_fp(60));
+
+    load_average = fp_add(fp_mul(load_average, _59_60),
+                          fp_mul_int(_01_60, num_ready_threads));
 }
 
 
@@ -370,7 +376,8 @@ void thread_print_stats (void)
  NOTE: we did not modify this function. 
  --------------------------------------------------------------------
  */
-tid_t thread_create (const char *name, int priority, thread_func *function, void *aux) 
+tid_t thread_create (const char *name, int priority,
+                     thread_func *function, void *aux)
 {
   struct thread *t;
   struct kernel_thread_frame *kf;
@@ -817,11 +824,11 @@ static void init_thread (struct thread *t, const char *name, int priority)
     t->magic = THREAD_MAGIC;
     
     if (thread_mlfqs) {
-        if (t == initial_thread) { //special inittial_thread init
+        if (t == initial_thread) { /* special inittial_thread init */
             t->nice = 0;
             t->recent_cpu = 0;
         } else {
-            struct thread* curr = thread_current(); //parent thread
+            struct thread* curr = thread_current(); /* parent thread */
             t->nice = curr->nice;
             t->recent_cpu = curr->recent_cpu;
         }
@@ -829,7 +836,7 @@ static void init_thread (struct thread *t, const char *name, int priority)
     } else {
         list_init(&(t->locks_held));
         t->original_priority_info.priority = priority;
-        t->original_priority_info.holder = NULL; //indicates orig priority package.
+        t->original_priority_info.holder = NULL; /* orig priority package */
         list_push_front(&(t->locks_held), &(t->original_priority_info.elem));
         t->lock_waiting_on = NULL;
     }
@@ -885,7 +892,8 @@ static struct thread * next_thread_to_run (void)
     if (list_empty (&ready_list)) {
         return idle_thread;
     } else {
-        struct thread* next_thread = get_highest_priority_thread(&ready_list, true);
+        struct thread* next_thread = get_highest_priority_thread(&ready_list,
+                                                                 true);
         ASSERT(next_thread != NULL);
         return next_thread;
     }
@@ -933,7 +941,7 @@ void thread_schedule_tail (struct thread *prev)
      pull out the rug under itself.  (We don't free
      initial_thread because its memory was not obtained via
      palloc().) */
-  if (prev != NULL && prev->status == THREAD_DYING && prev != initial_thread) 
+  if (prev != NULL && prev->status == THREAD_DYING && prev != initial_thread)
     {
       ASSERT (prev != cur);
       palloc_free_page (prev);
@@ -1062,7 +1070,9 @@ void shed_priority() {
     option for this function. 
  --------------------------------------------------------------------
  */
-struct thread* get_highest_priority_thread(struct list* list, bool should_remove) {
+struct thread* get_highest_priority_thread(struct list* list,
+                                           bool should_remove)
+{
     enum intr_level old_level = intr_disable();
     struct list_elem* curr = list_head(list);
     struct list_elem* tail = list_tail(list);
