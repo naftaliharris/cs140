@@ -274,7 +274,46 @@ list_elem: allows the lock to be inserted into a list.
 In designing our system of priority donation, we had two goals in mind. The 
 first was to ensure that we addressed all the cases of priority donation specified
 in the lab section and in the handout, namely multiple donation, standard donation, 
-and nested donation. 
+and nested donation. Our second goal was to use as little space as possible, thus
+ensuring that the thread had adequate space for its stack. Our design is as follows:
+
+Priority donation begins at the lock level. If a lock is not being held, and a thread
+tries to acquire it, than the thread will acquire it and no donation is needed. However, 
+if the lock is held, the thread acquiring must donate to the lock holder. At all times, 
+if a lock is held, there will be a highest priority donated thus far for that lock. By
+adding this priority field to the lock, we are able to track this highest priority. 
+
+The list_elem in the lock allows for locks to be placed in lists, which is key for the
+next step. 
+
+At the thread level, a thread can either be donator of a priority, or a donee. I begin
+with donee. If a thread successfully acquires a lock, the lock is added to the threads
+list of locks_held. For as long as the thread holds the lock, the lock remains in the
+threads list of locks_held. When the thread releases the lock, it is removed. By tracking
+the list of locks held, we can track multiple priorities donated. At all times, a thread
+needs to operate with its highest donated priority. Once it releases a lock, it will 
+consult its list of locks held, and assume the highest remaining priority contained
+within the locks held. Thus, a thread can assume donated priorities for multiple locks, 
+and will correctly track these, ensuring that priorities are not skipped, or lost. 
+
+The donator thread is different. While a thread could potentially be holding multiple locks, a thread can only be blocked on at most one lock. Given this, assume a thread
+tries to acquire a locked lock. It will then update its lock_waiting_on to be the 
+locked lock, and will then call donate priority. To donate, the thread will update the 
+priority field in the lock to acquire with its own priority, and then update the 
+priority of the thread who holds the lock. By virtue of priority scheduling, the 
+donating thread will always have a higher priority value than is contained in both the 
+lock->holder and the lock to acquire. After updating the thread holding the lock to 
+acquire, we check the lock_waiting_on field in the lock_holder. If this field is non null
+it means that the thread we are waiting on, is itself waiting on another lock. Therefore, 
+we follow the pointer to that lock, and repeat the process, thus allowing our donated
+priority to propagate, and accomplishing nested priority donation. Once we reach a null
+in the lock_waiting_on, we know we have reached the end of the chain, and have properly
+updated all priorities. 
+
+For further detail, please reference the comments in both 
+void donate_priority(void);
+void shed_priority(void);
+contained in thread.c, where the bulk of the donation process takes place. 
 
 ---- ALGORITHMS ----
 
