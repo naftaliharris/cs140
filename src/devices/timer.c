@@ -30,6 +30,9 @@ static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
+bool sleeping_thread_insert_func (const struct list_elem *a,
+                             const struct list_elem *b,
+                                  void *aux UNUSED);
 
 /* One sleeping thread's semaphore lock, as part of a list */
 struct sleeping_thread {
@@ -38,6 +41,7 @@ struct sleeping_thread {
   int64_t wake_time; /* Time to wake this thread */
 };
 
+/* A list of sleeping threads */
 static struct list sleeping_threads;
 
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
@@ -102,20 +106,36 @@ timer_elapsed (int64_t then)
 bool
 sleeping_thread_insert_func (const struct list_elem *a,
                              const struct list_elem *b,
-                             void *aux)
+                             void *aux UNUSED)
 {
   struct sleeping_thread *a_st = list_entry (a, struct sleeping_thread, elem);
   struct sleeping_thread *b_st = list_entry (b, struct sleeping_thread, elem);
   return a_st->wake_time < b_st->wake_time;
 }
 
-/* Sleeps for approximately TICKS timer ticks.  Interrupts must
-   be turned on. */
+/* 
+ --------------------------------------------------------------------
+ Sleeps for approximately TICKS timer ticks.  Interrupts must
+   be turned on.
+ NOTE: we cannot use a lock, sempahore...to avoid race conditions
+    with our list of sleeping threads, because the list is 
+    accessed in the timer interrupt handler, and interrupt handlers
+    cannot aquire locks, semaphores... Thus, our only option is
+    to disable interrupts, which we do here. 
+ NOTE: wake time is the time at which the thread should wake. The 
+    nice thing is, the list of sleeping threads is ordered by wake
+    time. This is a good idea because wake times do not change, and 
+    thus we only have to insert order, and not resort, like we would
+    with the list of threads. Therefore, when waking threads, the 
+    interrupt handler may stop traversing the list when it gets to the
+    first thread who's wake time has not been reached yet, as all 
+    other threads in the list behind will have later wake times. 
+ --------------------------------------------------------------------
+ */
 void
 timer_sleep (int64_t ticks) 
 {
-  int64_t start = timer_ticks ();
-  int64_t wake_time = start + ticks;
+  int64_t wake_time = timer_ticks () + ticks;
   
   ASSERT (intr_get_level () == INTR_ON);
   
