@@ -132,12 +132,13 @@ void
 sema_up (struct semaphore *sema)
 {
     enum intr_level old_level;
+    struct thread* thread_to_unblock;
     
     ASSERT (sema != NULL);
     
     old_level = intr_disable ();
     if (!list_empty (&sema->waiters)) {
-        struct thread* thread_to_unblock = get_highest_priority_thread(&sema->waiters, true);
+        thread_to_unblock = get_highest_priority_thread(&sema->waiters, true);
         ASSERT(thread_to_unblock != NULL);
         thread_unblock(thread_to_unblock);
     }
@@ -432,15 +433,19 @@ struct semaphore* get_semaphore_to_signal(struct condition* cond) {
     
     int curr_highest_priority = PRI_MIN;
     struct semaphore_elem* toSignal = NULL;
+    struct semaphore_elem* currSemaElem;
+
+    struct thread* curr_t;
     
     while (true) {
         curr = list_next(curr);
         if (curr == tail) break;
-        struct semaphore_elem* currSemaElem = list_entry(curr, struct semaphore_elem, elem);
+        currSemaElem = list_entry(curr, struct semaphore_elem, elem);
         ASSERT(currSemaElem != NULL);
-        struct thread* currThread = get_highest_priority_thread(&(currSemaElem->semaphore.waiters), false);
-        if (currThread->priority > curr_highest_priority || toSignal == NULL) {
-            curr_highest_priority = currThread->priority;
+        curr_t = get_highest_priority_thread(&(currSemaElem->semaphore.waiters),
+                                             false);
+        if (curr_t->priority > curr_highest_priority || toSignal == NULL) {
+            curr_highest_priority = curr_t->priority;
             toSignal = currSemaElem;
         }
     }
