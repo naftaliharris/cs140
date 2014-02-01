@@ -30,6 +30,9 @@ static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
+bool sleeping_thread_insert_func (const struct list_elem *a,
+                             const struct list_elem *b,
+                                  void *aux UNUSED);
 
 /* One sleeping thread's semaphore lock, as part of a list */
 struct sleeping_thread {
@@ -38,6 +41,7 @@ struct sleeping_thread {
   int64_t wake_time; /* Time to wake this thread */
 };
 
+/* A list of sleeping threads */
 static struct list sleeping_threads_list;
 
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
@@ -96,21 +100,42 @@ timer_elapsed (int64_t then)
 }
 
 /*
-  TRUE: a < b
-  FALSE: a >= b
+  List_Insert_Ordered comparator function
+  Compares two struct sleeping_thread's by their wake_time
+  TRUE: a < b : a wakes earlier
+  FALSE: a >= b : b wakes earlier (or at same time)
  */
 bool
 sleeping_thread_insert_func (const struct list_elem *a,
                              const struct list_elem *b,
-                             void *aux)
+                             void *aux UNUSED)
 {
-  struct sleeping_thread *a_st = list_entry (a, struct sleeping_thread, elem);
-  struct sleeping_thread *b_st = list_entry (b, struct sleeping_thread, elem);
+  struct sleeping_thread *a_st =
+      list_entry (a, struct sleeping_thread, elem);
+  struct sleeping_thread *b_st =
+      list_entry (b, struct sleeping_thread, elem);
   return a_st->wake_time < b_st->wake_time;
 }
 
-/* Sleeps for approximately TICKS timer ticks.  Interrupts must
-   be turned on. */
+/* 
+ --------------------------------------------------------------------
+ Sleeps for approximately TICKS timer ticks.  Interrupts must
+   be turned on.
+ NOTE: we cannot use a lock, sempahore...to avoid race conditions
+    with our list of sleeping threads, because the list is 
+    accessed in the timer interrupt handler, and interrupt handlers
+    cannot aquire locks, semaphores... Thus, our only option is
+    to disable interrupts, which we do here. 
+ NOTE: wake time is the time at which the thread should wake. The 
+    nice thing is, the list of sleeping threads is ordered by wake
+    time. This is a good idea because wake times do not change, and 
+    thus we only have to insert order, and not resort, like we would
+    with the list of threads. Therefore, when waking threads, the 
+    interrupt handler may stop traversing the list when it gets to the
+    first thread who's wake time has not been reached yet, as all 
+    other threads in the list behind will have later wake times.
+ --------------------------------------------------------------------
+ */
 void
 timer_sleep (int64_t sleep_ticks) 
 {
@@ -118,6 +143,7 @@ timer_sleep (int64_t sleep_ticks)
   
   ASSERT (intr_get_level () == INTR_ON);
   
+  // Return if we don't need to sleep
   if(sleep_ticks <= 0)
   {
     return;
@@ -127,13 +153,16 @@ timer_sleep (int64_t sleep_ticks)
   sema_init(&(sleep.semaphore), 0);
   sleep.wake_time = start + sleep_ticks;
   
-  if(sleep.wake_time < timer_ticks())
+  // Slightly redundant, but one final check
+  // to see if we can avoid sleeping
+  if(sleep.wake_time <= timer_ticks())
   {
     return;
   }
   
   enum intr_level old_level = intr_disable (); // disable interrupts
-  list_insert_ordered(&sleeping_threads_list, &(sleep.elem), sleeping_thread_insert_func, NULL);
+  list_insert_ordered(&sleeping_threads_list, &(sleep.elem),
+      sleeping_thread_insert_func, NULL);
   intr_set_level (old_level); // enable interrupts
   
   sema_down(&(sleep.semaphore));
@@ -209,32 +238,33 @@ timer_print_stats (void)
   printf ("Timer: %"PRId64" ticks\n", timer_ticks ());
 }
 
-/* Timer interrupt handler. */
+/* Timer interrupt handler.
+   Increase global count of ticks, calls thread_tick() to
+   run thread-specific code
+   Grabs the first sleeping thread - if it should wake up,
+   do so and repeat.
+   Else, push it back on top of list and break
+ */
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
-  bool yield = false;
-  thread_tick();
+  thread_tick ();
   barrier();
   while(!list_empty(&sleeping_threads_list))
   {
     struct list_elem *e = list_pop_front(&sleeping_threads_list);
-    struct sleeping_thread *st = list_entry (e, struct sleeping_thread, elem);
+    struct sleeping_thread *st =
+        list_entry (e, struct sleeping_thread, elem);
     if(st->wake_time <= ticks)
     {
       sema_up(&(st->semaphore));
-      yield = true;
     }
     else
     {
       list_push_front(&sleeping_threads_list, e);
       break;
     }
-  }
-  if(yield && on_idle_thread())
-  {
-    intr_yield_on_return();
   }
 }
 
