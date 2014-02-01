@@ -7,6 +7,7 @@
 static void syscall_handler (struct intr_frame *);
 // Begin LP Defined functions //
 void check_usr_ptr(void* u_ptr);
+uint32_t read_frame(struct intr_frame* f, int byteOffset);
 // END LP Defined functions   //
 
 void
@@ -24,7 +25,7 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
-    
+    int systemCall_num = (int)read_frame(f, 0);
 }
 
 /*
@@ -52,5 +53,22 @@ void check_usr_ptr(const void* ptr) {
     if (pagedir_get_page(thread_current()->pagedir, ptr) == NULL) {
         //here is where we call exit
     }
+}
+
+/*
+ --------------------------------------------------------------------
+ Description: This is a helper method for reading values from the 
+    frame. We increment f->esp by offset, check the pointer to make
+    sure it is valid, and then return the numerical value that resides
+    at the address of the pointer. 
+ NOTE: The return value of this function is the uinsigned int equivalent
+    of the bits at said address. It is the responsibility of the caller
+    to cast this return value to the appropriate type.
+ --------------------------------------------------------------------
+ */
+uint32_t read_frame(struct intr_frame* f, int byteOffset) {
+    void* addr = f->esp + byteOffset;
+    check_usr_ptr(addr);
+    return *(uint32_t*)addr;
 }
 
