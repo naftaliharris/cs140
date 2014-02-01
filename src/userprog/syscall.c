@@ -12,11 +12,16 @@
 //2. CHECK ALL BUFFERS FOR POINTER VALIDITY
 //3. SYNCHRONIZE ALL FILESYSTEM CALLS WITH A SINGLE LOCK
 //4. THE DEFAULT CASE IN SYSTEM_HANDLER SWITCH STATEMENT
+//5. HOW TO RESPOND IF THE CHECK_FILENAME_LENGTH RETURNS FALSE
+
+static lock file_system_lock;
 
 static void syscall_handler (struct intr_frame *);
 
 // BEGIN LP DEFINED HELPER FUNCTIONS//
 void check_usr_ptr(void* u_ptr);
+void check_usr_string(char* str);
+bool check_file_name_length(const char* filename);
 uint32_t read_frame(struct intr_frame* f, int byteOffset);
 // END LP DEFINED HELPER FUNCTIONS  //
 
@@ -37,10 +42,18 @@ void LP_close (int fd);
 // END   LP DEFINED SYSTEM CALL HANDLERS //
 
 
+/*
+ --------------------------------------------------------------------
+ Description: we do any file system initialization here. 
+ NOTE: currently, the only initialization that we add is 
+    to init the global file_system lock. 
+ --------------------------------------------------------------------
+ */
 void
-syscall_init (void) 
+syscall_init (void)
 {
-  intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+    lock_init(&file_system_lock);
+    intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
 /*
@@ -180,10 +193,21 @@ int LP_wait (pid_t) {
     bytes in size. Returns true if successful, false otherwise. 
     Creating a new file does not open it: opening the new file 
     is a separate operation which would require a open system call.
+ NOTE: we must acquire the file_system_lock to ensure that we 
+    are the only process accessing the file_system. 
  --------------------------------------------------------------------
  */
 bool LP_create (const char *file, unsigned initial_size) {
+    check_usr_string(file);
+    if (!check_file_name_length(file)) {
+        //what to do here?
+    }
     
+    lock_acquire(&file_system_lock);
+    bool outcome = filesys_create(file, initial_size);
+    lock_release(&file_system_lock);
+    
+    return outcome;
 }
 
 /*
@@ -192,10 +216,21 @@ bool LP_create (const char *file, unsigned initial_size) {
     successful, false otherwise. A file may be removed regardless 
     of whether it is open or closed, and removing an open file 
     does not close it. See Removing an Open File, for details.
+ NOTE: we must acquire the file_system_lock to ensure that we
+    are the only process accessing the file_system.
  --------------------------------------------------------------------
  */
 bool LP_remove (const char *file) {
+    check_usr_string(file);
+    if (!check_file_name_length(file)) {
+        //what to do here?
+    }
     
+    lock_acquire(&file_system_lock);
+    bool outcome = filesys_remove(file);
+    lock_release(&file_system_lock);
+    
+    return outcome;
 }
 
 /*
@@ -274,7 +309,18 @@ void LP_close (int fd) {
     
 }
 
-
+/*
+ --------------------------------------------------------------------
+ Description: ensures that the length of the filename does not 
+    exceed 14 characters. 
+ --------------------------------------------------------------------
+ */
+#define MAX_FILENAME_LENGTH 14
+bool check_file_name_length(const char* filename) {
+    size_t length = strlen(filename);
+    if (length > MAX_FILENAME_LENGTH) return false;
+    return true;
+}
 
 
 /*
@@ -301,6 +347,22 @@ void check_usr_ptr(const void* ptr) {
     } 
     if (pagedir_get_page(thread_current()->pagedir, ptr) == NULL) {
         //here is where we call exit
+    }
+}
+
+/*
+ --------------------------------------------------------------------
+ Description: checks each character in the string to make sure that
+    the pointers are non null, are within user virtual address space,
+    and are properly mapped. 
+ --------------------------------------------------------------------
+ */
+void check_usr_string(char* str) {
+    while (true) {
+        if (*str == '\0') break;
+        const void* ptr = (const void*)str;
+        check_usr_ptr(ptr);
+        str = (char*)str + 1;
     }
 }
 
