@@ -123,10 +123,159 @@ syscall_handler (struct intr_frame *f UNUSED)
 
 /*
  --------------------------------------------------------------------
- Description: system implimentation of the halt system call. 
-    As described in the handout, simply
+ Description: Terminates Pintos by calling power_off() 
+    (declared in threads/init.h). This should be seldom 
+    used, because you lose some information about possible 
+    deadlock situations, etc.
+ NOTE: the NO_RETURN included for style, and to ensure no 
+    compiler warnings. 
  --------------------------------------------------------------------
  */
+void LP_halt (void) NO_RETURN {
+    shutdown_power_off ();
+}
+
+/*
+ --------------------------------------------------------------------
+ Description: Terminates the current user program, returning 
+    status to the kernel. If the process's parent waits for 
+    it (see below), this is the status that will be returned. 
+    Conventionally, a status of 0 indicates success and nonzero 
+    values indicate errors.
+ --------------------------------------------------------------------
+ */
+void LP_exit (int status) NO_RETURN {
+    
+}
+
+/*
+ --------------------------------------------------------------------
+ Description: Runs the executable whose name is given in cmd_line, 
+    passing any given arguments, and returns the new process's 
+    program id (pid). Must return pid -1, which otherwise should 
+    not be a valid pid, if the program cannot load or run for any 
+    reason. Thus, the parent process cannot return from the exec 
+    until it knows whether the child process successfully loaded 
+    its executable. You must use appropriate synchronization to 
+    ensure this.
+ --------------------------------------------------------------------
+ */
+pid_t LP_exec (const char* command_line) {
+    
+}
+
+/*
+ --------------------------------------------------------------------
+ Description: Waits for a child process pid and retrieves the 
+    child's exit status.
+ --------------------------------------------------------------------
+ */
+int LP_wait (pid_t) {
+    
+}
+
+/*
+ --------------------------------------------------------------------
+ Description: Creates a new file called file initially initial_size 
+    bytes in size. Returns true if successful, false otherwise. 
+    Creating a new file does not open it: opening the new file 
+    is a separate operation which would require a open system call.
+ --------------------------------------------------------------------
+ */
+bool LP_create (const char *file, unsigned initial_size) {
+    
+}
+
+/*
+ --------------------------------------------------------------------
+ Description: Deletes the file called file. Returns true if 
+    successful, false otherwise. A file may be removed regardless 
+    of whether it is open or closed, and removing an open file 
+    does not close it. See Removing an Open File, for details.
+ --------------------------------------------------------------------
+ */
+bool LP_remove (const char *file) {
+    
+}
+
+/*
+ --------------------------------------------------------------------
+ Description: Opens the file called file. Returns a nonnegative 
+    integer handle called a "file descriptor" (fd), or -1 if the
+    file could not be opened.
+ --------------------------------------------------------------------
+ */
+int LP_open (const char *file) {
+    
+}
+
+/*
+ --------------------------------------------------------------------
+ Description: Returns the size, in bytes, of the file open as fd.
+ --------------------------------------------------------------------
+ */
+int LP_filesize (int fd) {
+    
+}
+
+/*
+ --------------------------------------------------------------------
+ Description: Reads size bytes from the file open as fd into buffer. 
+    Returns the number of bytes actually read (0 at end of file), 
+    or -1 if the file could not be read (due to a condition other 
+    than end of file). Fd 0 reads from the keyboard using input_getc().
+ --------------------------------------------------------------------
+ */
+int LP_read (int fd, void *buffer, unsigned length) {
+    
+}
+
+/*
+ --------------------------------------------------------------------
+ Description: Writes size bytes from buffer to the open file fd. 
+    Returns the number of bytes actually written, which may be less 
+    than size if some bytes could not be written.
+ --------------------------------------------------------------------
+ */
+int LP_write (int fd, const void *buffer, unsigned length) {
+    
+}
+
+/*
+ --------------------------------------------------------------------
+ Description: Changes the next byte to be read or written in open 
+    file fd to position, expressed in bytes from the beginning of 
+    the file. (Thus, a position of 0 is the file's start.)
+ --------------------------------------------------------------------
+ */
+void LP_seek (int fd, unsigned position) {
+    
+}
+
+/*
+ --------------------------------------------------------------------
+ Description: Returns the position of the next byte to be read 
+    or written in open file fd, expressed in bytes from the beginning 
+    of the file.
+ --------------------------------------------------------------------
+ */
+unsigned LP_tell (int fd) {
+    
+}
+
+/*
+ --------------------------------------------------------------------
+ Description: Closes file descriptor fd. Exiting or terminating a 
+    process implicitly closes all its open file descriptors, as if 
+    by calling this function for each one.
+ --------------------------------------------------------------------
+ */
+void LP_close (int fd) {
+    
+}
+
+
+
 
 /*
  --------------------------------------------------------------------
