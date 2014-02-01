@@ -4,11 +4,38 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+
+
+
+//TO DO LIST:
+//1. CHECK ALL STRINGS FOR POINTER VALIDITY
+//2. CHECK ALL BUFFERS FOR POINTER VALIDITY
+//3. SYNCHRONIZE ALL FILESYSTEM CALLS WITH A SINGLE LOCK
+//4. THE DEFAULT CASE IN SYSTEM_HANDLER SWITCH STATEMENT
+
 static void syscall_handler (struct intr_frame *);
-// Begin LP Defined functions //
+
+// BEGIN LP DEFINED HELPER FUNCTIONS//
 void check_usr_ptr(void* u_ptr);
 uint32_t read_frame(struct intr_frame* f, int byteOffset);
-// END LP Defined functions   //
+// END LP DEFINED HELPER FUNCTIONS  //
+
+// BEGIN LP DEFINED SYSTEM CALL HANDLERS //
+void LP_halt (void) NO_RETURN;
+void LP_exit (int status) NO_RETURN;
+pid_t LP_exec (const char* command_line);
+int LP_wait (pid_t);
+bool LP_create (const char *file, unsigned initial_size);
+bool LP_remove (const char *file);
+int LP_open (const char *file);
+int LP_filesize (int fd);
+int LP_read (int fd, void *buffer, unsigned length);
+int LP_write (int fd, const void *buffer, unsigned length);
+void LP_seek (int fd, unsigned position);
+unsigned LP_tell (int fd);
+void LP_close (int fd);
+// END   LP DEFINED SYSTEM CALL HANDLERS //
+
 
 void
 syscall_init (void) 
@@ -20,13 +47,86 @@ syscall_init (void)
  --------------------------------------------------------------------
  Description: reads the system call number from f->eip and dispatches
     to the correct system call handler.
+ NOTE: for all handlers that return a value, we place this return 
+    value in the eax register of the intr_frame. 
+ NOTE: because the eax register is defined to be a uiint32_t, we
+    have to cast as such when placing the return value in it. 
  --------------------------------------------------------------------
  */
 static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
     int systemCall_num = (int)read_frame(f, 0);
+    switch (systemCall_num) {
+        case SYS_HALT:
+            LP_halt();
+            break;
+        case SYS_EXIT:
+            int status = (int)read_frame(f, 4);
+            LP_exit(status);
+            break;
+        case SYS_EXEC:
+            char* command_line = (char*)read_frame(f, 4);
+            f->eax = (uint32_t)LP_exec(command_line);
+            break;
+        case SYS_WAIT:
+            pid_t pid = (pid_t)read_frame(f, 4);
+            f->eax = (uint32_t)LP_wait(pid);
+            break;
+        case SYS_CREATE:
+            const char* file = (const char*)read_frame(f, 4);
+            unsigned initial_size = (unsigned)read_frame(f, 8);
+            f->eax = (uint32_t)LP_create(file, initial_size);
+            break;
+        case SYS_REMOVE:
+            const char* file = (const char*)read_frame(f, 4);
+            f->eax = (uint32_t)LP_remove(file);
+            break;
+        case SYS_OPEN:
+            const char* file = (const char*)read_frame(f, 4);
+            f->eax = (uint32_t)LP_open(file);
+            break;
+        case SYS_FILESIZE:
+            int fd = (int)read_frame(f, 4);
+            f->eax = (uint32_t)LP_filesize(fd);
+            break;
+        case SYS_READ:
+            int fd = (int)read_frame(f, 4);
+            void* buffer = (void*)read_frame(f, 8);
+            unsigned length = (unsigned)read_frame(f, 12);
+            f->eax = (uint32_t)LP_read(fd, buffer, length);
+            break;
+        case SYS_WRITE:
+            int fd = (int)read_frame(f, 4);
+            const void* buffer = (const void*)read_frame(f, 8);
+            unsigned length = (unsigned)read_frame(f, 12);
+            f->eax = (uint32_t)LP_write(fd, buffer, length);
+            break;
+        case SYS_SEEK:
+            int fd = (int)read_frame(f, 4);
+            unsigned position = (unsigned)read_frame(f, 8);
+            LP_seek(fd, position);
+            break;
+        case SYS_TELL:
+            int fd = (int)read_frame(f, 4);
+            f->eax = (uint32_t)LP_tell(fd);
+            break;
+        case SYS_CLOSE:
+            int fd = (int)read_frame(f, 4);
+            LP_close(fd);
+            break;
+        default:
+            //IF WE GET HERE, SHOULD WE EXIT THE PROCESS???
+            break;
+    }
 }
+
+/*
+ --------------------------------------------------------------------
+ Description: system implimentation of the halt system call. 
+    As described in the handout, simply
+ --------------------------------------------------------------------
+ */
 
 /*
  --------------------------------------------------------------------
