@@ -47,12 +47,16 @@ pagedir_destroy (uint32_t *pd)
   palloc_free_page (pd);
 }
 
-/* Returns the address of the page table entry for virtual
+/* 
+ --------------------------------------------------------------------
+ Returns the address of the page table entry for virtual
    address VADDR in page directory PD.
    If PD does not have a page table for VADDR, behavior depends
    on CREATE.  If CREATE is true, then a new page table is
    created and a pointer into it is returned.  Otherwise, a null
-   pointer is returned. */
+   pointer is returned. 
+ --------------------------------------------------------------------
+ */
 static uint32_t *
 lookup_page (uint32_t *pd, const void *vaddr, bool create)
 {
@@ -118,10 +122,22 @@ pagedir_set_page (uint32_t *pd, void *upage, void *kpage, bool writable)
     return false;
 }
 
-/* Looks up the physical address that corresponds to user virtual
+/* 
+ --------------------------------------------------------------------
+ Looks up the physical address that corresponds to user virtual
    address UADDR in PD.  Returns the kernel virtual address
    corresponding to that physical address, or a null pointer if
-   UADDR is unmapped. */
+   UADDR is unmapped. 
+ 
+ NOTE: when checking a memory reference from the kernel on behalf
+    of a user process, we want to use this function to ensure that 
+    the memory reference is to one of the pages that the user process
+    owns. If it is not, we call exit the process for an incorrect
+    memory access. The pd passed in here is the page directory 
+    for the user process. It is tracked in the thread struct that
+    resembles the user process.
+ --------------------------------------------------------------------
+ */
 void *
 pagedir_get_page (uint32_t *pd, const void *uaddr) 
 {

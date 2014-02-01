@@ -21,10 +21,14 @@
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
-/* Starts a new thread running a user program loaded from
+/* 
+ ----------------------------------------------------------------
+ Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
-   thread id, or TID_ERROR if the thread cannot be created. */
+   thread id, or TID_ERROR if the thread cannot be created. 
+ ----------------------------------------------------------------
+ */
 tid_t
 process_execute (const char *file_name) 
 {
@@ -45,8 +49,12 @@ process_execute (const char *file_name)
   return tid;
 }
 
-/* A thread function that loads a user process and starts it
-   running. */
+/* 
+ ----------------------------------------------------------------
+ A thread function that loads a user process and starts it
+   running. 
+ ----------------------------------------------------------------
+ */
 static void
 start_process (void *file_name_)
 {
@@ -76,7 +84,9 @@ start_process (void *file_name_)
   NOT_REACHED ();
 }
 
-/* Waits for thread TID to die and returns its exit status.  If
+/* 
+ ----------------------------------------------------------------
+ Waits for thread TID to die and returns its exit status.  If
    it was terminated by the kernel (i.e. killed due to an
    exception), returns -1.  If TID is invalid or if it was not a
    child of the calling process, or if process_wait() has already
@@ -84,14 +94,24 @@ start_process (void *file_name_)
    immediately, without waiting.
 
    This function will be implemented in problem 2-2.  For now, it
-   does nothing. */
+   does nothing. 
+ ----------------------------------------------------------------
+ */
 int
 process_wait (tid_t child_tid UNUSED) 
 {
   return -1;
 }
 
-/* Free the current process's resources. */
+
+/* 
+ ----------------------------------------------------------------
+ Free the current process's resources. 
+ 
+ NOTE: Is this called every time a process exits? If so, this is 
+ where we want to print the process name and exit status.
+ ----------------------------------------------------------------
+ */
 void
 process_exit (void)
 {
@@ -116,9 +136,14 @@ process_exit (void)
     }
 }
 
-/* Sets up the CPU for running user code in the current
+
+/* 
+ ----------------------------------------------------------------
+ Sets up the CPU for running user code in the current
    thread.
-   This function is called on every context switch. */
+   This function is called on every context switch. 
+ ----------------------------------------------------------------
+ */
 void
 process_activate (void)
 {
@@ -145,8 +170,12 @@ typedef uint16_t Elf32_Half;
 #define PE32Ox PRIx32   /* Print Elf32_Off in hexadecimal. */
 #define PE32Hx PRIx16   /* Print Elf32_Half in hexadecimal. */
 
-/* Executable header.  See [ELF1] 1-4 to 1-8.
-   This appears at the very beginning of an ELF binary. */
+/* 
+ ----------------------------------------------------------------
+ Executable header.  See [ELF1] 1-4 to 1-8.
+   This appears at the very beginning of an ELF binary. 
+ ----------------------------------------------------------------
+ */
 struct Elf32_Ehdr
   {
     unsigned char e_ident[16];
@@ -165,9 +194,13 @@ struct Elf32_Ehdr
     Elf32_Half    e_shstrndx;
   };
 
-/* Program header.  See [ELF1] 2-2 to 2-4.
+/* 
+ ----------------------------------------------------------------
+ Program header.  See [ELF1] 2-2 to 2-4.
    There are e_phnum of these, starting at file offset e_phoff
-   (see [ELF1] 1-6). */
+   (see [ELF1] 1-6). 
+ ----------------------------------------------------------------
+ */
 struct Elf32_Phdr
   {
     Elf32_Word p_type;
@@ -201,10 +234,14 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
                           bool writable);
 
-/* Loads an ELF executable from FILE_NAME into the current thread.
+/* 
+ ----------------------------------------------------------------
+ Loads an ELF executable from FILE_NAME into the current thread.
    Stores the executable's entry point into *EIP
    and its initial stack pointer into *ESP.
-   Returns true if successful, false otherwise. */
+   Returns true if successful, false otherwise. 
+ ----------------------------------------------------------------
+ */
 bool
 load (const char *file_name, void (**eip) (void), void **esp) 
 {
@@ -320,8 +357,12 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
 static bool install_page (void *upage, void *kpage, bool writable);
 
-/* Checks whether PHDR describes a valid, loadable segment in
-   FILE and returns true if so, false otherwise. */
+/* 
+ ----------------------------------------------------------------
+ Checks whether PHDR describes a valid, loadable segment in
+   FILE and returns true if so, false otherwise. 
+ ----------------------------------------------------------------
+ */
 static bool
 validate_segment (const struct Elf32_Phdr *phdr, struct file *file) 
 {
@@ -365,7 +406,9 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
   return true;
 }
 
-/* Loads a segment starting at offset OFS in FILE at address
+/* 
+ ----------------------------------------------------------------
+ Loads a segment starting at offset OFS in FILE at address
    UPAGE.  In total, READ_BYTES + ZERO_BYTES bytes of virtual
    memory are initialized, as follows:
 
@@ -378,7 +421,9 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
    user process if WRITABLE is true, read-only otherwise.
 
    Return true if successful, false if a memory allocation error
-   or disk read error occurs. */
+   or disk read error occurs. 
+ ----------------------------------------------------------------
+ */
 static bool
 load_segment (struct file *file, off_t ofs, uint8_t *upage,
               uint32_t read_bytes, uint32_t zero_bytes, bool writable) 
@@ -424,8 +469,12 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   return true;
 }
 
-/* Create a minimal stack by mapping a zeroed page at the top of
-   user virtual memory. */
+/*
+ ----------------------------------------------------------------
+ Create a minimal stack by mapping a zeroed page at the top of
+   user virtual memory. 
+ ----------------------------------------------------------------
+ */
 static bool
 setup_stack (void **esp) 
 {
@@ -444,7 +493,9 @@ setup_stack (void **esp)
   return success;
 }
 
-/* Adds a mapping from user virtual address UPAGE to kernel
+/* 
+ ----------------------------------------------------------------
+ Adds a mapping from user virtual address UPAGE to kernel
    virtual address KPAGE to the page table.
    If WRITABLE is true, the user process may modify the page;
    otherwise, it is read-only.
@@ -452,7 +503,9 @@ setup_stack (void **esp)
    KPAGE should probably be a page obtained from the user pool
    with palloc_get_page().
    Returns true on success, false if UPAGE is already mapped or
-   if memory allocation fails. */
+   if memory allocation fails. 
+ ----------------------------------------------------------------
+ */
 static bool
 install_page (void *upage, void *kpage, bool writable)
 {
