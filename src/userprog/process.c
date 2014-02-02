@@ -136,6 +136,7 @@ start_process (void *arg_page_)
   if_.esp = ((char*)if_.esp) - sizeof(char*);
   *((char**)if_.esp) = NULL;
   
+  hex_dump(0, PHYS_BASE, 200, true);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
