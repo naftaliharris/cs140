@@ -26,18 +26,49 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
 tid_t
-process_execute (const char *file_name) 
+process_execute (const char *arguments) 
 {
   char *fn_copy;
   tid_t tid;
-
+  
+  // CHECK arguments LENGTH
+  
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
-  strlcpy (fn_copy, file_name, PGSIZE);
+    
+  // MODIFY FROM HERE
+  //strtok_r is threadsafe!!!!
+    
+  int numargs = 1;
+  char* saveptr = NULL;
+  char* file_name = strtok_r((char*)arguments, " ", &saveptr);
+  int curoffset = sizeof(int) + sizeof(int);
+  strlcpy (fn_copy + curoffset, file_name, PGSIZE);
+  char* argument_str = strtok_r(NULL, " ", &saveptr);
+  curoffset += strnlen(file_name, PGSIZE) + 1;
+  while(argument_str != NULL)
+  {
+    if(curoffset >= PGSIZE)
+    {
+      // ERROR
+      palloc_free_page(fn_copy);
+      return TID_ERROR;
+    }
+    numargs++;
+    strlcpy(fn_copy + curoffset, argument_str, PGSIZE - curoffset);
+    curoffset += strnlen(argument_str, PGSIZE) + 1;
+    argument_str = strtok_r(NULL, " ", &saveptr);
+  }
+  
+  *((int*) fn_copy) = curoffset;
+  *(((int*) fn_copy) + 1) = numargs;
+  hex_dump(0, fn_copy, curoffset + 5, true);
 
+  // TO HERE
+  
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
@@ -48,9 +79,10 @@ process_execute (const char *file_name)
 /* A thread function that loads a user process and starts it
    running. */
 static void
-start_process (void *file_name_)
+start_process (void *arg_page_)
 {
-  char *file_name = file_name_;
+  char *arg_page = arg_page_;
+  char *file_name = arg_page_ + sizeof(int) + sizeof(int);
   struct intr_frame if_;
   bool success;
 
@@ -65,6 +97,45 @@ start_process (void *file_name_)
   palloc_free_page (file_name);
   if (!success) 
     thread_exit ();
+    
+  // MODIFY STACK HERE
+  int far_byte = *((int*) arg_page);
+  int num_args = *(((int*) arg_page) + 1);
+  char* args[num_args];
+  
+  int cur_arg = num_args;
+  int i;
+  for(i = far_byte; i >= 2; i--)
+  {
+    char* copy_byte = arg_page + i;
+    if(*copy_byte == '\0') 
+    {
+      if(cur_arg < num_args)
+      {
+        args[cur_arg] = if_.esp;
+      }
+      cur_arg--;
+    }
+    if_.esp = ((char*)if_.esp) - 1;
+    *((char*)if_.esp) = *copy_byte;
+  }
+  ASSERT(cur_arg == 0);
+  args[0] = if_.esp;
+  if_.esp = ((char*)if_.esp) - 1;
+  *((char*)if_.esp) = '\0';
+  for(i = num_args - 1; i >= 0; i--)
+  {
+    if_.esp = ((char*)if_.esp) - sizeof(char*);
+    *((char**)if_.esp) = args[i];
+  }
+  char* argv = if_.esp;
+  if_.esp = ((char*)if_.esp) - sizeof(char*);
+  *((char**)if_.esp) = argv;
+  if_.esp = ((char*)if_.esp) - sizeof(int);
+  *((int*)if_.esp) = num_args;
+  if_.esp = ((char*)if_.esp) - sizeof(char*);
+  *((char**)if_.esp) = NULL;
+  
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
