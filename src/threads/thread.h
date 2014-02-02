@@ -125,12 +125,12 @@ struct thread
     //FILE INFORMATION
     /* list of files this thread currently has open */
     struct list open_files;
+    /* locks the list of files to avoid race conditions */
+    struct lock open_files_lock;
     /* file descriptor counter */
     int fd_counter;
     
     //CHILD INFORMATION
-    /* Records the processes exit status */
-    int exit_status;
     /* synchronizes the process of creating a child*/
     struct semaphore sema_child_load;
     /* outcome of the child load. The child will set this field before signaling*/
@@ -138,17 +138,15 @@ struct thread
     /* allows the child to set fields in the parent struct */
     struct thread* parent_thread;
     /* list of child threads spawned by this thread */
+    /* note, this list does not require synchronization, as it is only*/
+    /* accessed by the same thread */
     struct list child_threads;
-    /* allows this thread to be placed in the parent child_threads list */
-    struct list_elem child_elem;
-    /* used to indicate if this thread has been waited on by parent before */
-    bool has_allready_been_waited_on;
     /* allows parent to wait on child process */
     struct semaphore wait_on_me;
-    /* Indicates if the parent thread is finished */
-    bool parent_is_finished;
-    /* Indicates if this thread has finished */
-    bool child_is_finished;
+    /* pointer to the threads vital_info */
+    struct vital_info* vital_info;
+    
+    
     
     //END PROJECT 2 ADDITIONS//
 #endif
@@ -156,6 +154,31 @@ struct thread
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
 };
+
+/*
+ ----------------------------------------------------------------
+ Description: vital_info is the information that has to stay 
+    around even after a thread exits. Thus, we malloc this struct
+    and free the pointer only when we no longer need this 
+    information.
+ ----------------------------------------------------------------
+ */
+struct vital_info {
+    /* pointer to the thread who's vital info this is */
+    struct thread* t;
+    /* Records the processes exit status */
+    int exit_status;
+    /* used to indicate if this thread has been waited on by parent before */
+    bool has_allready_been_waited_on;
+    /* identifier so we can look up by tid */
+    tid_t tid;
+    /* Indicates if the parent thread is finished */
+    bool parent_is_finished;
+    /* Indicates if this thread has finished */
+    bool child_is_finished;
+    /* allows this thread to be placed in the parent child_threads list */
+    struct list_elem child_elem;
+}
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.

@@ -22,10 +22,10 @@ static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
 /* LP Defined functions project 2 */
-struct thread* get_child_by_tid(tid_t child_tid);
+struct vital_info* get_child_by_tid(tid_t child_tid);
 void notify_children_parent_is_finished();
-void free_child_resources(struct thread* t);
 void close_open_files(struct thread* t);
+void release_resources(struct thread* t);
 
 /* 
  ----------------------------------------------------------------
@@ -96,7 +96,7 @@ start_process (void *file_name_)
     /* If load failed, quit. */
     palloc_free_page (file_name);
     if (!success)
-        thread_current()->exit_status = -1;
+        thread_current()->vital_info->exit_status = -1;
         thread_exit ();
     
     /* Start the user process by simulating a return from an
@@ -144,13 +144,18 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid) 
 {
-    struct thread* child_to_wait_on = get_child_by_tid(child_tid);
+    struct vital_info* child_to_wait_on = get_child_by_tid(child_tid);
     if (child_to_wait_on == NULL) return -1;
     if (child_to_wait_on->has_allready_been_waited_on) return -1;
     child_to_wait_on->has_allready_been_waited_on = true;
-    sema_down(&child_to_wait_on->wait_on_me);
-    free_child_resources(child_to_wait_on);
-    return child_to_wait_on->exit_status;
+    int returnVal = 0;
+    if (!child_to_wait_on->child_is_finished) {
+        sema_down(&child_to_wait_on->t->wait_on_me);
+    }
+    returnVal = child_to_wait_on->exit_status;
+    list_remove(&child_to_wait_on->child_elem);
+    free(child_to_wait_on);
+    return returnVal;
 }
 
 /*
@@ -159,14 +164,14 @@ process_wait (tid_t child_tid)
     defined by tid. If no thread is in the list, returns NULL.
  ----------------------------------------------------------------
  */
-struct thread* get_child_by_tid(tid_t child_tid) {
+struct vital_info* get_child_by_tid(tid_t child_tid) {
     struct thread* curr_thread = thread_current();
     struct list_elem* curr = list_head(&curr_thread->child_threads);
     struct list_elem* tail = list_tail(&curr_thread->child_threads);
     while (true) {
         curr = list_next(curr);
         if (curr == tail) break;
-        struct thread* t = list_entry(curr, struct thread, child_elem);
+        struct vital_info* t = list_entry(curr, struct vital_info, child_elem);
         if (t->tid == child_tid) return t;
     }
     return NULL;
@@ -178,55 +183,53 @@ struct thread* get_child_by_tid(tid_t child_tid) {
  ----------------------------------------------------------------
  */
 void close_open_files(struct thread* t) {
+    
     lock_acquire(&file_system_lock);
     struct thread* curr_thread = thread_current();
-    struct list_elem* curr = list_head(&curr_thread->open_files);
-    struct list_elem* tail = list_tail(&curr_thread->open_files);
-    while (true) {
-        curr = list_next(curr);
-        if (curr == tail) break;
+    lock_acquire(&curr_thread->open_files_lock);
+    
+    while (!list_empty(&curr_thread->open_files)) {
+        struct list_elem* curr = list_pop_front(&curr_thread->open_files);
         struct file_package* package = list_entry(curr, struct file_package, elem);
         file_close(package->fp);
-        list_remove(&package->elem);
         free(package);
     }
+    
+    lock_release(&curr_thread->open_files_lock);
     lock_release(&file_system_lock);
 }
 
-/*
- ----------------------------------------------------------------
- Description: frees the resources from a child's perspective. 
-    This involves:
-    1. removal from child_list
-    2. closing open files
- ----------------------------------------------------------------
- */
-void free_child_resources(struct thread* t) {
-    list_remove(&t->child_elem);
-    close_open_files(t);
-}
 
 /*
  ----------------------------------------------------------------
  Description: for all children in the waiting list, informs
     them that their parent is finished. If the child is finished
-    then it frees that childs resources. 
+    then it frees that child's vital_info. 
+ 
  ----------------------------------------------------------------
  */
 void notify_children_parent_is_finished() {
     struct thread* curr_thread = thread_current();
-    struct list_elem* curr = list_head(&curr_thread->child_threads);
-    struct list_elem* tail = list_tail(&curr_thread->child_threads);
-    while (true) {
-        curr = list_next(curr);
-        if (curr == tail) break;
-        struct thread* t = list_entry(curr, struct thread, child_elem);
+    while (!list_empty(&curr_thread->child_threads)) {
+        struct list_elem* curr = list_pop_front(&curr_thread->child_threads);
+        struct vital_info* t = list_entry(curr, struct vital_info, child_elem);
         if (t->child_is_finished) {
-            free_child_resources(t);
+            free(vital_info);
         } else {
             t->parent_is_finished = true;
         }
     }
+}
+
+/*
+ ----------------------------------------------------------------
+ Description: disables interrupts, checks all locks are released, 
+    all malloc'd memory is freed, and any other resource is 
+    released. 
+ ----------------------------------------------------------------
+ */
+void release_resources(struct thread* t) {
+    NEED TO IMPLIMENT
 }
 
 
@@ -236,7 +239,14 @@ void notify_children_parent_is_finished() {
  
  NOTE: We must disable interrupts here so that synchronization 
     of parent and child threads does not get interleaved. 
- NOTE: 
+ NOTE: This function gets called by thread_exit(), which itself
+    is called by LP_exit.
+ NOTE: if the parent is finished, the parent has allready removed
+    the child from the child_list, so all we have to do is 
+    close the open files. 
+ 1. release resources
+ 2. if parent exited, free vital info
+ 3. now, as parent, 
  ----------------------------------------------------------------
  */
 void
@@ -246,12 +256,14 @@ process_exit (void)
     struct thread *cur = thread_current ();
     
     //LP Project 2 additions
-    if (cur->parent_is_finished) {
-        free_child_resources(cur); 
+    if (cur->vital_info->parent_is_finished) {
+        close_open_files(curr);
+        free(cur->vital_info);
     } else {
         sema_up(&wait_on_me);
-        cur->child_is_finished = true;
+        cur->vital_info->child_is_finished = true;
     }
+    release_resources(cur);
     notify_children_parent_is_finished(); 
     
     uint32_t *pd;

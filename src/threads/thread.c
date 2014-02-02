@@ -99,6 +99,7 @@ static void update_cpu_for_all_threads(void);
 /* LP Project 2 additions */
 static void init_file_system_info(struct thread* t);
 static void init_child_managment_info(struct thread* t);
+static void init_vital_info(struct thread* t);
 
 
 /*
@@ -288,6 +289,7 @@ void thread_start (void)
   /* Create the idle thread. */
   struct semaphore idle_started;
   sema_init (&idle_started, 0);
+  init_vital_info(initial_thread);
   thread_create ("idle", PRI_MIN, idle, &idle_started);
 
   /* Start preemptive thread scheduling. */
@@ -401,8 +403,10 @@ tid_t thread_create (const char *name, int priority,
     return TID_ERROR;
 
   /* Initialize thread. */
-  init_thread (t, name, priority);
-  tid = t->tid = allocate_tid ();
+    
+    init_thread (t, name, priority);
+    tid = t->tid = allocate_tid ();
+    init_vital_info(t);
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
@@ -866,7 +870,31 @@ static void init_thread (struct thread *t, const char *name, int priority)
  */
 static void init_file_system_info(struct thread* t) {
     list_init(&t->open_files);
+    lock_init(&t->open_files_lock);
     t->fd_counter = 2; 
+}
+
+/*
+ --------------------------------------------------------------------
+ Description: mallocs a pointer for the vital info struct 
+    and then sets the data and then updates t to point
+    to the data. 
+ NOTE: we only add the vital_info to a child_list if t is not the 
+    initial thread. 
+ --------------------------------------------------------------------
+ */
+static void init_vital_info(struct thread* t) {
+    struct vital_info* vital_info = malloc(sizeof(struct vital_info));
+    vital_info->t = t;
+    vital_info->exit_status = 0;
+    vital_info->has_allready_been_waited_on = false;
+    vital_info->tid = t->tid;
+    vital_info->parent_is_finished = false;
+    vital_info->child_is_finished = false;
+    t->vital_info = vital_info;
+    if (t != initial_thread) {
+        list_push_back(&t->parent_thread->child_threads, &vital_info->child_elem);
+    }
 }
 
 /*
@@ -879,19 +907,14 @@ static void init_file_system_info(struct thread* t) {
  --------------------------------------------------------------------
  */
 static void init_child_managment_info(struct thread* t) {
-    sema_init(&t->sema_load_child, 0);
+    sema_init(&t->sema_child_load, 0);
     sema_init(&t->wait_on_me, 0);
     list_init(&t->child_threads);
-    t->child_did_load_successfully = false;
-    t->exit_status = 0;
-    t->has_allready_been_waited_on = false;
-    t->parent_is_finished = false;
-    t->child_is_finished = false;
+    
     if (t == initial_thread) {
         t->parent_thread = NULL;
     } else {
         t->parent_thread = thread_current();
-        list_push_back(&(thread_current()->child_list), &t->child_elem);
     }
     
 }

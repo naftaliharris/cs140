@@ -173,14 +173,14 @@ void LP_halt (void) NO_RETURN {
  --------------------------------------------------------------------
  */
 void LP_exit (int status) NO_RETURN {
-    thread_current()->exit_status = status;
+    thread_current()->vital_info->exit_status = status;
     thread_exit();
 }
 
 /*
  --------------------------------------------------------------------
  Description: Runs the executable whose name is given in cmd_line, 
-    passing any given arguments, and returns the new process's 
+    passing any given arguments, and returns the new process's
     program id (pid). Must return pid -1, which otherwise should 
     not be a valid pid, if the program cannot load or run for any 
     reason. Thus, the parent process cannot return from the exec 
@@ -444,14 +444,19 @@ void LP_close (int fd) {
  */
 struct file_package* get_file_package_from_open_list(int fd) {
     struct thread* curr_thread = thread_current();
+    lock_acquire(&curr_thread->open_files_lock);
     struct list_elem* curr = list_head(&curr_thread->open_files);
     struct list_elem* tail = list_tail(&curr_thread->open_files);
     while (true) {
         curr = list_next(curr);
         if (curr == tail) break;
         struct file_package* package = list_entry(curr, struct file_package, elem);
-        if (package->fd == fd) return package;
+        if (package->fd == fd) {
+            lock_release(&curr_thread->open_files_lock);
+            return package;
+        }
     }
+    lock_release(&curr_thread->open_files_lock);
     return NULL;
 }
 
@@ -463,14 +468,19 @@ struct file_package* get_file_package_from_open_list(int fd) {
  */
 struct file* get_file_from_open_list(int fd) {
     struct thread* curr_thread = thread_current();
+    lock_acquire(&curr_thread->open_files_lock);
     struct list_elem* curr = list_head(&curr_thread->open_files);
     struct list_elem* tail = list_tail(&curr_thread->open_files);
     while (true) {
         curr = list_next(curr);
         if (curr == tail) break;
         struct file_package* package = list_entry(curr, struct file_package, elem);
-        if (package->fd == fd) return package->fp;
+        if (package->fd == fd) {
+            lock_release(&curr_thread->open_files_lock);
+            return package->fp;
+        }
     }
+    lock_release(&curr_thread->open_files_lock);
     return NULL;
 }
 
@@ -489,7 +499,9 @@ int add_to_open_file_list(struct file* fp) {
     int fd = curr_thread->fd_counter;
     package->fd = fd;
     curr_thread->fd_counter++;
+    lock_acquire(&curr_thread->open_files_lock);
     list_push_back(&curr_thread->open_files, &package->elem);
+    lock_release(&curr_thread->open_files_lock);
     return fd;
 }
 
