@@ -21,6 +21,12 @@
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
+/* LP Defined functions project 2 */
+struct thread* get_child_by_tid(tid_t child_tid);
+void notify_children_parent_is_finished();
+void free_child_resources(struct thread* t);
+void close_open_files(struct thread* t);
+
 /* 
  ----------------------------------------------------------------
  Starts a new thread running a user program loaded from
@@ -112,14 +118,115 @@ start_process (void *file_name_)
    been successfully called for the given TID, returns -1
    immediately, without waiting.
 
-   This function will be implemented in problem 2-2.  For now, it
-   does nothing. 
+ NOTE: There are several courses of action for which we account
+    for. 
+    FROM THE PARENT PERSPECTIVE
+    1. The Parent process exits, and does not wait for children. 
+    In this case, the parent will clean up any children it 
+    did not wait on that have already finished, will set 
+    parent_exited to true in the children it has not waited on
+    and who have not finished yet, and then the parent will be done
+    2. The parent process waits for a child. In this case, the parent
+    will wait until the child exits. The parent will then clean up
+    the child once the semaphore clears. 
+    FROM THE CHILD PERSPECTIVE
+    1. The child exits, but the parent has not exited yet. In this
+    case, the child will set its field to indicate it has exited, 
+    and then leave itself for the parent to clean up. IMPORTANT, the
+    child must signal the semaphore, as the parent might 
+    still wait on this child. 
+    2. The child exits after the parent has exited. In this case,
+    the child will clean itelf up. 
+ NOTE: first we check the initial conditions for which we return 
+    -1. 
  ----------------------------------------------------------------
  */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
-  return -1;
+    struct thread* child_to_wait_on = get_child_by_tid(child_tid);
+    if (child_to_wait_on == NULL) return -1;
+    if (child_to_wait_on->has_allready_been_waited_on) return -1;
+    child_to_wait_on->has_allready_been_waited_on = true;
+    sema_down(&child_to_wait_on->wait_on_me);
+    free_child_resources(child_to_wait_on);
+    return child_to_wait_on->exit_status;
+}
+
+/*
+ ----------------------------------------------------------------
+ Description: Returns a pointer to the child thread
+    defined by tid. If no thread is in the list, returns NULL.
+ ----------------------------------------------------------------
+ */
+struct thread* get_child_by_tid(tid_t child_tid) {
+    struct thread* curr_thread = thread_current();
+    struct list_elem* curr = list_head(&curr_thread->child_threads);
+    struct list_elem* tail = list_tail(&curr_thread->child_threads);
+    while (true) {
+        curr = list_next(curr);
+        if (curr == tail) break;
+        struct thread* t = list_entry(curr, struct thread, child_elem);
+        if (t->tid == child_tid) return t;
+    }
+    return NULL;
+}
+
+/*
+ ----------------------------------------------------------------
+ Description: closes all files that the current thread has open.
+ ----------------------------------------------------------------
+ */
+void close_open_files(struct thread* t) {
+    lock_acquire(&file_system_lock);
+    struct thread* curr_thread = thread_current();
+    struct list_elem* curr = list_head(&curr_thread->open_files);
+    struct list_elem* tail = list_tail(&curr_thread->open_files);
+    while (true) {
+        curr = list_next(curr);
+        if (curr == tail) break;
+        struct file_package* package = list_entry(curr, struct file_package, elem);
+        file_close(package->fp);
+        list_remove(&package->elem);
+        free(package);
+    }
+    lock_release(&file_system_lock);
+}
+
+/*
+ ----------------------------------------------------------------
+ Description: frees the resources from a child's perspective. 
+    This involves:
+    1. removal from child_list
+    2. closing open files
+ ----------------------------------------------------------------
+ */
+void free_child_resources(struct thread* t) {
+    list_remove(&t->child_elem);
+    close_open_files(t);
+}
+
+/*
+ ----------------------------------------------------------------
+ Description: for all children in the waiting list, informs
+    them that their parent is finished. If the child is finished
+    then it frees that childs resources. 
+ ----------------------------------------------------------------
+ */
+void notify_children_parent_is_finished() {
+    struct thread* curr_thread = thread_current();
+    struct list_elem* curr = list_head(&curr_thread->child_threads);
+    struct list_elem* tail = list_tail(&curr_thread->child_threads);
+    while (true) {
+        curr = list_next(curr);
+        if (curr == tail) break;
+        struct thread* t = list_entry(curr, struct thread, child_elem);
+        if (t->child_is_finished) {
+            free_child_resources(t);
+        } else {
+            t->parent_is_finished = true;
+        }
+    }
 }
 
 
@@ -127,32 +234,45 @@ process_wait (tid_t child_tid UNUSED)
  ----------------------------------------------------------------
  Free the current process's resources. 
  
- NOTE: Is this called every time a process exits? If so, this is 
- where we want to print the process name and exit status.
+ NOTE: We must disable interrupts here so that synchronization 
+    of parent and child threads does not get interleaved. 
+ NOTE: 
  ----------------------------------------------------------------
  */
 void
 process_exit (void)
 {
-  struct thread *cur = thread_current ();
-  uint32_t *pd;
-
-  /* Destroy the current process's page directory and switch back
+    intr_level old_level = intr_disable();
+    struct thread *cur = thread_current ();
+    
+    //LP Project 2 additions
+    if (cur->parent_is_finished) {
+        free_child_resources(cur); 
+    } else {
+        sema_up(&wait_on_me);
+        cur->child_is_finished = true;
+    }
+    notify_children_parent_is_finished(); 
+    
+    uint32_t *pd;
+    
+    /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
-  pd = cur->pagedir;
-  if (pd != NULL) 
+    pd = cur->pagedir;
+    if (pd != NULL)
     {
-      /* Correct ordering here is crucial.  We must set
+        /* Correct ordering here is crucial.  We must set
          cur->pagedir to NULL before switching page directories,
          so that a timer interrupt can't switch back to the
          process page directory.  We must activate the base page
          directory before destroying the process's page
          directory, or our active page directory will be one
          that's been freed (and cleared). */
-      cur->pagedir = NULL;
-      pagedir_activate (NULL);
-      pagedir_destroy (pd);
+        cur->pagedir = NULL;
+        pagedir_activate (NULL);
+        pagedir_destroy (pd);
     }
+    intr_set_level(old_level);
 }
 
 

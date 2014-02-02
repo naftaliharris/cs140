@@ -96,6 +96,10 @@ static void update_changed_cpu_threads(void);
 static void update_running_thread_cpu(struct thread* t);
 static void update_cpu_for_all_threads(void);
 
+/* LP Project 2 additions */
+static void init_file_system_info(struct thread* t);
+static void init_child_managment_info(struct thread* t);
+
 
 /*
  --------------------------------------------------------------------
@@ -846,17 +850,53 @@ static void init_thread (struct thread *t, const char *name, int priority)
     }
     
     //PROJECT 2 ADDIDITION
-    list_init(&t->open_files);
-    t->fd_counter = 2; //first fd we can dole out is 2, as 0 and 1 are reserved for stdin, stdout.
-    t->exit_status = 0;
-    sema_init(&t->sema_load_child);
-    t->child_did_load_successfully = false;
-    t->parent_thread = thread_current();
+    init_file_system_info(t);
+    init_child_managment_info(t);
     
     old_level = intr_disable ();
     list_push_back (&all_list, &t->allelem);
     intr_set_level (old_level);
 }
+
+/*
+ --------------------------------------------------------------------
+ Description: initiliazes the file system info for the thread t
+ NOTE: we set fd_counter to 2 to account for STD_IN, STD_OUT.
+ --------------------------------------------------------------------
+ */
+static void init_file_system_info(struct thread* t) {
+    list_init(&t->open_files);
+    t->fd_counter = 2; 
+}
+
+/*
+ --------------------------------------------------------------------
+ Description: intiliazes the variables used to manange the process
+    of creating, tracking, and communicating with child processes.
+ NOTE: we must take special precation when handling the initial thread
+    as the initial thread will never be a child of a parent threads, 
+    and the initial thread does not have a parent thread. 
+ --------------------------------------------------------------------
+ */
+static void init_child_managment_info(struct thread* t) {
+    sema_init(&t->sema_load_child, 0);
+    sema_init(&t->wait_on_me, 0);
+    list_init(&t->child_threads);
+    t->child_did_load_successfully = false;
+    t->exit_status = 0;
+    t->has_allready_been_waited_on = false;
+    t->parent_is_finished = false;
+    t->child_is_finished = false;
+    if (t == initial_thread) {
+        t->parent_thread = NULL;
+    } else {
+        t->parent_thread = thread_current();
+        list_push_back(&(thread_current()->child_list), &t->child_elem);
+    }
+    
+}
+
+
 
 /* 
  --------------------------------------------------------------------

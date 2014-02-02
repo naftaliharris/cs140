@@ -137,6 +137,18 @@ struct thread
     bool child_did_load_successfully;
     /* allows the child to set fields in the parent struct */
     struct thread* parent_thread;
+    /* list of child threads spawned by this thread */
+    struct list child_threads;
+    /* allows this thread to be placed in the parent child_threads list */
+    struct list_elem child_elem;
+    /* used to indicate if this thread has been waited on by parent before */
+    bool has_allready_been_waited_on;
+    /* allows parent to wait on child process */
+    struct semaphore wait_on_me;
+    /* Indicates if the parent thread is finished */
+    bool parent_is_finished;
+    /* Indicates if this thread has finished */
+    bool child_is_finished;
     
     //END PROJECT 2 ADDITIONS//
 #endif
