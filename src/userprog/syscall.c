@@ -40,7 +40,7 @@ struct file_package* get_file_package_from_open_list(int fd);
 void LP_halt (void) NO_RETURN;
 void LP_exit (int status) NO_RETURN;
 pid_t LP_exec (const char* command_line);
-int LP_wait (pid_t);
+int LP_wait (pid_t pid);
 bool LP_create (const char *file, unsigned initial_size);
 bool LP_remove (const char *file);
 int LP_open (const char *file);
@@ -194,8 +194,8 @@ pid_t LP_exec (const char* command_line) {
     child's exit status.
  --------------------------------------------------------------------
  */
-int LP_wait (pid_t) {
-    
+int LP_wait (pid_t pid) {
+    return process_wait(pid);
 }
 
 /*
@@ -378,6 +378,7 @@ unsigned LP_tell (int fd) {
     lock_acquire(&file_system_lock);
     struct file_package* package = get_file_package_from_open_list(fd);
     if (package == NULL) {
+        lock_release(&file_system_lock);
         INVOKE EXIT HERE WITH AN ERROR MESSAGE
     }
     unsigned position = package->position;
@@ -390,10 +391,21 @@ unsigned LP_tell (int fd) {
  Description: Closes file descriptor fd. Exiting or terminating a 
     process implicitly closes all its open file descriptors, as if 
     by calling this function for each one.
+ NOTE: if there is no associated file_package for the given fd, 
+    forces us to exit the program. 
  --------------------------------------------------------------------
  */
 void LP_close (int fd) {
-    
+    lock_acquire(&file_system_lock);
+    struct file_package* package = get_file_package_from_open_list(fd);
+    if (package == NULL) {
+        lock_release(&file_system_lock);
+        INVOKE ERROR HERE WITH AN ERROR MESSAGE
+    }
+    file_close(package->fp);
+    list_remove(&package->elem);
+    lock_release(&file_system_lock);
+    free(package);
 }
 
 /*
