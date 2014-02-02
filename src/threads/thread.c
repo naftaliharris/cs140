@@ -841,6 +841,10 @@ static void init_thread (struct thread *t, const char *name, int priority)
         t->lock_waiting_on = NULL;
     }
     
+    //PROJECT 2 ADDIDITION
+    list_init(&t->open_files);
+    t->fd_counter = 2; //first fd we can dole out is 2, as 0 and 1 are reserved for stdin, stdout. 
+    
     old_level = intr_disable ();
     list_push_back (&all_list, &t->allelem);
     intr_set_level (old_level);

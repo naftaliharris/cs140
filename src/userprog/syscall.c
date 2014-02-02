@@ -14,6 +14,13 @@
 //4. THE DEFAULT CASE IN SYSTEM_HANDLER SWITCH STATEMENT
 //5. HOW TO RESPOND IF THE CHECK_FILENAME_LENGTH RETURNS FALSE
 
+struct file_package {
+    int fd; //file descriptor
+    off_t position; //this file_package's position
+    struct file* fp; //file pointer
+    struct list_elem elem; //so it can be placed in a list
+}
+
 static lock file_system_lock;
 
 static void syscall_handler (struct intr_frame *);
@@ -21,8 +28,12 @@ static void syscall_handler (struct intr_frame *);
 // BEGIN LP DEFINED HELPER FUNCTIONS//
 void check_usr_ptr(void* u_ptr);
 void check_usr_string(char* str);
+void check_usr_buffer(void* buffer, unsigned length);
 bool check_file_name_length(const char* filename);
 uint32_t read_frame(struct intr_frame* f, int byteOffset);
+int add_to_open_file_list(struct file* fp);
+struct file* get_file_from_open_list(int fd);
+struct file_package* get_file_package_from_open_list(int fd);
 // END LP DEFINED HELPER FUNCTIONS  //
 
 // BEGIN LP DEFINED SYSTEM CALL HANDLERS //
@@ -223,7 +234,7 @@ bool LP_create (const char *file, unsigned initial_size) {
 bool LP_remove (const char *file) {
     check_usr_string(file);
     if (!check_file_name_length(file)) {
-        //what to do here?
+        what to do here?
     }
     
     lock_acquire(&file_system_lock);
@@ -241,16 +252,37 @@ bool LP_remove (const char *file) {
  --------------------------------------------------------------------
  */
 int LP_open (const char *file) {
-    
+    check_usr_string(file);
+    if (!check_file_name_length(file)) {
+        what to do here?
+    }
+    lock_acquire(&file_system_lock);
+    struct file* fp = filesys_open(file);
+    if (fp == NULL) {
+        lock_release(&file_system_lock);
+        return -1;
+    }
+    int fd = add_to_open_file_list(fp); 
+    lock_release(&file_system_lock);
+    return fd;
 }
 
 /*
  --------------------------------------------------------------------
  Description: Returns the size, in bytes, of the file open as fd.
+ NOTE: if no open file for fd, then returns -1;
  --------------------------------------------------------------------
  */
 int LP_filesize (int fd) {
-    
+    lock_acquire(&file_system_lock);
+    struct file* fp = get_file_from_open_list(fd);
+    if (fp == NULL) {
+        lock_release(&file_system_lock);
+        return -1;
+    }
+    off_t size = file_length(fp);
+    lock_release(&file_system_lock);
+    return (int)size;
 }
 
 /*
@@ -262,7 +294,26 @@ int LP_filesize (int fd) {
  --------------------------------------------------------------------
  */
 int LP_read (int fd, void *buffer, unsigned length) {
+    check_usr_buffer(buffer, length);
     
+    if (fd == STDIN_FILENO) {
+        char* char_buff = (char*)buffer;
+        for (int i = 0; i < length; i++) {
+            char_buff[i] = input_getc();
+        }
+        return length;
+    }
+    
+    lock_acquire(&file_system_lock);
+    struct file_package* package = get_file_package_from_open_list(fd);
+    if (package == NULL) {
+        lock_release(&file_system_lock);
+        return -1;
+    }
+    int num_bytes_read = file_read_at(package->fp, buffer, length, package->position);
+    package->position += num_bytes_read;
+    lock_release(&file_system_lock);
+    return num_bytes_read;
 }
 
 /*
@@ -273,7 +324,23 @@ int LP_read (int fd, void *buffer, unsigned length) {
  --------------------------------------------------------------------
  */
 int LP_write (int fd, const void *buffer, unsigned length) {
+    check_usr_buffer(buffer, length);
     
+    if (fd == STDOUT_FILENO) {
+        putbuf(buffer, length);
+        return length;
+    }
+    
+    lock_acquire(&file_system_lock);
+    struct file_package* package = get_file_package_from_open_list(fd);
+    if (package == NULL) {
+        lock_release(&file_system_lock);
+        return -1;
+    }
+    int num_bytes_written = file_write_at(package->fp, buffer, length, package->position);
+    package->position += num_bytes_written;
+    lock_release(&file_system_lock);
+    return num_bytes_written;
 }
 
 /*
@@ -281,10 +348,20 @@ int LP_write (int fd, const void *buffer, unsigned length) {
  Description: Changes the next byte to be read or written in open 
     file fd to position, expressed in bytes from the beginning of 
     the file. (Thus, a position of 0 is the file's start.)
+ NOTE: The assignment spec indicates we do not need to check the    
+    validity of the new position v. filesize, as this is handled for
+    us in the write and read implimentations in the filsysem. 
  --------------------------------------------------------------------
  */
 void LP_seek (int fd, unsigned position) {
-    
+    lock_acquire(&file_system_lock);
+    struct file_package* package = get_file_package_from_open_list(fd);
+    if (package == NULL) {
+        lock_release(&file_system_lock);
+        CALL EXIT WITH AN ERROR MESSAGE
+    }
+    package->position = position;
+    lock_release(&file_system_lock);
 }
 
 /*
@@ -292,10 +369,20 @@ void LP_seek (int fd, unsigned position) {
  Description: Returns the position of the next byte to be read 
     or written in open file fd, expressed in bytes from the beginning 
     of the file.
+ NOTE: In the case of an invalid fd, we will have to call exit with 
+    an error message as the porotype of this system call having an 
+    unsigned return value does not allow us to return -1 on error. 
  --------------------------------------------------------------------
  */
 unsigned LP_tell (int fd) {
-    
+    lock_acquire(&file_system_lock);
+    struct file_package* package = get_file_package_from_open_list(fd);
+    if (package == NULL) {
+        INVOKE EXIT HERE WITH AN ERROR MESSAGE
+    }
+    unsigned position = package->position;
+    lock_release(&file_system_lock);
+    return position;
 }
 
 /*
@@ -311,6 +398,63 @@ void LP_close (int fd) {
 
 /*
  --------------------------------------------------------------------
+ Description: returns the file_packae struct that corresponds to a 
+    given fd in the list of open_files within a process. 
+ --------------------------------------------------------------------
+ */
+struct file_package* get_file_package_from_open_list(int fd) {
+    struct thread* curr_thread = thread_current();
+    struct list_elem* curr = list_head(&curr_thread->open_files);
+    struct list_elem* tail = list_tail(&curr_thread->open_files);
+    while (true) {
+        curr = list_next(curr);
+        if (curr == tail) break;
+        struct file_package* package = list_entry(curr, struct file_package, elem);
+        if (package->fd == fd) return package;
+    }
+    return NULL;
+}
+
+/*
+ --------------------------------------------------------------------
+ Description: checks the list of file_packages in the thread for one 
+    contains fd. If none exist, returns NULL.
+ --------------------------------------------------------------------
+ */
+struct file* get_file_from_open_list(int fd) {
+    struct thread* curr_thread = thread_current();
+    struct list_elem* curr = list_head(&curr_thread->open_files);
+    struct list_elem* tail = list_tail(&curr_thread->open_files);
+    while (true) {
+        curr = list_next(curr);
+        if (curr == tail) break;
+        struct file_package* package = list_entry(curr, struct file_package, elem);
+        if (package->fd == fd) return package->fp;
+    }
+    return NULL;
+}
+
+/*
+ --------------------------------------------------------------------
+ Description: this funtion makes a thread package around this
+    struct and then adds it to the list of files open for the
+    given thread. 
+ --------------------------------------------------------------------
+ */
+int add_to_open_file_list(struct file* fp) {
+    struct thread* curr_thread = thread_current();
+    struct file_package* package = malloc(sizeof(struct file_package));
+    package->position = 0;
+    package->fp = fp;
+    int fd = curr_thread->fd_counter;
+    package->fd = fd;
+    curr_thread->fd_counter++;
+    list_push_back(&curr_thread->open_files, &package->elem);
+    return fd;
+}
+
+/*
+ --------------------------------------------------------------------
  Description: ensures that the length of the filename does not 
     exceed 14 characters. 
  --------------------------------------------------------------------
@@ -320,6 +464,23 @@ bool check_file_name_length(const char* filename) {
     size_t length = strlen(filename);
     if (length > MAX_FILENAME_LENGTH) return false;
     return true;
+}
+
+/*
+ --------------------------------------------------------------------
+ Description: Checks to ensure that all pointers within the usr's
+    supplied buffer are proper for user space. 
+ NOTE: If this function completes and returns, we know that the 
+    buffer is solid. 
+ --------------------------------------------------------------------
+ */
+void check_usr_buffer(void* buffer, unsigned length) {
+    char* buff_as_char_ptr = (char*)buffer;
+    for (int i = 0; i < length; i++) {
+        const void* curr_addr = buff_as_char_ptr;
+        check_usr_ptr(curr_addr);
+        buff_as_char_ptr = buff_as_char_ptr + 1;
+    }
 }
 
 

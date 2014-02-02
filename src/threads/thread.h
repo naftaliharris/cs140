@@ -92,29 +92,32 @@ struct thread
     int priority;                       /* Priority. */
     struct list_elem allelem;           /* List element for all threads list. */
     
+    //BEGIN PROJECT 1 ADDITIONS//
     /* List of locks this thread currently holds */
     /* Used for priority donationa */
     struct list locks_held;
-    
     /* Dummy lock containing this threads original priority */
     struct lock original_priority_info;
-    
     /* The lock this thread is waiting on. Null if not waiting */
     struct lock* lock_waiting_on;
-    
     /* threads nice value. For bsd_scheduler */
     int nice;
-    
     /* Thread's recent cpu. For the bsd_scheduler */
     fp_float recent_cpu;
-    
     /* Allows this thread to be placed in a list of threads who's */
     /* recent cpu value has changed */
     struct list_elem cpu_list_elem;
-    
     /* True if the threads recent_cpu has changed and the thread */
     /* has not been updated yet */
     bool cpu_has_changed;
+    //END PROJECT 1 ADDITIONS//
+    
+    //BEGIN PROJECT 2 ADDITIONS//
+    /* list of files this thread currently has open */
+    struct list open_files;
+    /* file descriptor counter */
+    int fd_counter;
+    //END PROJECT 2 ADDITIONS//
     
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
