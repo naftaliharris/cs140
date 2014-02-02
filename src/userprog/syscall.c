@@ -85,58 +85,58 @@ syscall_handler (struct intr_frame *f )
             LP_halt();
             break;
         case SYS_EXIT:
-            int status = (int)read_frame(f, 4);
-            LP_exit(status);
+            //int status = (int)read_frame(f, 4);
+            LP_exit((int)read_frame(f, 4));
             break;
         case SYS_EXEC:
-            char* command_line = (char*)read_frame(f, 4);
-            f->eax = (uint32_t)LP_exec(command_line);
+            //char* command_line = (char*)read_frame(f, 4);
+            f->eax = (uint32_t)LP_exec((char*)read_frame(f, 4));
             break;
         case SYS_WAIT:
-            pid_t pid = (pid_t)read_frame(f, 4);
-            f->eax = (uint32_t)LP_wait(pid);
+            //pid_t pid = (pid_t)read_frame(f, 4);
+            f->eax = (uint32_t)LP_wait((pid_t)read_frame(f, 4));
             break;
         case SYS_CREATE:
-            const char* file = (const char*)read_frame(f, 4);
-            unsigned initial_size = (unsigned)read_frame(f, 8);
-            f->eax = (uint32_t)LP_create(file, initial_size);
+            //const char* file = (const char*)read_frame(f, 4);
+            //unsigned initial_size = (unsigned)read_frame(f, 8);
+            f->eax = (uint32_t)LP_create((const char*)read_frame(f, 4), (unsigned)read_frame(f, 8));
             break;
         case SYS_REMOVE:
-            const char* file = (const char*)read_frame(f, 4);
-            f->eax = (uint32_t)LP_remove(file);
+            //const char* file = (const char*)read_frame(f, 4);
+            f->eax = (uint32_t)LP_remove((const char*)read_frame(f, 4));
             break;
         case SYS_OPEN:
-            const char* file = (const char*)read_frame(f, 4);
-            f->eax = (uint32_t)LP_open(file);
+            //const char* file = (const char*)read_frame(f, 4);
+            f->eax = (uint32_t)LP_open((const char*)read_frame(f, 4));
             break;
         case SYS_FILESIZE:
-            int fd = (int)read_frame(f, 4);
-            f->eax = (uint32_t)LP_filesize(fd);
+            //int fd = (int)read_frame(f, 4);
+            f->eax = (uint32_t)LP_filesize((int)read_frame(f, 4));
             break;
         case SYS_READ:
-            int fd = (int)read_frame(f, 4);
-            void* buffer = (void*)read_frame(f, 8);
-            unsigned length = (unsigned)read_frame(f, 12);
-            f->eax = (uint32_t)LP_read(fd, buffer, length);
+            //int fd = (int)read_frame(f, 4);
+            //void* buffer = (void*)read_frame(f, 8);
+            //unsigned length = (unsigned)read_frame(f, 12);
+            f->eax = (int)LP_read((int)read_frame(f, 4), (void*)read_frame(f, 8), (unsigned)read_frame(f, 12));
             break;
         case SYS_WRITE:
-            int fd = (int)read_frame(f, 4);
-            const void* buffer = (const void*)read_frame(f, 8);
-            unsigned length = (unsigned)read_frame(f, 12);
-            f->eax = (uint32_t)LP_write(fd, buffer, length);
+            //int fd = (int)read_frame(f, 4);
+            //const void* buffer = (const void*)read_frame(f, 8);
+            //unsigned length = (unsigned)read_frame(f, 12);
+            f->eax = (uint32_t)LP_write((int)read_frame(f, 4), (const void*)read_frame(f, 8), (unsigned)read_frame(f, 12));
             break;
         case SYS_SEEK:
-            int fd = (int)read_frame(f, 4);
-            unsigned position = (unsigned)read_frame(f, 8);
-            LP_seek(fd, position);
+            //int fd = (int)read_frame(f, 4);
+            //unsigned position = (unsigned)read_frame(f, 8);
+            LP_seek((int)read_frame(f, 4), (unsigned)read_frame(f, 8));
             break;
         case SYS_TELL:
-            int fd = (int)read_frame(f, 4);
-            f->eax = (uint32_t)LP_tell(fd);
+            //int fd = (int)read_frame(f, 4);
+            f->eax = (uint32_t)LP_tell((int)read_frame(f, 4));
             break;
         case SYS_CLOSE:
-            int fd = (int)read_frame(f, 4);
-            LP_close(fd);
+            //int fd = (int)read_frame(f, 4);
+            LP_close((int)read_frame(f, 4));
             break;
         default:
             //IF WE GET HERE, SHOULD WE EXIT THE PROCESS???
