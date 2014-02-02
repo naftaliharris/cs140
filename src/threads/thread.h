@@ -124,9 +124,9 @@ struct thread
     
     //FILE INFORMATION
     /* list of files this thread currently has open */
+    /* note, this list does not require synchronization, as it is only*/
+    /* accessed by the same thread */
     struct list open_files;
-    /* locks the list of files to avoid race conditions */
-    struct lock open_files_lock;
     /* file descriptor counter */
     int fd_counter;
     

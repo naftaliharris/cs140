@@ -870,7 +870,6 @@ static void init_thread (struct thread *t, const char *name, int priority)
  */
 static void init_file_system_info(struct thread* t) {
     list_init(&t->open_files);
-    lock_init(&t->open_files_lock);
     t->fd_counter = 2; 
 }
 

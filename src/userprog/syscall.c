@@ -210,7 +210,7 @@ pid_t LP_exec (const char* command_line) {
         return -1;
     }
     sema_down(&curr_thread->sema_load_child);
-    if (t->child_did_load_successfully) {
+    if (curr_thread->child_did_load_successfully) {
         return pid;
     }
     return -1;
@@ -444,7 +444,6 @@ void LP_close (int fd) {
  */
 struct file_package* get_file_package_from_open_list(int fd) {
     struct thread* curr_thread = thread_current();
-    lock_acquire(&curr_thread->open_files_lock);
     struct list_elem* curr = list_head(&curr_thread->open_files);
     struct list_elem* tail = list_tail(&curr_thread->open_files);
     while (true) {
@@ -452,11 +451,9 @@ struct file_package* get_file_package_from_open_list(int fd) {
         if (curr == tail) break;
         struct file_package* package = list_entry(curr, struct file_package, elem);
         if (package->fd == fd) {
-            lock_release(&curr_thread->open_files_lock);
             return package;
         }
     }
-    lock_release(&curr_thread->open_files_lock);
     return NULL;
 }
 
@@ -468,7 +465,6 @@ struct file_package* get_file_package_from_open_list(int fd) {
  */
 struct file* get_file_from_open_list(int fd) {
     struct thread* curr_thread = thread_current();
-    lock_acquire(&curr_thread->open_files_lock);
     struct list_elem* curr = list_head(&curr_thread->open_files);
     struct list_elem* tail = list_tail(&curr_thread->open_files);
     while (true) {
@@ -476,11 +472,9 @@ struct file* get_file_from_open_list(int fd) {
         if (curr == tail) break;
         struct file_package* package = list_entry(curr, struct file_package, elem);
         if (package->fd == fd) {
-            lock_release(&curr_thread->open_files_lock);
             return package->fp;
         }
     }
-    lock_release(&curr_thread->open_files_lock);
     return NULL;
 }
 
@@ -499,9 +493,7 @@ int add_to_open_file_list(struct file* fp) {
     int fd = curr_thread->fd_counter;
     package->fd = fd;
     curr_thread->fd_counter++;
-    lock_acquire(&curr_thread->open_files_lock);
     list_push_back(&curr_thread->open_files, &package->elem);
-    lock_release(&curr_thread->open_files_lock);
     return fd;
 }
 
