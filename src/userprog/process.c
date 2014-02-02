@@ -88,6 +88,10 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
+  /* XXX just an infinite loop right now (Naftali) */
+  while (1)
+      continue;
+
   return -1;
 }
 
@@ -195,7 +199,7 @@ struct Elf32_Phdr
 #define PF_W 2          /* Writable. */
 #define PF_R 4          /* Readable. */
 
-static bool setup_stack (void **esp);
+static bool setup_stack (void **esp, int argc, char **argv);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
@@ -214,6 +218,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
   off_t file_ofs;
   bool success = false;
   int i;
+
+  /* Added by Naftali */
+  char *command_copy;
 
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
@@ -302,7 +309,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
     }
 
   /* Set up stack. */
-  if (!setup_stack (esp))
+  /* Modified by Naftali */
+  if (!setup_stack (esp, file_name))
     goto done;
 
   /* Start address. */
@@ -427,17 +435,57 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
 static bool
-setup_stack (void **esp) 
+setup_stack (void **esp, char *command)
 {
   uint8_t *kpage;
   bool success = false;
+  int argc = 0;
+  char *c;
 
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
   if (kpage != NULL) 
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
-        *esp = PHYS_BASE;
+        {
+          /* Parse the command into argv and put on the stack.
+           *
+           * XXX: Fails on two spaces in a row */
+          *esp = PHYS_BASE;
+
+          for (c = command; c != '\0'; c++)
+            { 
+              if (*c != ' ')
+                {
+                  *esp--; 
+                  **esp = *c;
+                }
+              else
+                {
+                  *esp--;
+                  **esp = '\0';
+                  argc++;
+                }
+            }
+          argc++;
+
+          /* Now add '\0' until stack pointer is word-aligned */
+          while (*esp % 4 != 0)
+            {
+              *esp--;
+              **esp = '\0';
+            }
+
+          /* Now, push the addresses of the arguments onto the stack */
+          int i;
+          char *arg = PHYS_BASE;
+          for (i = 0; i < argc; i++)
+            {
+              arg = 
+            }
+
+          *esp = PHYS_BASE - 12;  /* XXX Temp fix by Naftali */
+        }
       else
         palloc_free_page (kpage);
     }
