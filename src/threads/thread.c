@@ -48,6 +48,9 @@ static struct list cpu_changed_list;
 /* Allows us to coordinate thread updating outside of interrupt context */
 static bool should_update_thread_priorities;
 
+/* global lock to be used for file_system access */
+static lock file_system_lock;
+
 
 
 
@@ -256,6 +259,7 @@ void thread_init (void)
     /*Here we initialize the thread system. */
     /*We do any thread_system init here */
     lock_init (&tid_lock);
+    lock_init(&file_system_lock);
     list_init (&ready_list);
     list_init (&all_list);
     list_init (&cpu_changed_list);
@@ -843,7 +847,11 @@ static void init_thread (struct thread *t, const char *name, int priority)
     
     //PROJECT 2 ADDIDITION
     list_init(&t->open_files);
-    t->fd_counter = 2; //first fd we can dole out is 2, as 0 and 1 are reserved for stdin, stdout. 
+    t->fd_counter = 2; //first fd we can dole out is 2, as 0 and 1 are reserved for stdin, stdout.
+    t->exit_status = 0;
+    sema_init(&t->sema_load_child);
+    t->child_did_load_successfully = false;
+    t->parent_thread = thread_current();
     
     old_level = intr_disable ();
     list_push_back (&all_list, &t->allelem);

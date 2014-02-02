@@ -13,6 +13,8 @@
 //3. SYNCHRONIZE ALL FILESYSTEM CALLS WITH A SINGLE LOCK
 //4. THE DEFAULT CASE IN SYSTEM_HANDLER SWITCH STATEMENT
 //5. HOW TO RESPOND IF THE CHECK_FILENAME_LENGTH RETURNS FALSE
+//6. ADD TO PROCESS EXIT
+//7. ADD TO START PROCESS
 
 struct file_package {
     int fd; //file descriptor
@@ -20,8 +22,6 @@ struct file_package {
     struct file* fp; //file pointer
     struct list_elem elem; //so it can be placed in a list
 }
-
-static lock file_system_lock;
 
 static void syscall_handler (struct intr_frame *);
 
@@ -63,7 +63,6 @@ void LP_close (int fd);
 void
 syscall_init (void)
 {
-    lock_init(&file_system_lock);
     intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
@@ -166,10 +165,16 @@ void LP_halt (void) NO_RETURN {
     it (see below), this is the status that will be returned. 
     Conventionally, a status of 0 indicates success and nonzero 
     values indicate errors.
+ NOTE: exit is the first in a series of calls that is a process
+    exit. Chain is as follows:
+    1. exit -- here we set the exit status
+    2. thread_exit() -- takes care of internal thread information
+    3. process_exit() -- here is where we free our resources. 
  --------------------------------------------------------------------
  */
 void LP_exit (int status) NO_RETURN {
-    
+    thread_current()->exit_status = status;
+    thread_exit();
 }
 
 /*
@@ -182,10 +187,33 @@ void LP_exit (int status) NO_RETURN {
     until it knows whether the child process successfully loaded 
     its executable. You must use appropriate synchronization to 
     ensure this.
+ NOTE: if pid is TID_ERROR after the call to process_execute, then
+    the call to thread_create in process_execute failed, and the 
+    child will never get a chance to load. Thus we return immediately
+    in this case. 
+ NOTE: if pid is not TID_ERROR, than the child thread will run the 
+    start_process function. In this case, we have to wait until the 
+    child process has signaled us that it has finished the load process. 
+    Depending on the outcome of the load process, we return pid for 
+    a successful load, or -1 if the load failed. 
  --------------------------------------------------------------------
  */
 pid_t LP_exec (const char* command_line) {
-    
+    check_usr_string(command_line);
+    struct thread* curr_thread = thread_current();
+    pid_t pid = process_execute(command_line);
+    if (pid == TID_ERROR) {
+        //in this case the call to thread_create in process_execute failed
+        //if not the case, then we have to wait for the child to signal
+        //that it has loaded, and then return based on the outcome of the
+        //load.
+        return -1;
+    }
+    sema_down(&curr_thread->sema_load_child);
+    if (t->child_did_load_successfully) {
+        return pid;
+    }
+    return -1;
 }
 
 /*

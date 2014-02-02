@@ -112,12 +112,6 @@ struct thread
     bool cpu_has_changed;
     //END PROJECT 1 ADDITIONS//
     
-    //BEGIN PROJECT 2 ADDITIONS//
-    /* list of files this thread currently has open */
-    struct list open_files;
-    /* file descriptor counter */
-    int fd_counter;
-    //END PROJECT 2 ADDITIONS//
     
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
@@ -125,6 +119,26 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
+    
+    //BEGIN PROJECT 2 ADDITIONS//
+    
+    //FILE INFORMATION
+    /* list of files this thread currently has open */
+    struct list open_files;
+    /* file descriptor counter */
+    int fd_counter;
+    
+    //CHILD INFORMATION
+    /* Records the processes exit status */
+    int exit_status;
+    /* synchronizes the process of creating a child*/
+    struct semaphore sema_child_load;
+    /* outcome of the child load. The child will set this field before signaling*/
+    bool child_did_load_successfully;
+    /* allows the child to set fields in the parent struct */
+    struct thread* parent_thread;
+    
+    //END PROJECT 2 ADDITIONS//
 #endif
     
     /* Owned by thread.c. */

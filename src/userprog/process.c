@@ -53,35 +53,54 @@ process_execute (const char *file_name)
  ----------------------------------------------------------------
  A thread function that loads a user process and starts it
    running. 
+ NOTE: This function will run in child process. Thus, this is
+    where we want to signal to the parent that the child
+    has finished loading. 
+ NOTE: We need to add a pointer to the parent thread in the 
+    child thread. We do this in the init_thread function. 
+ NOTE: this is the child process. So a call to thread_current
+    will return a pointer to the child's struct thread. 
+ NOTE: the load function accesses the file system, so we have to
+    lock it down. 
+ NOTE: if the child did not load its program successfully, we 
+    have to exit the child. We must set its exit status to -1
+    as it 
+ QUESTION: Can we call exit(-1) in the case that success is false?
  ----------------------------------------------------------------
  */
 static void
 start_process (void *file_name_)
 {
-  char *file_name = file_name_;
-  struct intr_frame if_;
-  bool success;
-
-  /* Initialize interrupt frame and load executable. */
-  memset (&if_, 0, sizeof if_);
-  if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
-  if_.cs = SEL_UCSEG;
-  if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
-
-  /* If load failed, quit. */
-  palloc_free_page (file_name);
-  if (!success) 
-    thread_exit ();
-
-  /* Start the user process by simulating a return from an
+    char *file_name = file_name_;
+    struct intr_frame if_;
+    bool success;
+    
+    /* Initialize interrupt frame and load executable. */
+    memset (&if_, 0, sizeof if_);
+    if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
+    if_.cs = SEL_UCSEG;
+    if_.eflags = FLAG_IF | FLAG_MBS;
+    
+    lock_acquire(&file_system_lock);
+    success = load (file_name, &if_.eip, &if_.esp);
+    thread_current()->parent_thread->child_did_load_successfully = success;
+    lock_release(&file_system_lock);
+    sema_up(&(thread_current()->parent_thread->sema_child_load));
+    
+    /* If load failed, quit. */
+    palloc_free_page (file_name);
+    if (!success)
+        thread_current()->exit_status = -1;
+        thread_exit ();
+    
+    /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
      threads/intr-stubs.S).  Because intr_exit takes all of its
      arguments on the stack in the form of a `struct intr_frame',
      we just point the stack pointer (%esp) to our stack frame
      and jump to it. */
-  asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
-  NOT_REACHED ();
+    asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
+    NOT_REACHED ();
 }
 
 /* 
