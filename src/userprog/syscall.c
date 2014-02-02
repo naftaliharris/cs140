@@ -3,8 +3,14 @@
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
-
-
+#include "threads/malloc.h"
+#include "threads/init.h"
+#include "threads/vaddr.h"
+#include "devices/shutdown.h"
+#include "devices/input.h"
+#include "filesys/file.h"
+#include "filesys/filesys.h"
+#include "userprog/process.h"
 
 
 //TO DO LIST:
@@ -16,12 +22,6 @@
 //6. ADD TO PROCESS EXIT
 //7. ADD TO START PROCESS
 
-struct file_package {
-    int fd; //file descriptor
-    off_t position; //this file_package's position
-    struct file* fp; //file pointer
-    struct list_elem elem; //so it can be placed in a list
-}
 
 static void syscall_handler (struct intr_frame *);
 
@@ -77,7 +77,7 @@ syscall_init (void)
  --------------------------------------------------------------------
  */
 static void
-syscall_handler (struct intr_frame *f UNUSED) 
+syscall_handler (struct intr_frame *f ) 
 {
     int systemCall_num = (int)read_frame(f, 0);
     switch (systemCall_num) {

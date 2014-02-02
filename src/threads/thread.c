@@ -15,6 +15,7 @@
 #include "devices/timer.h"
 #ifdef USERPROG
 #include "userprog/process.h"
+#include "threads/malloc.h"
 #endif
 
 /* Random value for struct thread's `magic' member.
@@ -48,8 +49,7 @@ static struct list cpu_changed_list;
 /* Allows us to coordinate thread updating outside of interrupt context */
 static bool should_update_thread_priorities;
 
-/* global lock to be used for file_system access */
-static lock file_system_lock;
+
 
 
 

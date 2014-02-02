@@ -15,15 +15,17 @@
 #include "threads/init.h"
 #include "threads/interrupt.h"
 #include "threads/palloc.h"
+#include "threads/malloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/interrupt.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
 /* LP Defined functions project 2 */
 struct vital_info* get_child_by_tid(tid_t child_tid);
-void notify_children_parent_is_finished();
+void notify_children_parent_is_finished(void);
 void close_open_files(struct thread* t);
 void release_resources(struct thread* t);
 void release_all_locks(struct thread* t);
@@ -189,20 +191,15 @@ struct vital_info* get_child_by_tid(tid_t child_tid) {
  */
 void close_open_files(struct thread* t) {
     
-    struct thread* curr_thread = thread_current();
-    
-    while (!list_empty(&curr_thread->open_files)) {
-        struct list_elem* curr = list_pop_front(&curr_thread->open_files);
+    while (!list_empty(&t->open_files)) {
+        struct list_elem* curr = list_pop_front(&t->open_files);
         struct file_package* package = list_entry(curr, struct file_package, elem);
         lock_acquire(&file_system_lock);
         file_close(package->fp);
         lock_release(&file_system_lock);
         free(package);
     }
-    
-    
 }
-
 
 /*
  ----------------------------------------------------------------
@@ -222,11 +219,11 @@ void notify_children_parent_is_finished() {
     struct thread* curr_thread = thread_current();
     while (!list_empty(&curr_thread->child_threads)) {
         struct list_elem* curr = list_pop_front(&curr_thread->child_threads);
-        struct vital_info* t = list_entry(curr, struct vital_info, child_elem);
-        if (t->child_is_finished) {
-            free(vital_info);
+        struct vital_info* child_vital_info = list_entry(curr, struct vital_info, child_elem);
+        if (child_vital_info->child_is_finished) {
+            free(child_vital_info);
         } else {
-            t->parent_is_finished = true;
+            child_vital_info->parent_is_finished = true;
         }
     }
 }
@@ -255,7 +252,7 @@ void release_all_locks(struct thread* t) {
  ----------------------------------------------------------------
  */
 void release_resources(struct thread* t) {
-    intr_level old_level = intr_disable();
+    enum intr_level old_level = intr_disable();
     
     close_open_files(t);
     release_all_locks(t);
@@ -279,7 +276,7 @@ void release_resources(struct thread* t) {
 void
 process_exit (void)
 {
-    intr_level old_level = intr_disable();
+    enum intr_level old_level = intr_disable();
     struct thread *cur = thread_current ();
     
     //LP Project 2 additions
@@ -287,7 +284,7 @@ process_exit (void)
         free(cur->vital_info);
     } else {
         cur->vital_info->child_is_finished = true;
-        sema_up(&wait_on_me);
+        sema_up(&cur->wait_on_me);
     }
     notify_children_parent_is_finished();
     release_resources(cur);

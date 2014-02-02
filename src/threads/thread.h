@@ -178,7 +178,23 @@ struct vital_info {
     bool child_is_finished;
     /* allows this thread to be placed in the parent child_threads list */
     struct list_elem child_elem;
-}
+};
+
+/*
+ ----------------------------------------------------------------
+ Description: packages open file information. Processes will
+    manage a list of these file_packages, one for each open file.
+ ----------------------------------------------------------------
+ */
+struct file_package {
+    int fd; //file descriptor
+    unsigned position; //this file_package's position
+    struct file* fp; //file pointer
+    struct list_elem elem; //so it can be placed in a list
+};
+
+/* global lock to be used for file_system access */
+struct lock file_system_lock;
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
