@@ -170,16 +170,21 @@ start_process (void *arg_page_)
         *((char*)if_.esp) = *copy_byte;
         //hex_dump(0, (char*)if_.esp, far_byte - i, true);
     }
-    //printf("cur_arg = %d\n", cur_arg);
     ASSERT(cur_arg == 0);
     args[0] = if_.esp;
-    if_.esp = ((char*)if_.esp) - 1;
-    *((char*)if_.esp) = '\0';
+
+    /* Add the NULL pointer for argv[argc] */
+    if_.esp = ((char**)if_.esp) - 1;
+    *((char**)if_.esp) = NULL;
+
+    /* Add the pointers to other elements of argv */
     for(i = num_args - 1; i >= 0; i--)
     {
         if_.esp = ((char*)if_.esp) - sizeof(char*);
         *((char**)if_.esp) = args[i];
     }
+
+    /* Add the argv pointer, the argc value, and fake return value */
     char* argv = if_.esp;
     if_.esp = ((char*)if_.esp) - sizeof(char*);
     *((char**)if_.esp) = argv;
@@ -187,6 +192,8 @@ start_process (void *arg_page_)
     *((int*)if_.esp) = num_args;
     if_.esp = ((char*)if_.esp) - sizeof(char*);
     *((char**)if_.esp) = NULL;
+
+    //hex_dump(0, (char*)if_.esp, 50, true);
     
     palloc_free_page (arg_page);
     
