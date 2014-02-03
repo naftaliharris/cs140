@@ -368,8 +368,6 @@ process_exit (void)
 {
     enum intr_level old_level = intr_disable();
     struct thread *cur = thread_current ();
-    const char* name = thread_name();
-    int status = cur->vital_info->exit_status;
     
     //LP Project 2 additions
     if (cur->vital_info->parent_is_finished) {
@@ -380,10 +378,6 @@ process_exit (void)
     }
     notify_children_parent_is_finished();
     release_resources(cur);
-    /*if (cur->pagedir != NULL) {
-        printf("%s: exit(%d)\n", name, status);
-    }*/
-    //printf("%s: exit(%d)\n", name, status);
     
     
     uint32_t *pd;

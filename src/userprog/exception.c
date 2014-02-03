@@ -77,43 +77,48 @@ exception_print_stats (void)
 
 /* Handler for an exception (probably) caused by a user process. */
 static void
-kill (struct intr_frame *f) 
+kill (struct intr_frame *f)
 {
-  /* This interrupt is one (probably) caused by a user process.
+    /* This interrupt is one (probably) caused by a user process.
      For example, the process might have tried to access unmapped
      virtual memory (a page fault).  For now, we simply kill the
      user process.  Later, we'll want to handle page faults in
      the kernel.  Real Unix-like operating systems pass most
      exceptions back to the process via signals, but we don't
      implement them. */
-     
-  /* The interrupt frame's code segment value tells us where the
+    
+    /* The interrupt frame's code segment value tells us where the
      exception originated. */
-  switch (f->cs)
+    switch (f->cs)
     {
-    case SEL_UCSEG:
-      /* User's code segment, so it's a user exception, as we
-         expected.  Kill the user process.  */
-      printf ("%s: dying due to interrupt %#04x (%s).\n",
-              thread_name (), f->vec_no, intr_name (f->vec_no));
-      intr_dump_frame (f);
-            LP_exit(-1);
-      //thread_exit ();
+        case SEL_UCSEG:
+            /* User's code segment, so it's a user exception, as we
+             expected.  Kill the user process.  */
+            printf ("%s: dying due to interrupt %#04x (%s).\n",
+                    thread_name (), f->vec_no, intr_name (f->vec_no));
+            intr_dump_frame (f);
 
-    case SEL_KCSEG:
-      /* Kernel's code segment, which indicates a kernel bug.
-         Kernel code shouldn't throw exceptions.  (Page faults
-         may cause kernel exceptions--but they shouldn't arrive
-         here.)  Panic the kernel to make the point.  */
-      intr_dump_frame (f);
-      PANIC ("Kernel bug - unexpected interrupt in kernel"); 
-
-    default:
-      /* Some other code segment?  Shouldn't happen.  Panic the
-         kernel. */
-      printf ("Interrupt %#04x (%s) in unknown segment %04x\n",
-             f->vec_no, intr_name (f->vec_no), f->cs);
-      thread_exit ();
+            //LP Project 2 modifications
+            thread_current()->vital_info->exit_status = -1;
+            printf("%s: exit(%d)\n", thread_name(), -1);
+            //end LP proj 2 modifications.
+            
+            thread_exit ();
+            
+        case SEL_KCSEG:
+            /* Kernel's code segment, which indicates a kernel bug.
+             Kernel code shouldn't throw exceptions.  (Page faults
+             may cause kernel exceptions--but they shouldn't arrive
+             here.)  Panic the kernel to make the point.  */
+            intr_dump_frame (f);
+            PANIC ("Kernel bug - unexpected interrupt in kernel");
+            
+        default:
+            /* Some other code segment?  Shouldn't happen.  Panic the
+             kernel. */
+            printf ("Interrupt %#04x (%s) in unknown segment %04x\n",
+                    f->vec_no, intr_name (f->vec_no), f->cs);
+            thread_exit ();
     }
 }
 
