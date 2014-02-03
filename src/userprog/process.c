@@ -41,6 +41,7 @@ void release_all_locks(struct thread* t);
 tid_t
 process_execute (const char *arguments) 
 {
+  printf("process_execute\n");
   char *fn_copy;
   tid_t tid;
   
@@ -54,7 +55,7 @@ process_execute (const char *arguments)
     
   // MODIFY FROM HERE
   //strtok_r is threadsafe!!!!
-    
+  hex_dump(0, fn_copy, 20, true);
   int numargs = 1;
   char* saveptr = NULL;
   char* file_name = strtok_r((char*)arguments, " ", &saveptr);
@@ -62,11 +63,13 @@ process_execute (const char *arguments)
   strlcpy (fn_copy + curoffset, file_name, PGSIZE);
   char* argument_str = strtok_r(NULL, " ", &saveptr);
   curoffset += strnlen(file_name, PGSIZE) + 1;
+  hex_dump(0, fn_copy, 20, true);
   while(argument_str != NULL)
   {
     if(curoffset >= PGSIZE)
     {
       // ERROR
+      printf("curoffset >= PGSIZE\n");
       palloc_free_page(fn_copy);
       return TID_ERROR;
     }
@@ -74,18 +77,22 @@ process_execute (const char *arguments)
     strlcpy(fn_copy + curoffset, argument_str, PGSIZE - curoffset);
     curoffset += strnlen(argument_str, PGSIZE) + 1;
     argument_str = strtok_r(NULL, " ", &saveptr);
+    hex_dump(0, fn_copy, 20, true);
   }
   
-  *((int*) fn_copy) = curoffset;
+  *((int*) fn_copy) = curoffset - 1;
   *(((int*) fn_copy) + 1) = numargs;
-  hex_dump(0, fn_copy, curoffset + 5, true);
+  hex_dump(0, fn_copy, 20, true);
 
   // TO HERE
   
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
+  {
+    printf("tid == TID_ERROR\n");
     palloc_free_page (fn_copy); 
+  }
   return tid;
 }
 
@@ -111,6 +118,7 @@ process_execute (const char *arguments)
 static void
 start_process (void *arg_page_)
 {
+  printf("start_process\n");
   char *arg_page = arg_page_;
   char *file_name = arg_page_ + sizeof(int) + sizeof(int);
   struct intr_frame if_;
@@ -130,7 +138,7 @@ start_process (void *arg_page_)
   sema_up(&(thread_current()->parent_thread->sema_child_load));
 
   /* If load failed, quit. */
-  palloc_free_page (file_name);
+  palloc_free_page (arg_page);
   if (!success)
   {
     thread_current()->vital_info->exit_status = -1;
@@ -144,6 +152,7 @@ start_process (void *arg_page_)
   
   int cur_arg = num_args;
   int i;
+  hex_dump(0, PHYS_BASE, 20, true);
   for(i = far_byte; i >= 2; i--)
   {
     char* copy_byte = arg_page + i;
@@ -157,6 +166,7 @@ start_process (void *arg_page_)
     }
     if_.esp = ((char*)if_.esp) - 1;
     *((char*)if_.esp) = *copy_byte;
+    hex_dump(0, PHYS_BASE, 20, true);
   }
   ASSERT(cur_arg == 0);
   args[0] = if_.esp;
@@ -175,7 +185,7 @@ start_process (void *arg_page_)
   if_.esp = ((char*)if_.esp) - sizeof(char*);
   *((char**)if_.esp) = NULL;
   
-  hex_dump(0, PHYS_BASE, 200, true);
+  //hex_dump(0, PHYS_BASE, 20, true);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
