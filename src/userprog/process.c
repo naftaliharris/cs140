@@ -326,7 +326,9 @@ void release_all_locks(struct thread* t) {
     while (!list_empty(&t->locks_held)) {
         struct list_elem* curr = list_pop_front(&t->locks_held);
         struct lock* lock = list_entry(curr, struct lock, elem);
-        lock_release(lock);
+        if (lock->holder != NULL) {
+            lock_release(lock);
+        }
     }
 }
 

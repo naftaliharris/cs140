@@ -849,7 +849,6 @@ static void init_thread (struct thread *t, const char *name, int priority)
         list_init(&(t->locks_held));
         t->original_priority_info.priority = priority;
         t->original_priority_info.holder = NULL; /* orig priority package */
-        lock_acquire(&t->original_priority_info);
         list_push_front(&(t->locks_held), &(t->original_priority_info.elem));
         t->lock_waiting_on = NULL;
     }
