@@ -15,42 +15,112 @@
 #include "threads/init.h"
 #include "threads/interrupt.h"
 #include "threads/palloc.h"
+#include "threads/malloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/interrupt.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
-/* Starts a new thread running a user program loaded from
+/* LP Defined functions project 2 */
+struct vital_info* get_child_by_tid(tid_t child_tid);
+void notify_children_parent_is_finished(void);
+void close_open_files(struct thread* t);
+void release_resources(struct thread* t);
+void release_all_locks(struct thread* t);
+
+/* 
+ ----------------------------------------------------------------
+ Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
-   thread id, or TID_ERROR if the thread cannot be created. */
+   thread id, or TID_ERROR if the thread cannot be created. 
+ ----------------------------------------------------------------
+ */
 tid_t
-process_execute (const char *file_name) 
+process_execute (const char *arguments) 
 {
+  printf("process_execute\n");
   char *fn_copy;
   tid_t tid;
-
+  
+  // CHECK arguments LENGTH
+  
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
-  strlcpy (fn_copy, file_name, PGSIZE);
+    
+  // MODIFY FROM HERE
+  //strtok_r is threadsafe!!!!
+  hex_dump(0, fn_copy, 20, true);
+  int numargs = 1;
+  char* saveptr = NULL;
+  char* file_name = strtok_r((char*)arguments, " ", &saveptr);
+  int curoffset = sizeof(int) + sizeof(int);
+  strlcpy (fn_copy + curoffset, file_name, PGSIZE);
+  char* argument_str = strtok_r(NULL, " ", &saveptr);
+  curoffset += strnlen(file_name, PGSIZE) + 1;
+  hex_dump(0, fn_copy, 20, true);
+  while(argument_str != NULL)
+  {
+    if(curoffset >= PGSIZE)
+    {
+      // ERROR
+      printf("curoffset >= PGSIZE\n");
+      palloc_free_page(fn_copy);
+      return TID_ERROR;
+    }
+    numargs++;
+    strlcpy(fn_copy + curoffset, argument_str, PGSIZE - curoffset);
+    curoffset += strnlen(argument_str, PGSIZE) + 1;
+    argument_str = strtok_r(NULL, " ", &saveptr);
+    hex_dump(0, fn_copy, 20, true);
+  }
+  
+  *((int*) fn_copy) = curoffset - 1;
+  *(((int*) fn_copy) + 1) = numargs;
+  hex_dump(0, fn_copy, 20, true);
 
+  // TO HERE
+  
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
+  {
+    printf("tid == TID_ERROR\n");
     palloc_free_page (fn_copy); 
+  }
   return tid;
 }
 
-/* A thread function that loads a user process and starts it
-   running. */
+/* 
+ ----------------------------------------------------------------
+ A thread function that loads a user process and starts it
+   running. 
+ NOTE: This function will run in child process. Thus, this is
+    where we want to signal to the parent that the child
+    has finished loading. 
+ NOTE: We need to add a pointer to the parent thread in the 
+    child thread. We do this in the init_thread function. 
+ NOTE: this is the child process. So a call to thread_current
+    will return a pointer to the child's struct thread. 
+ NOTE: the load function accesses the file system, so we have to
+    lock it down. 
+ NOTE: if the child did not load its program successfully, we 
+    have to exit the child. We must set its exit status to -1
+    as it 
+ QUESTION: Can we call exit(-1) in the case that success is false?
+ ----------------------------------------------------------------
+ */
 static void
-start_process (void *file_name_)
+start_process (void *arg_page_)
 {
-  char *file_name = file_name_;
+  printf("start_process\n");
+  char *arg_page = arg_page_;
+  char *file_name = arg_page_ + sizeof(int) + sizeof(int);
   struct intr_frame if_;
   bool success;
 
@@ -59,12 +129,67 @@ start_process (void *file_name_)
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
+  
+  
+  lock_acquire(&file_system_lock);
   success = load (file_name, &if_.eip, &if_.esp);
+  lock_release(&file_system_lock);
+  thread_current()->parent_thread->child_did_load_successfully = success;
+  sema_up(&(thread_current()->parent_thread->sema_child_load));
 
   /* If load failed, quit. */
-  palloc_free_page (file_name);
-  if (!success) 
+  if (!success)
+  {
+    palloc_free_page (arg_page);
+    thread_current()->vital_info->exit_status = -1;
     thread_exit ();
+    NOT_REACHED();
+  }
+    
+  // MODIFY STACK HERE
+  int far_byte = *((int*) arg_page);
+  int num_args = *(((int*) arg_page) + 1);
+  char* args[num_args];
+  
+  int cur_arg = num_args;
+  int i;
+  //hex_dump(0, PHYS_BASE, 0, true);
+  for(i = far_byte; i >= sizeof(int) * 2; i--)
+  {
+    char* copy_byte = arg_page + i;
+    if(*copy_byte == '\0') 
+    {
+      if(cur_arg < num_args)
+      {
+        args[cur_arg] = if_.esp;
+      }
+      cur_arg--;
+    }
+    if_.esp = ((char*)if_.esp) - 1;
+    *((char*)if_.esp) = *copy_byte;
+    hex_dump(0, (char*)if_.esp, far_byte - i, true);
+  }
+  printf("cur_arg = %d\n", cur_arg);
+  ASSERT(cur_arg == 0);
+  args[0] = if_.esp;
+  if_.esp = ((char*)if_.esp) - 1;
+  *((char*)if_.esp) = '\0';
+  for(i = num_args - 1; i >= 0; i--)
+  {
+    if_.esp = ((char*)if_.esp) - sizeof(char*);
+    *((char**)if_.esp) = args[i];
+  }
+  char* argv = if_.esp;
+  if_.esp = ((char*)if_.esp) - sizeof(char*);
+  *((char**)if_.esp) = argv;
+  if_.esp = ((char*)if_.esp) - sizeof(int);
+  *((int*)if_.esp) = num_args;
+  if_.esp = ((char*)if_.esp) - sizeof(char*);
+  *((char**)if_.esp) = NULL;
+  
+  palloc_free_page (arg_page);
+  
+  //hex_dump(0, PHYS_BASE, 20, true);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -72,53 +197,223 @@ start_process (void *file_name_)
      arguments on the stack in the form of a `struct intr_frame',
      we just point the stack pointer (%esp) to our stack frame
      and jump to it. */
-  asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
-  NOT_REACHED ();
+    asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
+    NOT_REACHED ();
 }
 
-/* Waits for thread TID to die and returns its exit status.  If
+/* 
+ ----------------------------------------------------------------
+ Waits for thread TID to die and returns its exit status.  If
    it was terminated by the kernel (i.e. killed due to an
    exception), returns -1.  If TID is invalid or if it was not a
    child of the calling process, or if process_wait() has already
    been successfully called for the given TID, returns -1
    immediately, without waiting.
 
-   This function will be implemented in problem 2-2.  For now, it
-   does nothing. */
+ NOTE: There are several courses of action for which we account
+    for. 
+    FROM THE PARENT PERSPECTIVE
+    1. The Parent process exits, and does not wait for children. 
+    In this case, the parent will clean up any children it 
+    did not wait on that have already finished, will set 
+    parent_exited to true in the children it has not waited on
+    and who have not finished yet, and then the parent will be done
+    2. The parent process waits for a child. In this case, the parent
+    will wait until the child exits. The parent will then clean up
+    the child once the semaphore clears. 
+    FROM THE CHILD PERSPECTIVE
+    1. The child exits, but the parent has not exited yet. In this
+    case, the child will set its field to indicate it has exited, 
+    and then leave itself for the parent to clean up. IMPORTANT, the
+    child must signal the semaphore, as the parent might 
+    still wait on this child. 
+    2. The child exits after the parent has exited. In this case,
+    the child will clean itelf up. 
+ NOTE: in this case, assuming pid is a valid pid for a child thread, 
+    the parent process will not end until pid ends. Thus, the parent 
+    must free the vital info. 
+ NOTE: first we check the initial conditions for which we return 
+    -1. 
+ ----------------------------------------------------------------
+ */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
-  return -1;
+    struct vital_info* child_to_wait_on = get_child_by_tid(child_tid);
+    if (child_to_wait_on == NULL) return -1;
+    if (child_to_wait_on->has_allready_been_waited_on) return -1;
+    child_to_wait_on->has_allready_been_waited_on = true;
+    int returnVal = 0;
+    if (!child_to_wait_on->child_is_finished) {
+        sema_down(&child_to_wait_on->t->wait_on_me);
+    }
+    returnVal = child_to_wait_on->exit_status;
+    list_remove(&child_to_wait_on->child_elem);
+    free(child_to_wait_on);
+    return returnVal;
 }
 
-/* Free the current process's resources. */
+/*
+ ----------------------------------------------------------------
+ Description: Returns a pointer to the child thread
+    defined by tid. If no thread is in the list, returns NULL.
+ ----------------------------------------------------------------
+ */
+struct vital_info* get_child_by_tid(tid_t child_tid) {
+    struct thread* curr_thread = thread_current();
+    struct list_elem* curr = list_head(&curr_thread->child_threads);
+    struct list_elem* tail = list_tail(&curr_thread->child_threads);
+    while (true) {
+        curr = list_next(curr);
+        if (curr == tail) break;
+        struct vital_info* t = list_entry(curr, struct vital_info, child_elem);
+        if (t->tid == child_tid) return t;
+    }
+    return NULL;
+}
+
+/*
+ ----------------------------------------------------------------
+ Description: closes all files that the current thread has open.
+ ----------------------------------------------------------------
+ */
+void close_open_files(struct thread* t) {
+    
+    while (!list_empty(&t->open_files)) {
+        struct list_elem* curr = list_pop_front(&t->open_files);
+        struct file_package* package = list_entry(curr, struct file_package, elem);
+        lock_acquire(&file_system_lock);
+        file_close(package->fp);
+        lock_release(&file_system_lock);
+        free(package);
+    }
+}
+
+/*
+ ----------------------------------------------------------------
+ Description: for all children in the waiting list, informs
+    them that their parent is finished. If the child is finished
+    then it frees that child's vital_info. 
+ NOTE: if this function is called, it is because the parent has 
+    exited. In such a case, we want to remove all vital_info
+    structs from the parent's child list, and free the 
+    vital_info structs associated with finished children. 
+    If the child has not finished yet, we set the boolean
+    parent_finished to true, which will prmopt the child
+    to free its vital info when it fnishes. 
+ ----------------------------------------------------------------
+ */
+void notify_children_parent_is_finished() {
+    struct thread* curr_thread = thread_current();
+    while (!list_empty(&curr_thread->child_threads)) {
+        struct list_elem* curr = list_pop_front(&curr_thread->child_threads);
+        struct vital_info* child_vital_info = list_entry(curr, struct vital_info, child_elem);
+        if (child_vital_info->child_is_finished) {
+            free(child_vital_info);
+        } else {
+            child_vital_info->parent_is_finished = true;
+        }
+    }
+}
+
+/*
+ ----------------------------------------------------------------
+ Description: walks the list of locks held by this thread and 
+    releases each one by one. 
+ ----------------------------------------------------------------
+ */
+void release_all_locks(struct thread* t) {
+    while (!list_empty(&t->locks_held)) {
+        struct list_elem* curr = list_pop_front(&t->locks_held);
+        struct lock* lock = list_entry(curr, struct lock, elem);
+        if (lock->holder != NULL) {
+            lock_release(lock);
+        }
+    }
+}
+
+/*
+ ----------------------------------------------------------------
+ Description: disables interrupts, checks all locks are released, 
+    all malloc'd memory is freed, and any other resource is 
+    released. 
+ NOTE: we disable interrupts, as we have to check if this thead
+    is holding any locks, and subsequently release them. 
+ ----------------------------------------------------------------
+ */
+void release_resources(struct thread* t) {
+    enum intr_level old_level = intr_disable();
+    
+    close_open_files(t);
+    release_all_locks(t);
+    
+    intr_set_level(old_level);
+}
+
+/* 
+ ----------------------------------------------------------------
+ Free the current process's resources. 
+ 
+ NOTE: We must disable interrupts here so that synchronization 
+    of parent and child threads does not get interleaved. 
+ NOTE: This function gets called by thread_exit(), which itself
+    is called by LP_exit.
+ NOTE: if the parent is finished, the parent has allready removed
+    the child from the child_list, so all we have to do is 
+    close the open files. 
+ ----------------------------------------------------------------
+ */
 void
 process_exit (void)
 {
-  struct thread *cur = thread_current ();
-  uint32_t *pd;
-
-  /* Destroy the current process's page directory and switch back
+    enum intr_level old_level = intr_disable();
+    struct thread *cur = thread_current ();
+    const char* name = thread_name();
+    int status = cur->vital_info->exit_status;
+    
+    //LP Project 2 additions
+    if (cur->vital_info->parent_is_finished) {
+        free(cur->vital_info);
+    } else {
+        cur->vital_info->child_is_finished = true;
+        sema_up(&cur->wait_on_me);
+    }
+    notify_children_parent_is_finished();
+    release_resources(cur);
+    if (cur->pagedir != NULL) {
+        printf("%s: exit(%d)\n", name, status);
+    }
+    
+    
+    uint32_t *pd;
+    
+    /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
-  pd = cur->pagedir;
-  if (pd != NULL) 
+    pd = cur->pagedir;
+    if (pd != NULL)
     {
-      /* Correct ordering here is crucial.  We must set
+        /* Correct ordering here is crucial.  We must set
          cur->pagedir to NULL before switching page directories,
          so that a timer interrupt can't switch back to the
          process page directory.  We must activate the base page
          directory before destroying the process's page
          directory, or our active page directory will be one
          that's been freed (and cleared). */
-      cur->pagedir = NULL;
-      pagedir_activate (NULL);
-      pagedir_destroy (pd);
+        cur->pagedir = NULL;
+        pagedir_activate (NULL);
+        pagedir_destroy (pd);
     }
+    intr_set_level(old_level);
 }
 
-/* Sets up the CPU for running user code in the current
+
+/* 
+ ----------------------------------------------------------------
+ Sets up the CPU for running user code in the current
    thread.
-   This function is called on every context switch. */
+   This function is called on every context switch. 
+ ----------------------------------------------------------------
+ */
 void
 process_activate (void)
 {
@@ -145,8 +440,12 @@ typedef uint16_t Elf32_Half;
 #define PE32Ox PRIx32   /* Print Elf32_Off in hexadecimal. */
 #define PE32Hx PRIx16   /* Print Elf32_Half in hexadecimal. */
 
-/* Executable header.  See [ELF1] 1-4 to 1-8.
-   This appears at the very beginning of an ELF binary. */
+/* 
+ ----------------------------------------------------------------
+ Executable header.  See [ELF1] 1-4 to 1-8.
+   This appears at the very beginning of an ELF binary. 
+ ----------------------------------------------------------------
+ */
 struct Elf32_Ehdr
   {
     unsigned char e_ident[16];
@@ -165,9 +464,13 @@ struct Elf32_Ehdr
     Elf32_Half    e_shstrndx;
   };
 
-/* Program header.  See [ELF1] 2-2 to 2-4.
+/* 
+ ----------------------------------------------------------------
+ Program header.  See [ELF1] 2-2 to 2-4.
    There are e_phnum of these, starting at file offset e_phoff
-   (see [ELF1] 1-6). */
+   (see [ELF1] 1-6). 
+ ----------------------------------------------------------------
+ */
 struct Elf32_Phdr
   {
     Elf32_Word p_type;
@@ -201,13 +504,18 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
                           bool writable);
 
-/* Loads an ELF executable from FILE_NAME into the current thread.
+/* 
+ ----------------------------------------------------------------
+ Loads an ELF executable from FILE_NAME into the current thread.
    Stores the executable's entry point into *EIP
    and its initial stack pointer into *ESP.
-   Returns true if successful, false otherwise. */
+   Returns true if successful, false otherwise. 
+ ----------------------------------------------------------------
+ */
 bool
 load (const char *file_name, void (**eip) (void), void **esp) 
 {
+  printf("load\n");
   struct thread *t = thread_current ();
   struct Elf32_Ehdr ehdr;
   struct file *file = NULL;
@@ -315,13 +623,17 @@ load (const char *file_name, void (**eip) (void), void **esp)
   file_close (file);
   return success;
 }
-
+
 /* load() helpers. */
 
 static bool install_page (void *upage, void *kpage, bool writable);
 
-/* Checks whether PHDR describes a valid, loadable segment in
-   FILE and returns true if so, false otherwise. */
+/* 
+ ----------------------------------------------------------------
+ Checks whether PHDR describes a valid, loadable segment in
+   FILE and returns true if so, false otherwise. 
+ ----------------------------------------------------------------
+ */
 static bool
 validate_segment (const struct Elf32_Phdr *phdr, struct file *file) 
 {
@@ -365,7 +677,9 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
   return true;
 }
 
-/* Loads a segment starting at offset OFS in FILE at address
+/* 
+ ----------------------------------------------------------------
+ Loads a segment starting at offset OFS in FILE at address
    UPAGE.  In total, READ_BYTES + ZERO_BYTES bytes of virtual
    memory are initialized, as follows:
 
@@ -378,7 +692,9 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
    user process if WRITABLE is true, read-only otherwise.
 
    Return true if successful, false if a memory allocation error
-   or disk read error occurs. */
+   or disk read error occurs. 
+ ----------------------------------------------------------------
+ */
 static bool
 load_segment (struct file *file, off_t ofs, uint8_t *upage,
               uint32_t read_bytes, uint32_t zero_bytes, bool writable) 
@@ -424,8 +740,12 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   return true;
 }
 
-/* Create a minimal stack by mapping a zeroed page at the top of
-   user virtual memory. */
+/*
+ ----------------------------------------------------------------
+ Create a minimal stack by mapping a zeroed page at the top of
+   user virtual memory. 
+ ----------------------------------------------------------------
+ */
 static bool
 setup_stack (void **esp) 
 {
@@ -444,7 +764,9 @@ setup_stack (void **esp)
   return success;
 }
 
-/* Adds a mapping from user virtual address UPAGE to kernel
+/* 
+ ----------------------------------------------------------------
+ Adds a mapping from user virtual address UPAGE to kernel
    virtual address KPAGE to the page table.
    If WRITABLE is true, the user process may modify the page;
    otherwise, it is read-only.
@@ -452,7 +774,9 @@ setup_stack (void **esp)
    KPAGE should probably be a page obtained from the user pool
    with palloc_get_page().
    Returns true on success, false if UPAGE is already mapped or
-   if memory allocation fails. */
+   if memory allocation fails. 
+ ----------------------------------------------------------------
+ */
 static bool
 install_page (void *upage, void *kpage, bool writable)
 {

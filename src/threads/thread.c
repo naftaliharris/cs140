@@ -15,6 +15,7 @@
 #include "devices/timer.h"
 #ifdef USERPROG
 #include "userprog/process.h"
+#include "threads/malloc.h"
 #endif
 
 /* Random value for struct thread's `magic' member.
@@ -47,6 +48,8 @@ static struct list cpu_changed_list;
 
 /* Allows us to coordinate thread updating outside of interrupt context */
 static bool should_update_thread_priorities;
+
+
 
 
 
@@ -92,6 +95,11 @@ static void update_recent_cpu(struct thread* t, fp_float cpu_scale);
 static void update_changed_cpu_threads(void);
 static void update_running_thread_cpu(struct thread* t);
 static void update_cpu_for_all_threads(void);
+
+/* LP Project 2 additions */
+static void init_file_system_info(struct thread* t);
+static void init_child_managment_info(struct thread* t);
+static void init_vital_info(struct thread* t);
 
 
 /*
@@ -256,6 +264,7 @@ void thread_init (void)
     /*Here we initialize the thread system. */
     /*We do any thread_system init here */
     lock_init (&tid_lock);
+    lock_init(&file_system_lock);
     list_init (&ready_list);
     list_init (&all_list);
     list_init (&cpu_changed_list);
@@ -280,6 +289,7 @@ void thread_start (void)
   /* Create the idle thread. */
   struct semaphore idle_started;
   sema_init (&idle_started, 0);
+  init_vital_info(initial_thread);
   thread_create ("idle", PRI_MIN, idle, &idle_started);
 
   /* Start preemptive thread scheduling. */
@@ -393,8 +403,10 @@ tid_t thread_create (const char *name, int priority,
     return TID_ERROR;
 
   /* Initialize thread. */
-  init_thread (t, name, priority);
-  tid = t->tid = allocate_tid ();
+    
+    init_thread (t, name, priority);
+    tid = t->tid = allocate_tid ();
+    init_vital_info(t);
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
@@ -841,10 +853,72 @@ static void init_thread (struct thread *t, const char *name, int priority)
         t->lock_waiting_on = NULL;
     }
     
+    //PROJECT 2 ADDIDITION
+    init_file_system_info(t);
+    init_child_managment_info(t);
+    
     old_level = intr_disable ();
     list_push_back (&all_list, &t->allelem);
     intr_set_level (old_level);
 }
+
+/*
+ --------------------------------------------------------------------
+ Description: initiliazes the file system info for the thread t
+ NOTE: we set fd_counter to 2 to account for STD_IN, STD_OUT.
+ --------------------------------------------------------------------
+ */
+static void init_file_system_info(struct thread* t) {
+    list_init(&t->open_files);
+    t->fd_counter = 2; 
+}
+
+/*
+ --------------------------------------------------------------------
+ Description: mallocs a pointer for the vital info struct 
+    and then sets the data and then updates t to point
+    to the data. 
+ NOTE: we only add the vital_info to a child_list if t is not the 
+    initial thread. 
+ --------------------------------------------------------------------
+ */
+static void init_vital_info(struct thread* t) {
+    struct vital_info* vital_info = malloc(sizeof(struct vital_info));
+    vital_info->t = t;
+    vital_info->exit_status = 0;
+    vital_info->has_allready_been_waited_on = false;
+    vital_info->tid = t->tid;
+    vital_info->parent_is_finished = false;
+    vital_info->child_is_finished = false;
+    t->vital_info = vital_info;
+    if (t != initial_thread) {
+        list_push_back(&t->parent_thread->child_threads, &vital_info->child_elem);
+    }
+}
+
+/*
+ --------------------------------------------------------------------
+ Description: intiliazes the variables used to manange the process
+    of creating, tracking, and communicating with child processes.
+ NOTE: we must take special precation when handling the initial thread
+    as the initial thread will never be a child of a parent threads, 
+    and the initial thread does not have a parent thread. 
+ --------------------------------------------------------------------
+ */
+static void init_child_managment_info(struct thread* t) {
+    sema_init(&t->sema_child_load, 0);
+    sema_init(&t->wait_on_me, 0);
+    list_init(&t->child_threads);
+    
+    if (t == initial_thread) {
+        t->parent_thread = NULL;
+    } else {
+        t->parent_thread = thread_current();
+    }
+    
+}
+
+
 
 /* 
  --------------------------------------------------------------------
@@ -933,7 +1007,8 @@ void thread_schedule_tail (struct thread *prev)
 
 #ifdef USERPROG
   /* Activate the new address space. */
-  process_activate ();
+  if (cur->pagedir != NULL)
+    process_activate ();
 #endif
 
   /* If the thread we switched from is dying, destroy its struct

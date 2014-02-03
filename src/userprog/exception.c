@@ -11,7 +11,9 @@ static long long page_fault_cnt;
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
 
-/* Registers handlers for interrupts that can be caused by user
+/* 
+ ----------------------------------------------------------------
+ Registers handlers for interrupts that can be caused by user
    programs.
 
    In a real Unix-like OS, most of these interrupts would be
@@ -25,7 +27,9 @@ static void page_fault (struct intr_frame *);
    implement virtual memory.
 
    Refer to [IA32-v3a] section 5.15 "Exception and Interrupt
-   Reference" for a description of each of these exceptions. */
+   Reference" for a description of each of these exceptions. 
+ ----------------------------------------------------------------
+ */
 void
 exception_init (void) 
 {
@@ -60,12 +64,16 @@ exception_init (void)
   intr_register_int (14, 0, INTR_OFF, page_fault, "#PF Page-Fault Exception");
 }
 
+
+
 /* Prints exception statistics. */
 void
 exception_print_stats (void) 
 {
   printf ("Exception: %lld page faults\n", page_fault_cnt);
 }
+
+
 
 /* Handler for an exception (probably) caused by a user process. */
 static void
@@ -108,7 +116,10 @@ kill (struct intr_frame *f)
     }
 }
 
-/* Page fault handler.  This is a skeleton that must be filled in
+
+/* 
+ ----------------------------------------------------------------
+ Page fault handler.  This is a skeleton that must be filled in
    to implement virtual memory.  Some solutions to project 2 may
    also require modifying this code.
 
@@ -118,7 +129,9 @@ kill (struct intr_frame *f)
    example code here shows how to parse that information.  You
    can find more information about both of these in the
    description of "Interrupt 14--Page Fault Exception (#PF)" in
-   [IA32-v3a] section 5.15 "Exception and Interrupt Reference". */
+   [IA32-v3a] section 5.15 "Exception and Interrupt Reference". 
+ ----------------------------------------------------------------
+ */
 static void
 page_fault (struct intr_frame *f) 
 {

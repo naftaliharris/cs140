@@ -16,4 +16,10 @@ insult
 lineup
 matmult
 recursor
+*.o
 *.d
+lib/*.d
+lib/user/*.d
+lib/*.o
+lib/user/*.o
+libc.a
