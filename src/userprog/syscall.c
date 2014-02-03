@@ -154,8 +154,9 @@ syscall_handler (struct intr_frame *f )
     compiler warnings. 
  --------------------------------------------------------------------
  */
-void LP_halt (void) NO_RETURN {
+void LP_halt (void) {
     shutdown_power_off ();
+    NOT_REACHED();
 }
 
 /*
@@ -172,9 +173,10 @@ void LP_halt (void) NO_RETURN {
     3. process_exit() -- here is where we free our resources. 
  --------------------------------------------------------------------
  */
-void LP_exit (int status) NO_RETURN {
+void LP_exit (int status) {
     thread_current()->vital_info->exit_status = status;
     thread_exit();
+    NOT_REACHED();
 }
 
 /*
@@ -209,7 +211,7 @@ pid_t LP_exec (const char* command_line) {
         //load.
         return -1;
     }
-    sema_down(&curr_thread->sema_load_child);
+    sema_down(&curr_thread->sema_child_load);
     if (curr_thread->child_did_load_successfully) {
         return pid;
     }
@@ -262,7 +264,7 @@ bool LP_create (const char *file, unsigned initial_size) {
 bool LP_remove (const char *file) {
     check_usr_string(file);
     if (!check_file_name_length(file)) {
-        what to do here?
+        //what to do here?
     }
     
     lock_acquire(&file_system_lock);
@@ -282,7 +284,7 @@ bool LP_remove (const char *file) {
 int LP_open (const char *file) {
     check_usr_string(file);
     if (!check_file_name_length(file)) {
-        what to do here?
+        //what to do here?
     }
     lock_acquire(&file_system_lock);
     struct file* fp = filesys_open(file);
@@ -326,7 +328,8 @@ int LP_read (int fd, void *buffer, unsigned length) {
     
     if (fd == STDIN_FILENO) {
         char* char_buff = (char*)buffer;
-        for (int i = 0; i < length; i++) {
+        int i;
+        for (i = 0; i < length; i++) {
             char_buff[i] = input_getc();
         }
         return length;
@@ -386,7 +389,7 @@ void LP_seek (int fd, unsigned position) {
     struct file_package* package = get_file_package_from_open_list(fd);
     if (package == NULL) {
         lock_release(&file_system_lock);
-        CALL EXIT WITH AN ERROR MESSAGE
+        //CALL EXIT WITH AN ERROR MESSAGE
     }
     package->position = position;
     lock_release(&file_system_lock);
@@ -407,7 +410,7 @@ unsigned LP_tell (int fd) {
     struct file_package* package = get_file_package_from_open_list(fd);
     if (package == NULL) {
         lock_release(&file_system_lock);
-        INVOKE EXIT HERE WITH AN ERROR MESSAGE
+        //INVOKE EXIT HERE WITH AN ERROR MESSAGE
     }
     unsigned position = package->position;
     lock_release(&file_system_lock);
@@ -428,7 +431,7 @@ void LP_close (int fd) {
     struct file_package* package = get_file_package_from_open_list(fd);
     if (package == NULL) {
         lock_release(&file_system_lock);
-        INVOKE ERROR HERE WITH AN ERROR MESSAGE
+        //INVOKE ERROR HERE WITH AN ERROR MESSAGE
     }
     file_close(package->fp);
     list_remove(&package->elem);
@@ -520,9 +523,10 @@ bool check_file_name_length(const char* filename) {
  */
 void check_usr_buffer(void* buffer, unsigned length) {
     char* buff_as_char_ptr = (char*)buffer;
-    for (int i = 0; i < length; i++) {
+    int i;
+    for (i = 0; i < length; i++) {
         const void* curr_addr = buff_as_char_ptr;
-        check_usr_ptr(curr_addr);
+        //check_usr_ptr(curr_addr);
         buff_as_char_ptr = buff_as_char_ptr + 1;
     }
 }
@@ -543,8 +547,8 @@ void check_usr_buffer(void* buffer, unsigned length) {
     the system call.
  --------------------------------------------------------------------
  */
-void check_usr_ptr(const void* ptr) {
-    if (ptr == NULL) {
+void check_usr_ptr(void* ptr) {
+    /*if (ptr == NULL) {
         //here is where we call exit
     }
     if (!is_usr_vaddr(ptr)) {
@@ -552,7 +556,7 @@ void check_usr_ptr(const void* ptr) {
     } 
     if (pagedir_get_page(thread_current()->pagedir, ptr) == NULL) {
         //here is where we call exit
-    }
+    }*/
 }
 
 /*
@@ -563,12 +567,12 @@ void check_usr_ptr(const void* ptr) {
  --------------------------------------------------------------------
  */
 void check_usr_string(char* str) {
-    while (true) {
+    /*while (true) {
         if (*str == '\0') break;
         const void* ptr = (const void*)str;
         check_usr_ptr(ptr);
         str = (char*)str + 1;
-    }
+    }*/
 }
 
 /*
@@ -584,7 +588,7 @@ void check_usr_string(char* str) {
  */
 uint32_t read_frame(struct intr_frame* f, int byteOffset) {
     void* addr = f->esp + byteOffset;
-    check_usr_ptr(addr);
+    //check_usr_ptr(addr);
     return *(uint32_t*)addr;
 }
 
