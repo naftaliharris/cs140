@@ -380,9 +380,10 @@ process_exit (void)
     }
     notify_children_parent_is_finished();
     release_resources(cur);
-    if (cur->pagedir != NULL) {
+    /*if (cur->pagedir != NULL) {
         printf("%s: exit(%d)\n", name, status);
-    }
+    }*/
+    //printf("%s: exit(%d)\n", name, status);
     
     
     uint32_t *pd;

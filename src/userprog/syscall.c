@@ -179,6 +179,7 @@ void LP_halt (void) {
  */
 void LP_exit (int status) {
     thread_current()->vital_info->exit_status = status;
+    printf("%s: exit(%d)\n", thread_name(), status);
     thread_exit();
     NOT_REACHED();
 }
@@ -296,7 +297,7 @@ int LP_open (const char *file) {
         lock_release(&file_system_lock);
         return -1;
     }
-    int fd = add_to_open_file_list(fp); 
+    int fd = add_to_open_file_list(fp);
     lock_release(&file_system_lock);
     return fd;
 }
