@@ -179,6 +179,7 @@ void LP_halt (void) {
  */
 void LP_exit (int status) {
     thread_current()->vital_info->exit_status = status;
+    //need to check for kernel thread v. user thread here.
     printf("%s: exit(%d)\n", thread_name(), status);
     thread_exit();
     NOT_REACHED();
