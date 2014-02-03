@@ -138,11 +138,12 @@ start_process (void *arg_page_)
   sema_up(&(thread_current()->parent_thread->sema_child_load));
 
   /* If load failed, quit. */
-  palloc_free_page (arg_page);
   if (!success)
   {
+    palloc_free_page (arg_page);
     thread_current()->vital_info->exit_status = -1;
     thread_exit ();
+    NOT_REACHED();
   }
     
   // MODIFY STACK HERE
@@ -152,8 +153,8 @@ start_process (void *arg_page_)
   
   int cur_arg = num_args;
   int i;
-  hex_dump(0, PHYS_BASE, 20, true);
-  for(i = far_byte; i >= 2; i--)
+  //hex_dump(0, PHYS_BASE, 0, true);
+  for(i = far_byte; i >= sizeof(int) * 2; i--)
   {
     char* copy_byte = arg_page + i;
     if(*copy_byte == '\0') 
@@ -166,8 +167,9 @@ start_process (void *arg_page_)
     }
     if_.esp = ((char*)if_.esp) - 1;
     *((char*)if_.esp) = *copy_byte;
-    hex_dump(0, PHYS_BASE, 20, true);
+    hex_dump(0, (char*)if_.esp, far_byte - i, true);
   }
+  printf("cur_arg = %d\n", cur_arg);
   ASSERT(cur_arg == 0);
   args[0] = if_.esp;
   if_.esp = ((char*)if_.esp) - 1;
@@ -184,6 +186,8 @@ start_process (void *arg_page_)
   *((int*)if_.esp) = num_args;
   if_.esp = ((char*)if_.esp) - sizeof(char*);
   *((char**)if_.esp) = NULL;
+  
+  palloc_free_page (arg_page);
   
   //hex_dump(0, PHYS_BASE, 20, true);
 
@@ -503,6 +507,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 bool
 load (const char *file_name, void (**eip) (void), void **esp) 
 {
+  printf("load\n");
   struct thread *t = thread_current ();
   struct Elf32_Ehdr ehdr;
   struct file *file = NULL;
@@ -610,7 +615,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   file_close (file);
   return success;
 }
-
+
 /* load() helpers. */
 
 static bool install_page (void *upage, void *kpage, bool writable);
