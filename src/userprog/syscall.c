@@ -268,7 +268,7 @@ bool LP_create (const char *file, unsigned initial_size) {
 bool LP_remove (const char *file) {
     check_usr_string(file);
     if (!check_file_name_length(file)) {
-        return -1;=
+        return -1;
     }
     
     lock_acquire(&file_system_lock);
@@ -530,7 +530,7 @@ void check_usr_buffer(const void* buffer, unsigned length) {
     unsigned i;
     for (i = 0; i < length; i++) {
         const void* curr_addr = buff_as_char_ptr;
-        //check_usr_ptr(curr_addr);
+        check_usr_ptr(curr_addr);
         buff_as_char_ptr = buff_as_char_ptr + 1;
     }
 }
