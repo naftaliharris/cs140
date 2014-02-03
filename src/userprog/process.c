@@ -41,7 +41,7 @@ void release_all_locks(struct thread* t);
 tid_t
 process_execute (const char *arguments) 
 {
-  printf("process_execute\n");
+  //printf("process_execute\n");
   char *fn_copy;
   tid_t tid;
   
@@ -55,7 +55,7 @@ process_execute (const char *arguments)
     
   // MODIFY FROM HERE
   //strtok_r is threadsafe!!!!
-  hex_dump(0, fn_copy, 20, true);
+  //hex_dump(0, fn_copy, 20, true);
   int numargs = 1;
   char* saveptr = NULL;
   char* file_name = strtok_r((char*)arguments, " ", &saveptr);
@@ -63,7 +63,7 @@ process_execute (const char *arguments)
   strlcpy (fn_copy + curoffset, file_name, PGSIZE);
   char* argument_str = strtok_r(NULL, " ", &saveptr);
   curoffset += strnlen(file_name, PGSIZE) + 1;
-  hex_dump(0, fn_copy, 20, true);
+  //hex_dump(0, fn_copy, 20, true);
   while(argument_str != NULL)
   {
     if(curoffset >= PGSIZE)
@@ -77,12 +77,12 @@ process_execute (const char *arguments)
     strlcpy(fn_copy + curoffset, argument_str, PGSIZE - curoffset);
     curoffset += strnlen(argument_str, PGSIZE) + 1;
     argument_str = strtok_r(NULL, " ", &saveptr);
-    hex_dump(0, fn_copy, 20, true);
+    //hex_dump(0, fn_copy, 20, true);
   }
   
   *((int*) fn_copy) = curoffset - 1;
   *(((int*) fn_copy) + 1) = numargs;
-  hex_dump(0, fn_copy, 20, true);
+  //hex_dump(0, fn_copy, 20, true);
 
   // TO HERE
   
@@ -118,7 +118,7 @@ process_execute (const char *arguments)
 static void
 start_process (void *arg_page_)
 {
-  printf("start_process\n");
+  //printf("start_process\n");
   char *arg_page = arg_page_;
   char *file_name = arg_page_ + sizeof(int) + sizeof(int);
   struct intr_frame if_;
@@ -167,9 +167,9 @@ start_process (void *arg_page_)
     }
     if_.esp = ((char*)if_.esp) - 1;
     *((char*)if_.esp) = *copy_byte;
-    hex_dump(0, (char*)if_.esp, far_byte - i, true);
+    //hex_dump(0, (char*)if_.esp, far_byte - i, true);
   }
-  printf("cur_arg = %d\n", cur_arg);
+  //printf("cur_arg = %d\n", cur_arg);
   ASSERT(cur_arg == 0);
   args[0] = if_.esp;
   if_.esp = ((char*)if_.esp) - 1;
@@ -515,7 +515,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 bool
 load (const char *file_name, void (**eip) (void), void **esp) 
 {
-  printf("load\n");
+  //printf("load\n");
   struct thread *t = thread_current ();
   struct Elf32_Ehdr ehdr;
   struct file *file = NULL;
