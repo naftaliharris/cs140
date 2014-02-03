@@ -526,19 +526,22 @@ bool check_file_name_length(const char* filename) {
  --------------------------------------------------------------------
  */
 void check_usr_buffer(const void* buffer, unsigned length) {
-    char* buff_as_char_ptr = (char*)buffer;
+    check_usr_ptr(buffer);
+    check_usr_ptr((const void*)((char*)buffer + length));
+    
+    /*char* buff_as_char_ptr = (char*)buffer;
     unsigned i;
     for (i = 0; i < length; i++) {
         const void* curr_addr = buff_as_char_ptr;
         check_usr_ptr(curr_addr);
         buff_as_char_ptr = buff_as_char_ptr + 1;
-    }
+    }*/
 }
 
 
 /*
  --------------------------------------------------------------------
- Description: checks the pointer to make sure that it is valid. 
+ Description: checks the pointer to make sure that it is valid.
     A pointer is valid only if it is within user virtual address 
     space, it is not null, and it is mapped. 
  NOTE: We use the is_usr_vaddr in thread/vaddr.h and pagedir_get_page 
@@ -572,9 +575,9 @@ void check_usr_ptr(const void* ptr) {
  */
 void check_usr_string(const char* str) {
     while (true) {
-        if (*str == '\0') break;
         const void* ptr = (const void*)str;
         check_usr_ptr(ptr);
+        if (*str == '\0') break;
         str = (char*)str + 1;
     }
 }
