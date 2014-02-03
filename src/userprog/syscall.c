@@ -11,6 +11,9 @@
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 #include "userprog/process.h"
+#include "lib/string.h"
+#include "threads/vaddr.h"
+#include "userprog/pagedir.h"
 
 
 //TO DO LIST:
@@ -26,9 +29,9 @@
 static void syscall_handler (struct intr_frame *);
 
 // BEGIN LP DEFINED HELPER FUNCTIONS//
-void check_usr_ptr(void* u_ptr);
-void check_usr_string(char* str);
-void check_usr_buffer(void* buffer, unsigned length);
+void check_usr_ptr(const void* u_ptr);
+void check_usr_string(const char* str);
+void check_usr_buffer(const void* buffer, unsigned length);
 bool check_file_name_length(const char* filename);
 uint32_t read_frame(struct intr_frame* f, int byteOffset);
 int add_to_open_file_list(struct file* fp);
@@ -79,67 +82,68 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f ) 
 {
+    unsigned arg1, arg2, arg3;
     int systemCall_num = (int)read_frame(f, 0);
     switch (systemCall_num) {
         case SYS_HALT:
             LP_halt();
             break;
         case SYS_EXIT:
-            //int status = (int)read_frame(f, 4);
-            LP_exit((int)read_frame(f, 4));
+            arg1 = read_frame(f, 4);
+            LP_exit((int)arg1);
             break;
         case SYS_EXEC:
-            //char* command_line = (char*)read_frame(f, 4);
-            f->eax = (uint32_t)LP_exec((char*)read_frame(f, 4));
+            arg1 = read_frame(f, 4);
+            f->eax = (uint32_t)LP_exec((char*)arg1);
             break;
         case SYS_WAIT:
-            //pid_t pid = (pid_t)read_frame(f, 4);
-            f->eax = (uint32_t)LP_wait((pid_t)read_frame(f, 4));
+            arg1 = read_frame(f, 4);
+            f->eax = (uint32_t)LP_wait((pid_t)arg1);
             break;
         case SYS_CREATE:
-            //const char* file = (const char*)read_frame(f, 4);
-            //unsigned initial_size = (unsigned)read_frame(f, 8);
-            f->eax = (uint32_t)LP_create((const char*)read_frame(f, 4), (unsigned)read_frame(f, 8));
+            arg1 = read_frame(f, 4);
+            arg2 = read_frame(f, 8);
+            f->eax = (uint32_t)LP_create((const char*)arg1, (unsigned)arg2);
             break;
         case SYS_REMOVE:
-            //const char* file = (const char*)read_frame(f, 4);
-            f->eax = (uint32_t)LP_remove((const char*)read_frame(f, 4));
+            arg1 = read_frame(f, 4);
+            f->eax = (uint32_t)LP_remove((const char*)arg1);
             break;
         case SYS_OPEN:
-            //const char* file = (const char*)read_frame(f, 4);
-            f->eax = (uint32_t)LP_open((const char*)read_frame(f, 4));
+            arg1 = read_frame(f, 4);
+            f->eax = (uint32_t)LP_open((const char*)arg1);
             break;
         case SYS_FILESIZE:
-            //int fd = (int)read_frame(f, 4);
-            f->eax = (uint32_t)LP_filesize((int)read_frame(f, 4));
+            arg1 = read_frame(f, 4);
+            f->eax = (uint32_t)LP_filesize((int)arg1);
             break;
         case SYS_READ:
-            //int fd = (int)read_frame(f, 4);
-            //void* buffer = (void*)read_frame(f, 8);
-            //unsigned length = (unsigned)read_frame(f, 12);
-            f->eax = (int)LP_read((int)read_frame(f, 4), (void*)read_frame(f, 8), (unsigned)read_frame(f, 12));
+            arg1 = read_frame(f, 4);
+            arg2 = read_frame(f, 8);
+            arg3 = read_frame(f, 12);
+            f->eax = (int)LP_read((int)arg1, (void*)arg2, (unsigned)arg3);
             break;
         case SYS_WRITE:
-            //int fd = (int)read_frame(f, 4);
-            //const void* buffer = (const void*)read_frame(f, 8);
-            //unsigned length = (unsigned)read_frame(f, 12);
-            f->eax = (uint32_t)LP_write((int)read_frame(f, 4), (const void*)read_frame(f, 8), (unsigned)read_frame(f, 12));
+            arg1 = read_frame(f, 4);
+            arg2 = read_frame(f, 8);
+            arg3 = (unsigned)read_frame(f, 12);
+            f->eax = (uint32_t)LP_write((int)arg1, (const void*)arg2, (unsigned)arg3);
             break;
         case SYS_SEEK:
-            //int fd = (int)read_frame(f, 4);
-            //unsigned position = (unsigned)read_frame(f, 8);
-            LP_seek((int)read_frame(f, 4), (unsigned)read_frame(f, 8));
+            arg1 = read_frame(f, 4);
+            arg2 = read_frame(f, 8);
+            LP_seek((int)arg1, (unsigned)arg2);
             break;
         case SYS_TELL:
-            //int fd = (int)read_frame(f, 4);
-            f->eax = (uint32_t)LP_tell((int)read_frame(f, 4));
+            arg1 = read_frame(f, 4);
+            f->eax = (uint32_t)LP_tell((int)arg1);
             break;
         case SYS_CLOSE:
-            //int fd = (int)read_frame(f, 4);
-            LP_close((int)read_frame(f, 4));
+            arg1 = read_frame(f, 4);
+            LP_close((int)arg1);
             break;
         default:
-            //IF WE GET HERE, SHOULD WE EXIT THE PROCESS???
+            LP_exit(-1);
             break;
     }
 }
@@ -241,7 +245,7 @@ int LP_wait (pid_t pid) {
 bool LP_create (const char *file, unsigned initial_size) {
     check_usr_string(file);
     if (!check_file_name_length(file)) {
-        //what to do here?
+        return false;
     }
     
     lock_acquire(&file_system_lock);
@@ -264,7 +268,7 @@ bool LP_create (const char *file, unsigned initial_size) {
 bool LP_remove (const char *file) {
     check_usr_string(file);
     if (!check_file_name_length(file)) {
-        //what to do here?
+        return -1;=
     }
     
     lock_acquire(&file_system_lock);
@@ -284,7 +288,7 @@ bool LP_remove (const char *file) {
 int LP_open (const char *file) {
     check_usr_string(file);
     if (!check_file_name_length(file)) {
-        //what to do here?
+        return -1;
     }
     lock_acquire(&file_system_lock);
     struct file* fp = filesys_open(file);
@@ -328,7 +332,7 @@ int LP_read (int fd, void *buffer, unsigned length) {
     
     if (fd == STDIN_FILENO) {
         char* char_buff = (char*)buffer;
-        int i;
+        unsigned i;
         for (i = 0; i < length; i++) {
             char_buff[i] = input_getc();
         }
@@ -389,7 +393,7 @@ void LP_seek (int fd, unsigned position) {
     struct file_package* package = get_file_package_from_open_list(fd);
     if (package == NULL) {
         lock_release(&file_system_lock);
-        //CALL EXIT WITH AN ERROR MESSAGE
+        LP_exit(-1);
     }
     package->position = position;
     lock_release(&file_system_lock);
@@ -410,7 +414,7 @@ unsigned LP_tell (int fd) {
     struct file_package* package = get_file_package_from_open_list(fd);
     if (package == NULL) {
         lock_release(&file_system_lock);
-        //INVOKE EXIT HERE WITH AN ERROR MESSAGE
+        LP_exit(-1);
     }
     unsigned position = package->position;
     lock_release(&file_system_lock);
@@ -431,7 +435,7 @@ void LP_close (int fd) {
     struct file_package* package = get_file_package_from_open_list(fd);
     if (package == NULL) {
         lock_release(&file_system_lock);
-        //INVOKE ERROR HERE WITH AN ERROR MESSAGE
+        LP_exit(-1);
     }
     file_close(package->fp);
     list_remove(&package->elem);
@@ -521,9 +525,9 @@ bool check_file_name_length(const char* filename) {
     buffer is solid. 
  --------------------------------------------------------------------
  */
-void check_usr_buffer(void* buffer, unsigned length) {
+void check_usr_buffer(const void* buffer, unsigned length) {
     char* buff_as_char_ptr = (char*)buffer;
-    int i;
+    unsigned i;
     for (i = 0; i < length; i++) {
         const void* curr_addr = buff_as_char_ptr;
         //check_usr_ptr(curr_addr);
@@ -547,16 +551,16 @@ void check_usr_buffer(void* buffer, unsigned length) {
     the system call.
  --------------------------------------------------------------------
  */
-void check_usr_ptr(void* ptr) {
-    /*if (ptr == NULL) {
-        //here is where we call exit
+void check_usr_ptr(const void* ptr) {
+    if (ptr == NULL) {
+        LP_exit(-1);
     }
-    if (!is_usr_vaddr(ptr)) {
-        //here is where we call exit
+    if (!is_user_vaddr(ptr)) {
+        LP_exit(-1);
     } 
     if (pagedir_get_page(thread_current()->pagedir, ptr) == NULL) {
-        //here is where we call exit
-    }*/
+        LP_exit(-1);
+    }
 }
 
 /*
@@ -566,13 +570,13 @@ void check_usr_ptr(void* ptr) {
     and are properly mapped. 
  --------------------------------------------------------------------
  */
-void check_usr_string(char* str) {
-    /*while (true) {
+void check_usr_string(const char* str) {
+    while (true) {
         if (*str == '\0') break;
         const void* ptr = (const void*)str;
         check_usr_ptr(ptr);
         str = (char*)str + 1;
-    }*/
+    }
 }
 
 /*
@@ -588,7 +592,7 @@ void check_usr_string(char* str) {
  */
 uint32_t read_frame(struct intr_frame* f, int byteOffset) {
     void* addr = f->esp + byteOffset;
-    //check_usr_ptr(addr);
+    check_usr_ptr(addr);
     return *(uint32_t*)addr;
 }
 
