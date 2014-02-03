@@ -118,80 +118,81 @@ process_execute (const char *arguments)
 static void
 start_process (void *arg_page_)
 {
-  //printf("start_process\n");
-  char *arg_page = arg_page_;
-  char *file_name = arg_page_ + sizeof(int) + sizeof(int);
-  struct intr_frame if_;
-  bool success;
-
-  /* Initialize interrupt frame and load executable. */
-  memset (&if_, 0, sizeof if_);
-  if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
-  if_.cs = SEL_UCSEG;
-  if_.eflags = FLAG_IF | FLAG_MBS;
-  
-  
-  lock_acquire(&file_system_lock);
-  success = load (file_name, &if_.eip, &if_.esp);
-  lock_release(&file_system_lock);
-  thread_current()->parent_thread->child_did_load_successfully = success;
-  sema_up(&(thread_current()->parent_thread->sema_child_load));
-
-  /* If load failed, quit. */
-  if (!success)
-  {
-    palloc_free_page (arg_page);
-    thread_current()->vital_info->exit_status = -1;
-    thread_exit ();
-    NOT_REACHED();
-  }
+    //printf("start_process\n");
+    char *arg_page = arg_page_;
+    char *file_name = arg_page_ + sizeof(int) + sizeof(int);
+    struct intr_frame if_;
+    bool success;
     
-  // MODIFY STACK HERE
-  int far_byte = *((int*) arg_page);
-  int num_args = *(((int*) arg_page) + 1);
-  char* args[num_args];
-  
-  int cur_arg = num_args;
-  int i;
-  //hex_dump(0, PHYS_BASE, 0, true);
-  for(i = far_byte; i >= sizeof(int) * 2; i--)
-  {
-    char* copy_byte = arg_page + i;
-    if(*copy_byte == '\0') 
+    /* Initialize interrupt frame and load executable. */
+    memset (&if_, 0, sizeof if_);
+    if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
+    if_.cs = SEL_UCSEG;
+    if_.eflags = FLAG_IF | FLAG_MBS;
+    
+    
+    lock_acquire(&file_system_lock);
+    success = load (file_name, &if_.eip, &if_.esp);
+    lock_release(&file_system_lock);
+    thread_current()->parent_thread->child_did_load_successfully = success;
+    thread_current()->is_running_user_program = true;
+    sema_up(&(thread_current()->parent_thread->sema_child_load));
+    
+    /* If load failed, quit. */
+    if (!success)
     {
-      if(cur_arg < num_args)
-      {
-        args[cur_arg] = if_.esp;
-      }
-      cur_arg--;
+        palloc_free_page (arg_page);
+        thread_current()->vital_info->exit_status = -1;
+        thread_exit ();
+        NOT_REACHED();
     }
+    
+    // MODIFY STACK HERE
+    int far_byte = *((int*) arg_page);
+    int num_args = *(((int*) arg_page) + 1);
+    char* args[num_args];
+    
+    int cur_arg = num_args;
+    int i;
+    //hex_dump(0, PHYS_BASE, 0, true);
+    for(i = far_byte; i >= sizeof(int) * 2; i--)
+    {
+        char* copy_byte = arg_page + i;
+        if(*copy_byte == '\0')
+        {
+            if(cur_arg < num_args)
+            {
+                args[cur_arg] = if_.esp;
+            }
+            cur_arg--;
+        }
+        if_.esp = ((char*)if_.esp) - 1;
+        *((char*)if_.esp) = *copy_byte;
+        //hex_dump(0, (char*)if_.esp, far_byte - i, true);
+    }
+    //printf("cur_arg = %d\n", cur_arg);
+    ASSERT(cur_arg == 0);
+    args[0] = if_.esp;
     if_.esp = ((char*)if_.esp) - 1;
-    *((char*)if_.esp) = *copy_byte;
-    //hex_dump(0, (char*)if_.esp, far_byte - i, true);
-  }
-  //printf("cur_arg = %d\n", cur_arg);
-  ASSERT(cur_arg == 0);
-  args[0] = if_.esp;
-  if_.esp = ((char*)if_.esp) - 1;
-  *((char*)if_.esp) = '\0';
-  for(i = num_args - 1; i >= 0; i--)
-  {
+    *((char*)if_.esp) = '\0';
+    for(i = num_args - 1; i >= 0; i--)
+    {
+        if_.esp = ((char*)if_.esp) - sizeof(char*);
+        *((char**)if_.esp) = args[i];
+    }
+    char* argv = if_.esp;
     if_.esp = ((char*)if_.esp) - sizeof(char*);
-    *((char**)if_.esp) = args[i];
-  }
-  char* argv = if_.esp;
-  if_.esp = ((char*)if_.esp) - sizeof(char*);
-  *((char**)if_.esp) = argv;
-  if_.esp = ((char*)if_.esp) - sizeof(int);
-  *((int*)if_.esp) = num_args;
-  if_.esp = ((char*)if_.esp) - sizeof(char*);
-  *((char**)if_.esp) = NULL;
-  
-  palloc_free_page (arg_page);
-  
-  //hex_dump(0, PHYS_BASE, 20, true);
-
-  /* Start the user process by simulating a return from an
+    *((char**)if_.esp) = argv;
+    if_.esp = ((char*)if_.esp) - sizeof(int);
+    *((int*)if_.esp) = num_args;
+    if_.esp = ((char*)if_.esp) - sizeof(char*);
+    *((char**)if_.esp) = NULL;
+    
+    palloc_free_page (arg_page);
+    
+    //hex_dump(0, PHYS_BASE, 20, true);
+    
+    /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
      threads/intr-stubs.S).  Because intr_exit takes all of its
      arguments on the stack in the form of a `struct intr_frame',

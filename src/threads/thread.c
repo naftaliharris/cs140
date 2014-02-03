@@ -835,6 +835,8 @@ static void init_thread (struct thread *t, const char *name, int priority)
     t->priority = priority;
     t->magic = THREAD_MAGIC;
     
+    t->is_running_user_program = false;
+    
     if (thread_mlfqs) {
         if (t == initial_thread) { /* special inittial_thread init */
             t->nice = 0;

@@ -115,6 +115,11 @@ struct thread
     bool cpu_has_changed;
     //END PROJECT 1 ADDITIONS//
     
+    //PROJECT 2 ADDITION
+    /* Distinguises between kernel threads and user threads */
+    /* Initially set to false on thread creation, set to true in start_process */
+    bool is_running_user_program;
+    
     
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
@@ -132,6 +137,7 @@ struct thread
     struct list open_files;
     /* file descriptor counter */
     int fd_counter;
+    
     
     //CHILD INFORMATION
     /* synchronizes the process of creating a child*/
