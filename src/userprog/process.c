@@ -633,7 +633,21 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
+
+  /* On success, mark the file as unwritable and keep track of it */
+  if (success)
+    {
+      file_deny_write(file);
+      struct file_package* package = malloc(sizeof(struct file_package));
+      package->position = 0;
+      package->fp = file;
+      package->fd = t->fd_counter;
+      t->fd_counter++;
+      list_push_back(&t->open_files, &package->elem);
+    }
+  else
+    file_close (file);
+
   return success;
 }
 
