@@ -59,9 +59,9 @@ process_execute (const char *arguments)
     
   int numargs = 0;
   const char* argument_copy = fn_copy + sizeof(int) + sizeof(int);
-  strlcpy (argument_copy, arguments, PGSIZE);
+  strlcpy ((char*)argument_copy, (char*)arguments, PGSIZE);
   
-  char* itr = argument_copy;
+  char* itr = (char*)argument_copy;
   
   // Run through rest of arguments; replace spaces with \0
   // We do this manually instead of using strtok_r
@@ -85,7 +85,7 @@ process_execute (const char *arguments)
   }
   
   // Store number of arguments and pointer to end of written data
-  *((char**) fn_copy) = itr - fn_copy;
+  *((char**) fn_copy) = (char*)(itr - fn_copy);
   *(((int*) fn_copy) + 1) = numargs;
   
   const char* file_name = argument_copy;
@@ -157,7 +157,7 @@ start_process (void *arg_page_)
     int cur_arg = num_args;
     int i;
     bool skipping_nulls = true;
-    for(i = far_byte; i >= sizeof(int) * 2; i--)
+    for(i = far_byte; i >= (int)(sizeof(int) * 2); i--)
     {
         char* copy_byte = arg_page + i;
         if(*copy_byte == '\0')
