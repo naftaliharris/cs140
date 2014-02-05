@@ -57,26 +57,23 @@ process_execute (const char *arguments)
   if (fn_copy == NULL)
     return TID_ERROR;
     
-  
-  int numargs = 1;
-  char* saveptr = NULL;
+  int numargs = 0;
   const char* argument_copy = fn_copy + sizeof(int) + sizeof(int);
   strlcpy (argument_copy, arguments, PGSIZE);
   
-  // First strtok_r so that we get the filename
-  // strtok_r is threadsafe!!!!
-  char* file_name = strtok_r((char*)argument_copy, " ", &saveptr);
+  char* itr = argument_copy;
   
   // Run through rest of arguments; replace spaces with \0
   // We do this manually instead of using strtok_r
   // Because that function does not set adjacent spaces to \0
   // But only the first space
+  // in_delim is initially true so that numargs counts the first
   bool in_delim = true;
-  while(*saveptr != '\0')
+  while(*itr != '\0')
   {
-    if(*saveptr == ' ')
+    if(*itr == ' ')
     {
-      *saveptr = '\0';
+      *itr = '\0';
       in_delim = true;
     }
     else if(in_delim)
@@ -84,12 +81,14 @@ process_execute (const char *arguments)
       in_delim = false;
       numargs++;
     }
-    saveptr++;
+    itr++;
   }
   
   // Store number of arguments and pointer to end of written data
-  *((char**) fn_copy) = saveptr - fn_copy;
+  *((char**) fn_copy) = itr - fn_copy;
   *(((int*) fn_copy) + 1) = numargs;
+  
+  const char* file_name = argument_copy;
   
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
