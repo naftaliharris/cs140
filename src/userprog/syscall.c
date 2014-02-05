@@ -532,14 +532,6 @@ bool check_file_name_length(const char* filename) {
 void check_usr_buffer(const void* buffer, unsigned length) {
     check_usr_ptr(buffer);
     check_usr_ptr((const void*)((char*)buffer + length));
-    
-    /*char* buff_as_char_ptr = (char*)buffer;
-    unsigned i;
-    for (i = 0; i < length; i++) {
-        const void* curr_addr = buff_as_char_ptr;
-        check_usr_ptr(curr_addr);
-        buff_as_char_ptr = buff_as_char_ptr + 1;
-    }*/
 }
 
 
