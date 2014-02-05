@@ -41,11 +41,15 @@ void release_all_locks(struct thread* t);
 tid_t
 process_execute (const char *arguments) 
 {
-  //printf("process_execute\n");
   char *fn_copy;
   tid_t tid;
   
-  // CHECK arguments LENGTH
+  // strlen(arguments) should be less than PGSIZE
+  int arglen = strnlen(arguments, PGSIZE);
+  if(arglen == 0 || arglen == PGSIZE)
+  {
+    return TID_ERROR;
+  }
   
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
@@ -53,44 +57,44 @@ process_execute (const char *arguments)
   if (fn_copy == NULL)
     return TID_ERROR;
     
-  // MODIFY FROM HERE
-  //strtok_r is threadsafe!!!!
-  //hex_dump(0, fn_copy, 20, true);
+  
   int numargs = 1;
   char* saveptr = NULL;
-  char* file_name = strtok_r((char*)arguments, " ", &saveptr);
-  int curoffset = sizeof(int) + sizeof(int);
-  strlcpy (fn_copy + curoffset, file_name, PGSIZE);
-  char* argument_str = strtok_r(NULL, " ", &saveptr);
-  curoffset += strnlen(file_name, PGSIZE) + 1;
-  //hex_dump(0, fn_copy, 20, true);
-  while(argument_str != NULL)
+  const char* argument_copy = fn_copy + sizeof(int) + sizeof(int);
+  strlcpy (argument_copy, arguments, PGSIZE);
+  
+  // First strtok_r so that we get the filename
+  // strtok_r is threadsafe!!!!
+  char* file_name = strtok_r((char*)argument_copy, " ", &saveptr);
+  
+  // Run through rest of arguments; replace spaces with \0
+  // We do this manually instead of using strtok_r
+  // Because that function does not set adjacent spaces to \0
+  // But only the first space
+  bool in_delim = true;
+  while(*saveptr != '\0')
   {
-    if(curoffset >= PGSIZE)
+    if(*saveptr == ' ')
     {
-      // ERROR
-      printf("curoffset >= PGSIZE\n");
-      palloc_free_page(fn_copy);
-      return TID_ERROR;
+      *saveptr = '\0';
+      in_delim = true;
     }
-    numargs++;
-    strlcpy(fn_copy + curoffset, argument_str, PGSIZE - curoffset);
-    curoffset += strnlen(argument_str, PGSIZE) + 1;
-    argument_str = strtok_r(NULL, " ", &saveptr);
-    //hex_dump(0, fn_copy, 20, true);
+    else if(in_delim)
+    {
+      in_delim = false;
+      numargs++;
+    }
+    saveptr++;
   }
   
-  *((int*) fn_copy) = curoffset - 1;
+  // Store number of arguments and pointer to end of written data
+  *((char**) fn_copy) = saveptr - fn_copy;
   *(((int*) fn_copy) + 1) = numargs;
-  //hex_dump(0, fn_copy, 20, true);
-
-  // TO HERE
   
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
   {
-    printf("tid == TID_ERROR\n");
     palloc_free_page (fn_copy); 
   }
   return tid;
@@ -118,7 +122,6 @@ process_execute (const char *arguments)
 static void
 start_process (void *arg_page_)
 {
-    //printf("start_process\n");
     char *arg_page = arg_page_;
     char *file_name = arg_page_ + sizeof(int) + sizeof(int);
     struct intr_frame if_;
@@ -147,28 +150,41 @@ start_process (void *arg_page_)
         NOT_REACHED();
     }
     
-    // MODIFY STACK HERE
+    // With the stack created, modify it and place our arguments into it
     int far_byte = *((int*) arg_page);
     int num_args = *(((int*) arg_page) + 1);
     char* args[num_args];
     
     int cur_arg = num_args;
     int i;
-    //hex_dump(0, PHYS_BASE, 0, true);
+    bool skipping_nulls = true;
     for(i = far_byte; i >= sizeof(int) * 2; i--)
     {
         char* copy_byte = arg_page + i;
         if(*copy_byte == '\0')
         {
+          skipping_nulls = true;
+        }
+        else
+        {
+          // If there were multiple nulls in a row (multiple spaces)
+          // Only copy one of them
+          if(skipping_nulls)
+          {
+            skipping_nulls = false;
+            
             if(cur_arg < num_args)
             {
                 args[cur_arg] = if_.esp;
             }
             cur_arg--;
+            
+            if_.esp = ((char*)if_.esp) - 1;
+            *((char*)if_.esp) = '\0';
+          }
+          if_.esp = ((char*)if_.esp) - 1;
+          *((char*)if_.esp) = *copy_byte;
         }
-        if_.esp = ((char*)if_.esp) - 1;
-        *((char*)if_.esp) = *copy_byte;
-        //hex_dump(0, (char*)if_.esp, far_byte - i, true);
     }
     ASSERT(cur_arg == 0);
     args[0] = if_.esp;
@@ -192,12 +208,8 @@ start_process (void *arg_page_)
     *((int*)if_.esp) = num_args;
     if_.esp = ((char*)if_.esp) - sizeof(char*);
     *((char**)if_.esp) = NULL;
-
-    //hex_dump(0, (char*)if_.esp, 50, true);
     
     palloc_free_page (arg_page);
-    
-    //hex_dump(0, PHYS_BASE, 20, true);
     
     /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -518,7 +530,6 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 bool
 load (const char *file_name, void (**eip) (void), void **esp) 
 {
-  //printf("load\n");
   struct thread *t = thread_current ();
   struct Elf32_Ehdr ehdr;
   struct file *file = NULL;
