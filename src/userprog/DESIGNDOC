@@ -403,10 +403,78 @@ this field by resetting it to false for future exec calls.
 >> terminates without waiting, before C exits?  After C exits?  Are
 >> there any special cases?
 
-- NEED TO ADD LOCK TWO LOCKS AROUND PARENT_IS_FINISHED AND CHILD_IS_FINISHED
+The parent child relationship is an important one in the context of an
+OS. The first distinction our implementation makes is between thread
+specific data, and data that potentially is shared between parent and 
+chid. The data that needs to be shared between parent and child is 
+essentially just the tid and exit status of the child. However, 
+coordination of this information is tricky. Outside of this information, 
+all other thread info is unique to the thread struct and need not be shared. 
 
+To make this distinction, we define a vital info struct. Within this struct
+we manage the threads exit status, a copy of its tid, and other variables used
+to synchronize access to this info. These vital info structs are malloc'd, so
+wrt to thread struct size, the cost is negligible. the parent thread tracks 
+child information by storing the vital info of created children in an internal
+list. The child tracks its vital info with a pointer to its vital info. 
 
-Do we do this effectively? 
+To synchronize process termination and wait calls, we use two variables. 
+parent_is_finished, and child_is_finished. These allow us to determine
+whether a parent thread is still running or if a child is still running. Because 
+these fields are accessed by both P and C, we lock it down with a lock. 
+
+How do you ensure proper synchronization and avoid race conditions when P
+calls wait(C) before C exits? :In this case, P calls wait on C. P will
+first check the vital info for C. If C has finished, P will get the exit
+status from the vital info, free the vital info and then return the status. 
+In this case, however, C is still alive, so P will follow the t pointer to 
+C thread, and wait on the semaphore wait_on_me contained in C. P will wait
+until C exits. On exit, C will update child_is_finished to true in its
+vital info, and then signal its semaphore. this will awake P. Because P is 
+still alive, C does not free its vital info. P frees the vital info once it
+wakes up from waiting on the semaphore. A potential race exists on access
+of parent is finished and child is finished. We address this by using a lock
+around access to these variables. 
+
+Now the case of P waiting on C after C exits: C exits, but because P is 
+still alive, C does not free its vital info. C sets child_is_finished to 
+true in its vital info, and then exits. P, then calls wait. It accessed C's
+vital info from its list of children. It sees C has finished, so it does not 
+signal the semaphore as that semaphore no longer exists as C has exited and its
+memory cleared. Thus, P moves on, gets the exit status of C from the 
+vital info, and then frees the info and returns the exit status. 
+
+How do you ensure that all resources are freed in each case?: The exiting
+child will always close its open files and release its locks, and then
+free its thread specific memory, as provided in the code from project 1. The only
+distinction is with the vital info struct. If the child exits before the parent
+the parent will free this vital info struct either with a wait call, or when 
+it exits. If the parent exits before the child, the parent will set 
+parent_is_finished to true, in all still alive child vital info's, which 
+then will cause the children to free their vital info's when they exit. 
+
+How about when P terminates without waiting, before C exits?: In this case, 
+P will set parent_is_finshed in C's vital info, but will not free C's vital info. 
+P will free its resources. When C exits, it will see parent_is_finished is true, 
+and will free its vital info. 
+
+How about when P terminates without waiting, after C exits? C will exit. It will
+see that parent_is_finished is false (false on creation). Thus it will release
+all thread specific resources, but will not free its vital info. Instead, it
+will set child_is_finished to true. When P exits, it will consult its 
+list of children, notice that C has finished, and thus free C's vital info. 
+
+Additional cases:
+
+C exits. While C is exiting, it gets swapped and P exits. Thus there is a race
+between P and C on who can write to/read from parent_is_finished in C's vital
+info. To avoid this, we use a lock around this boolean. This ensures that either 
+P will free C's vital info, or C will free it, depending on who acquires the lock
+first. 
+
+A similar case occurs for P exiting and C exiting "simultaneously." the lock 
+again prevents the race condition. 
+
 
 ---- RATIONALE ----
 
