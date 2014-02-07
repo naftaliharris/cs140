@@ -314,7 +314,7 @@ by defining four functions, read_frame, check_usr_ptr,
 check_usr_string, and check_usr_buffer. These functions
 perform all the necessary checks of user memory. Thus, 
 in each of the cases where we need to check user memory, 
-we make a one-line call to given method. This decomposition 
+we make a one-line call the respective method. This decomposition 
 makes the code readable, and avoids obscuring the code
 with error handling, as the handling is taken care
 of in the respective functions. 
@@ -328,19 +328,48 @@ thread_exit() calls process_exit(), which calls release_resources,
 which closes all open files and releases all locks, which as 
 specified in OH, are the only resources we need release. (All
 malloc'd memory is likewise freed, but might be free'd by child
-or parent depending, as outline above). Thus, whenever we detect
+or parent depending, as outlined above). Thus, whenever we detect
 an error, process_exit() gets called, which releases resources. 
 Note, we track the locks held by a thread with our list
 locks_held, which is carried over from project 1. Open files
-are likewise tracked in a list within each thread. 
+are likewise tracked in a list within each thread (See B1).
+Also, our use of the vital info struct allows some 
+process information to remain accessible even after the process
+has exited, so long as the parent is still alive. 
 
+We now provide an example:
 
+Suppose process ABC is running, it opens two files, and
+acquires a single lock. ABC is the child thread of 123, which
+is also still running. ABC then attempts to read system call, but 
+the supplied buffer to the read call is NULL. Thus, in the 
+LP_read call, the call to check_usr_buffer will fail on
+the check of the buff ptr being NULL, and will trigger a call
+to LP_exit(-1). KP_exit() calls thread_exit(), which calls
+process_exit(). Now, in process_exit(), because the parent 
+thread 123, is still alive, ABC does not free its vital info. 
+Instead, it sets child_finished to true, which means the 123
+will free the vital info when it exits. Then, ABC will consult 
+its list of children. For each child, it will free the vital
+info for the child if the child has exited, or wills set parent
+has exited to true. Then ABC will call release all resources. 
+First, we iterate over the list of open files in the process, 
+and close the open files. Then, we iterate over the locks
+held by the process and release them. Then the thread_exits. 
 
-
-Note, our method of verifying user memory is to check all 
-pointers. A second option is outlined in spec. Reason we didn;t
-use that strategy is that it is overly complicated, even tho it
-is faster. 
+We conclude this section by addressing our method of 
+accessing user memory. As mentioned in the spec, there
+are two possible solutions to consider. The first is to 
+"verify the validity of user-provided pointer and then 
+dereference it." We employed this strategy. The second is 
+to "to check only that a user pointer points below 
+PHYS_BASE, then dereference it. An invalid user pointer
+ will cause a "page fault" that you can handle by modifying 
+the code for page_fault() in userprog/exception.c." As the spec
+says, this option is faster, as it takes advantage of the 
+processor's MMU. However, it given the complexity 
+involved with freeing of resources with this approach, 
+we opted not to employ it. 
 
 
 
