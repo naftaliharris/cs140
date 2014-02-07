@@ -143,7 +143,7 @@ syscall_handler (struct intr_frame *f )
             LP_close((int)arg1);
             break;
         default:
-            LP_exit(-1);
+            LP_exit(-1); //should never get here. If we do, exit with -1.
             break;
     }
 }
@@ -179,7 +179,6 @@ static void LP_halt (void) {
  */
 static void LP_exit (int status) {
     thread_current()->vital_info->exit_status = status;
-    //need to check for kernel thread v. user thread here.
     if (thread_current()->is_running_user_program) {
         printf("%s: exit(%d)\n", thread_name(), status);
     }
@@ -213,14 +212,11 @@ static pid_t LP_exec (const char* command_line) {
     struct thread* curr_thread = thread_current();
     pid_t pid = process_execute(command_line);
     if (pid == TID_ERROR) {
-        //in this case the call to thread_create in process_execute failed
-        //if not the case, then we have to wait for the child to signal
-        //that it has loaded, and then return based on the outcome of the
-        //load.
         return -1;
     }
     sema_down(&curr_thread->sema_child_load);
     if (curr_thread->child_did_load_successfully) {
+        curr_thread->child_did_load_successfully = false;
         return pid;
     }
     return -1;
@@ -251,7 +247,6 @@ static bool LP_create (const char *file, unsigned initial_size) {
     if (!check_file_name_length(file)) {
         return false;
     }
-    
     lock_acquire(&file_system_lock);
     bool outcome = filesys_create(file, initial_size);
     lock_release(&file_system_lock);
@@ -527,10 +522,18 @@ static bool check_file_name_length(const char* filename) {
     supplied buffer are proper for user space. 
  NOTE: If this function completes and returns, we know that the 
     buffer is solid. 
+ ADDITOIN: CHeck every 4kb for every page until length is exceeded. 
  --------------------------------------------------------------------
  */
+#define BYTES_PER_PAGE 4096 
 static void check_usr_buffer(const void* buffer, unsigned length) {
     check_usr_ptr(buffer);
+    unsigned curr_offset = BYTES_PER_PAGE;
+    while (true) {
+        if (curr_offset >= length) break;
+        check_usr_ptr((const void*)((char*)buffer + curr_offset));
+        curr_offset += BYTES_PER_PAGE;
+    }
     check_usr_ptr((const void*)((char*)buffer + length));
 }
 

@@ -57,10 +57,56 @@ Connor Woodson <cwoodson@stanford.edu>
 >> Are file descriptors unique within the entire OS or just within a
 >> single process?
 
+To begin, we note that file descriptors are unique within a single 
+process. 
+
+To implement the notion of open files within a program, we defined 
+the struct file_package. This struct allows us to track all 
+pertinent information for a processes open file in a single location. 
+Furthermore, these structs contain a list_elem, which allows these
+file_packages to be placed in a list. 
+
+Every process contains a list of file_packages, and an int fd_counter.
+The fd_counter is set initially to 2, to account for STD_IN and 
+STD_OUT. When a file is opened, that file receives the current value
+of fd_counter in the thread. Then, fd_counter is incremented. In this
+way, every opened file gets a new and unique file descriptor. 
+
+The file descriptor is unique to an open call for a specific file.
+As stated in the spec, the file position of a given file may not
+consistent across all fd's for a given file. Therefore, we track 
+a file position within the file_package struct as well, which 
+associated with the unique fd. 
+
+It is important to note that we do not recycle used file descriptors
+after they have been closed. We do this for the following reasons:
+1. You can imagine a user program that requests to open a file, 
+receives a file descriptor, and then closes the file. Later the 
+program opens another file, and receives the recycled fd. However,
+the coder, in a lapse of judgement, mistakenly associates the new
+fd with the closed file. In this case, the recycled fd will now be
+valid, only it will be associated with a different file, thus
+making the error harder to catch. Thus, we make fd's unique for each 
+call to open. 
+2. If we were to recycle fd's it would require more code and some
+sort of Data structure. This will inevitably come at a cost. 
+3. As posted on the course group page, we assume that no user program
+will ever open more than INT_MAX -2 files. Given this assumption, 
+there is no reason to recycle fd's, considering the cost of point 2, 
+and the potential debugging issues of point 1. 
+
+
 ---- ALGORITHMS ----
 
 >> B3: Describe your code for reading and writing user data from the
 >> kernel.
+
+Reading and writing user data in the kernel is incredibly dangerous, 
+because the user data could be null, in an unmapped region, or
+not in the user's space. In each of these cases, we have to take
+precaution to ensure that we do not 
+
+
 
 >> B4: Suppose a system call causes a full page (4,096 bytes) of data
 >> to be copied from user space into the kernel.  What is the least
@@ -68,6 +114,11 @@ Connor Woodson <cwoodson@stanford.edu>
 >> (e.g. calls to pagedir_get_page()) that might result?  What about
 >> for a system call that only copies 2 bytes of data?  Is there room
 >> for improvement in these numbers, and how much?
+
+max of 2
+
+
+What is this asking?
 
 >> B5: Briefly describe your implementation of the "wait" system call
 >> and how it interacts with process termination.
@@ -100,16 +151,26 @@ Connor Woodson <cwoodson@stanford.edu>
 >> terminates without waiting, before C exits?  After C exits?  Are
 >> there any special cases?
 
+- NEED TO ADD LOCK TWO LOCKS AROUND PARENT_IS_FINISHED AND CHILD_IS_FINISHED
+
+
+Do we do this effectively? 
+
 ---- RATIONALE ----
 
 >> B9: Why did you choose to implement access to user memory from the
 >> kernel in the way that you did?
+
+
+What is this asking? 
 
 >> B10: What advantages or disadvantages can you see to your design
 >> for file descriptors?
 
 >> B11: The default tid_t to pid_t mapping is the identity mapping.
 >> If you changed it, what advantages are there to your approach?
+
+We didn't change it. Should we have?
 
 			   SURVEY QUESTIONS
 			   ================

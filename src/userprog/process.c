@@ -263,8 +263,12 @@ process_wait (tid_t child_tid)
     if (child_to_wait_on->has_allready_been_waited_on) return -1;
     child_to_wait_on->has_allready_been_waited_on = true;
     int returnVal = 0;
+    lock_acquire(&child_to_wait_on->vital_info_lock);
     if (!child_to_wait_on->child_is_finished) {
+        lock_release(&child_to_wait_on->vital_info_lock);
         sema_down(&child_to_wait_on->t->wait_on_me);
+    } else {
+        lock_release(&child_to_wait_on->vital_info_lock);
     }
     returnVal = child_to_wait_on->exit_status;
     list_remove(&child_to_wait_on->child_elem);
@@ -276,6 +280,11 @@ process_wait (tid_t child_tid)
  ----------------------------------------------------------------
  Description: Returns a pointer to the child thread
     defined by tid. If no thread is in the list, returns NULL.
+ NOTE: There is no race condition here, as the vital info
+    structs are malloc'd, and they are only freed by the child
+    if the parent has exited. Given the parent is executing 
+    this function, we know the parent has not exited, so these
+    structs will always be there. 
  ----------------------------------------------------------------
  */
 struct vital_info* get_child_by_tid(tid_t child_tid) {
@@ -327,10 +336,13 @@ void notify_children_parent_is_finished() {
     while (!list_empty(&curr_thread->child_threads)) {
         struct list_elem* curr = list_pop_front(&curr_thread->child_threads);
         struct vital_info* child_vital_info = list_entry(curr, struct vital_info, child_elem);
+        lock_acquire(&child_vital_info->vital_info_lock);
         if (child_vital_info->child_is_finished) {
+            lock_release(&child_vital_info->vital_info_lock);
             free(child_vital_info);
         } else {
             child_vital_info->parent_is_finished = true;
+            lock_release(&child_vital_info->vital_info_lock); 
         }
     }
 }
@@ -339,6 +351,13 @@ void notify_children_parent_is_finished() {
  ----------------------------------------------------------------
  Description: walks the list of locks held by this thread and 
     releases each one by one. 
+ NOTE: As described in our project 1 implimentation notes and 
+    design document, we use a dummy lock to store the threads
+    initial priority. To designate the dummy lock from valid
+    locks, we use the lock->holder. If NULL, we are holding
+    the dummy lock, else, it is the valid lock. Thus, when we 
+    release all locks, we check for the dummy lock, as we cannot 
+    release it.
  ----------------------------------------------------------------
  */
 void release_all_locks(struct thread* t) {
@@ -389,10 +408,14 @@ process_exit (void)
     struct thread *cur = thread_current ();
     
     //LP Project 2 additions
+    
+    lock_acquire(&cur->vital_info->vital_info_lock);
     if (cur->vital_info->parent_is_finished) {
+        lock_release(&cur->vital_info->vital_info_lock);
         free(cur->vital_info);
     } else {
         cur->vital_info->child_is_finished = true;
+        lock_release(&cur->vital_info->vital_info_lock);
         sema_up(&cur->wait_on_me);
     }
     notify_children_parent_is_finished();
