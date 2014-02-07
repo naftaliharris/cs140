@@ -481,16 +481,49 @@ again prevents the race condition.
 >> B9: Why did you choose to implement access to user memory from the
 >> kernel in the way that you did?
 
+We chose to verify and dereference as opposed to modifying the fault handler
+because this was a clean and straightforward implementation. While using the
+later option is faster as it takes advantage of the MMU in the processor, 
+it is also more complicated. Given the limitations of pintos, and the tasks it
+will perform, the added complexity to the increase in speed is not worth the 
+tradeoff. 
 
-What is this asking? 
+NOTE: we go into depth on further issues above in B3, B4, B6. In order to 
+avoid copy paste and making the design doc repetitive, we reference those
+sections here. 
+
 
 >> B10: What advantages or disadvantages can you see to your design
 >> for file descriptors?
 
+The disadvantage is that the number of open files is hard capped at 
+INT_MAX -2. However, as stated in the google group, this is a valid 
+limit to impose. 
+
+Advantages: By mallocing the file_package struct, and storing them
+in a list in the thread, we minimize the amount of space used in the
+thread, and thus maximize amount of stack space. Another advantage
+is that we track the file position for each file descriptor, which 
+allows us to let a process have multiple fd's to the same open file, 
+and have them be at different positions. We also go over
+other advantages in B2. Again, In order to avoid copy paste and 
+making the design doc repetitive, we reference those sections here. 
+
+
+Alternative considered: Initially, we were going to create an array
+of 128 in the struct thread, with each entry being a file_package. The 
+file descriptor would have then been an index into this array (- 2 on
+each access). This would have allowed to file descriptor re-use. 
+However the number of open files would have been capped at 128, as opposed
+to INT_MAX - 2, and the struct thread would have been much bigger in size. 
+
 >> B11: The default tid_t to pid_t mapping is the identity mapping.
 >> If you changed it, what advantages are there to your approach?
 
-We didn't change it. Should we have?
+We did not change from the identity mapping. One reason to change would
+be if we allowed processes to set the process id. We experimented with this
+last year in CS 110. However, because we do not support that as of yet
+in pintos, there is not reason to deviate from the identity mapping. 
 
 			   SURVEY QUESTIONS
 			   ================
