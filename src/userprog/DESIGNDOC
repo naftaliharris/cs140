@@ -78,7 +78,7 @@ plus the lengths of all the pointers argv pointers we will push onto
 the stack, plus the length of the argv pointer, plus the length of the
 argc value, and plus the length of the fake return return address.
 
-If this this upper-bound is larger than the pagesize, then writing it
+If this upper-bound is larger than the pagesize, then writing it
 to the stack risks an overflow, so instead we exit the thread with an
 error return value.
 
@@ -331,8 +331,6 @@ we check the initial pointer, and then increment by 4kB's and check
 the pointer (to test the next page if the buffer transcends multiple 
 pages), or increment by length if length is less than current_offset
 (see check_usr_buffer for specifics). 
-
-
 
 >> B4: Suppose a system call causes a full page (4,096 bytes) of data
 >> to be copied from user space into the kernel.  What is the least
