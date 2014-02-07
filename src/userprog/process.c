@@ -160,6 +160,23 @@ start_process (void *arg_page_)
     // To the end of our data
     int far_byte = *((int*) arg_page);
     int num_args = *(((int*) arg_page) + 1);
+
+    /* Make sure we won't overflow the stack page */
+    int max_stack_length = far_byte - 8              /* The argument string */
+                         + sizeof(char *)            /* NULL argv[argc] pointer */
+                         + num_args * sizeof(char *) /* argv[i] pointers */
+                         + sizeof(char **)           /* argv pointer */
+                         + sizeof(int)               /* argc */
+                         + sizeof(char **);          /* Fake return address */
+
+    if (max_stack_length > PGSIZE)
+    {
+        palloc_free_page (arg_page);
+        thread_current()->vital_info->exit_status = -1;
+        thread_exit ();
+        NOT_REACHED();
+    }
+
     char* args[num_args];
     
     // Iterate from the end of our argument string, adding each byte to
@@ -209,7 +226,7 @@ start_process (void *arg_page_)
         *((char**)if_.esp) = args[i];
     }
 
-    /* Add the argv pointer, the argc value, and fake return value */
+    /* Add the argv pointer, the argc value, and fake return address */
     char* argv = if_.esp;
     if_.esp = ((char*)if_.esp) - sizeof(char*);
     *((char**)if_.esp) = argv;
