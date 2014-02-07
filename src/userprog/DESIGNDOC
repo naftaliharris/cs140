@@ -166,7 +166,32 @@ and the potential debugging issues of point 1.
 Reading and writing user data in the kernel is incredibly dangerous, 
 because the user data could be null, in an unmapped region, or
 not in the user's space. In each of these cases, we have to take
-precaution to ensure that we do not 
+precaution to ensure that we do not panic the kernel. Instead, if 
+we encounter any of these cases, we end the user program with the 
+corresponding exit status, as specified in the spec. 
+
+In our kernel code, whenever we read from user memory, 
+or write to user memory, we check the pointer we 
+are accessing for each of the cases described above
+via a call to check_usr_ptr. 
+
+check_usr_ptr makes use of the helper functions
+supplied in vaddr.h and pagedir.c to verify that the supplied
+pointer in question is in the user virtual memory space, and 
+is mapped, respectively. It also checks that the pointer is non
+NULL. 
+
+User memory is supplied to the kernel in three forms. Either it
+is an isolated pointer, or it is a string, or it is a buffer. 
+As mentioned in OH, these are the only cases we deal with in this
+class. In the case of a single pointer, we check the pointer with
+check_usr_ptr. In the case of string, we check each byte in the 
+string with check_usr_ptr until we reach the end of the string. 
+This is done with a call to check_usr_string. Finally, for a buffer, 
+we check the initial pointer, and then increment by 4kB's and check 
+the pointer (to test the next page if the buffer transcends multiple 
+pages), or increment by length if length is less than current_offset
+(see check_usr_buffer for specifics). 
 
 
 
@@ -177,7 +202,58 @@ precaution to ensure that we do not
 >> for a system call that only copies 2 bytes of data?  Is there room
 >> for improvement in these numbers, and how much?
 
-max of 2
+As discussed in OH, if we copy a full page of memory, this implies we 
+are accessing a buffer or a string. in the case of the string, we would 
+make a max of 4,096 calls to pagedir_get_page(), one for each byte in 
+the string (assuming the string is a full page). In the case of a buffer
+of this size, we would make a mx of two calls to pagedir_get_page(), 
+as we check the beginning of the buffer, and then because the offset to 
+next page would equal length in this case, we would make one other 
+call to check the end of the buffer. 
+
+In the case of the string, the least number of checks we would make
+would be the length of the string, as we check each byte. Because the 
+string is a full page (as discussed in OH), this would result in a min
+of 4,096 calls to pagedir_get_page().
+
+In the case of a buffer, the minimum number of calls would again make 
+a minimum of two calls to pagedir_get_page(), one for the beginning, and
+one for the end of the buffer. As discussed in OH, it is important to 
+check the end of the buffer, because if it spans multiple pages, we 
+have to ensure the end is in a mapped user virtual address space, is 
+in user memory, and is non_null (which it will be in this case);
+
+In the case of two bytes of copied data, we would make a max of two calls
+again for the string (one for each byte), and a max of two calls for the 
+buffer, one for the front and one for the back. The minimum cases would 
+both be two as well, for the same reasons mentioned above. 
+
+We cannot improve these numbers without sacrificing kernel safety. 
+As verified in OH, our current algorithm already makes as little
+calls to pagedir_get_page() as possible while ensuring the kernel 
+safety. One idea we discussed to make the string check fewer calls was 
+to determine the length of the string first, and then use the same
+algorithm employed in checking the user_buffer to check the string. 
+However, this would require the use of strlen, which would crash 
+on an improper user string (null, outside bounds, unmapped). 
+Therefore, our only option is to check each byte of the string. In 
+the case of the buffer, we make the minimal checks allowed as we
+are supplied the size, so we only have to check each new page if the
+buffer spans multiple pages, and the end of the buffer. 
+
+Note, one last thing we considered with respect to checking 
+a user supplied string was to determine the current
+position on the given page of the start of the string, and 
+then only call pagedir_get_page() when we were accessing the 
+next character of the string that is on a different page. 
+However, as advised in OH, we did not implement this because
+it would involve modifying page handling code, which is not
+supposed to be modified in this assignment. Thus, as discussed in 
+OH, our code makes the minimal amount of checks while ensuring 
+kernel safety. 
+
+
+We are already checking the mini
 
 
 What is this asking?
