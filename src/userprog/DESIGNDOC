@@ -36,13 +36,72 @@ Connor Woodson <cwoodson@stanford.edu>
 >> you arrange for the elements of argv[] to be in the right order?
 >> How do you avoid overflowing the stack page?
 
+We start by taking our passed in executable string and copying it
+onto a temporary page of memory. We copy it at byte 8, leaving us
+two bytes in the front which we will use later. We iterate through the
+string and replace spaces with \0's (NOTE: as it's not said anywhere,
+I have ignored the shell behavior of using quotes to have an argument
+that contains spaces). Now what we have is a series of null-terminated
+strings, each one of which is an argument of our new process. We use
+the first byte to point to the end of our list of arguments (the last
+\0), and we use the second byte to store a count of how many arguments.
+We do this work manually instead of using strtok_r. We could use the
+library call, which would do almost all of the same work for us, but
+there is one issue with the call that made us decide going without it
+is easier: if you have multiple spaces in a row, it will only replace
+the fist of those spaces with a \0.
+
+This page of data is passed to the start_process function, which is
+invoked in the creation of the new thread. After the executable is
+loaded for the new thread and the stack is created, we start writing
+our arguments to it. Using the first byte from the temp page, we look
+at the final \0 of our arguments and start copying byte-by-byte from
+there. If there are multiple \0 in a row, we only write one of them
+(this is the case of multiple spaces between arguments). We keep
+track of the beginning of each argument. After we have written all
+of them, we write a null pointer, and then we write the pointers to
+each argument. As we've started from the end of our temp page,
+we've written the arguments so that the last is on top of our stack,
+as it should be. We write the pointers thus in the correct manner.
+These pointers make up argv[]. We then write argv to point to
+argv[0], followed by argc (the number of arguments) and then a null
+pointer to represent our return address.
+
+To avoid overflowing the stack page, our first precaution is that
+the argument string must fit within our temporary page. This means
+that its length must be <= PGSIZE-8. Then.........................
+
 ---- RATIONALE ----
 
 >> A3: Why does Pintos implement strtok_r() but not strtok()?
 
+strtok_r is a reentrant version of strtok, meaning that it saves its
+state in a passed-in variable as opposed to in a global variable.
+This makes the function thread safe. Using strtok prevents two threads
+from using the function at the same time, less they overwrite each
+other's progress. strtok_r makes each call independent, and prevents
+any issue of thread conflict or race conditions.
+
 >> A4: In Pintos, the kernel separates commands into a executable name
 >> and arguments.  In Unix-like systems, the shell does this
 >> separation.  Identify at least two advantages of the Unix approach.
+
+One advantage of the Unix approach is the ability to have shell
+specific functionality. For instance using variables in arguments.
+It is easy for a shell to keep track of its own list of variables,
+and then to substitute them in as arguments in the proper circumstance.
+For example, it becomes trivial for a shell to parse the following
+command and convert it into an execve call:
+echo $PATH
+whereas a kernel cannot appropriately handle that.
+
+Another advantage is that shells can define unique behaviour such as
+deciding what should or should not be considered an executable command.
+For instance when setting environment variables. A shell can easily
+implement the below behavior:
+PATH="~"
+which again becomes tricky when you rely on passing all commands
+to the kernel.
 
 			     SYSTEM CALLS
 			     ============
@@ -52,6 +111,9 @@ Connor Woodson <cwoodson@stanford.edu>
 >> B1: Copy here the declaration of each new or changed `struct' or
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
+
+typedef int pid_t;
+Purpose: represent the process id type in the same way as the thread
 
 >> B2: Describe how file descriptors are associated with open files.
 >> Are file descriptors unique within the entire OS or just within a

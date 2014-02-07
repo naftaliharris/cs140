@@ -44,19 +44,23 @@ process_execute (const char *arguments)
   char *fn_copy;
   tid_t tid;
   
-  // strlen(arguments) should be less than PGSIZE
-  int arglen = strnlen(arguments, PGSIZE);
-  if(arglen == 0 || arglen == PGSIZE)
+  // strlen(arguments) should be less than PGSIZE - 8 bytes
+  int maxlen = PGSIZE - sizeof(int) * 2;
+  int arglen = strnlen(arguments, maxlen);
+  if(arglen == 0 || arglen == maxlen)
   {
     return TID_ERROR;
   }
   
-  /* Make a copy of FILE_NAME.
-     Otherwise there's a race between the caller and load(). */
+  /* Allocate a temp page of data that gets passed to our new thread */
   fn_copy = palloc_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
-    
+  
+  // Copy argument string onto our temporary page
+  // After the first two bytes
+  // First byte: pointer to end of string
+  // Second byte:  number of arguments
   int numargs = 0;
   const char* argument_copy = fn_copy + sizeof(int) + sizeof(int);
   strlcpy ((char*)argument_copy, (char*)arguments, PGSIZE);
@@ -92,6 +96,8 @@ process_execute (const char *arguments)
   
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  // Free our page if the thread wasn't properly created
+  // Otherwise start_process will free the page
   if (tid == TID_ERROR)
   {
     palloc_free_page (fn_copy); 
@@ -150,10 +156,16 @@ start_process (void *arg_page_)
     }
     
     // With the stack created, modify it and place our arguments into it
+    // From our temporary page, get the number of arguments and a pointer
+    // To the end of our data
     int far_byte = *((int*) arg_page);
     int num_args = *(((int*) arg_page) + 1);
     char* args[num_args];
     
+    // Iterate from the end of our argument string, adding each byte to
+    // The stack. We know each argument is separated by at least one \0
+    // But we only want to write one \0 to the stack between arguments
+    // Keep track of the stack pointers to the beginning of each argument
     int cur_arg = num_args;
     int i;
     bool skipping_nulls = true;
@@ -166,8 +178,6 @@ start_process (void *arg_page_)
         }
         else
         {
-          // If there were multiple nulls in a row (multiple spaces)
-          // Only copy one of them
           if(skipping_nulls)
           {
             skipping_nulls = false;
