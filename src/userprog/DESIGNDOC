@@ -380,6 +380,22 @@ we opted not to employ it.
 >> loading.  How does your code ensure this?  How is the load
 >> success/failure status passed back to the thread that calls "exec"?
 
+Each thread contains a bool child_did_load_successfully. Furthermore, 
+each thread contains a struct semaphore sema_child_load, and a 
+struct thread* parent_thread. When a process calls exec, it downs
+its semaphore sema_child_load, which effectively makes the thread wait.
+In init thread for the new child, the parent thread pointer is set to 
+the parent thread, the one that called exec. The child gains control of 
+itself in start_process. Here, based on the outcome of the load call
+in start_process, the running child thread will access its parent thread
+through the parent_thread pointer, and will set the child_did_load_successfully
+boolean to the outcome of load, and will then sema_up on sema_load_child
+in the parent. This will awake the parent. The parent will read the outcome
+of the load from child_did_load_successfully, and act accordingly. Note, after
+reading the outcome of child_did_load_successfully, the parent will clear
+this field by resetting it to false for future exec calls. 
+
+
 >> B8: Consider parent process P with child process C.  How do you
 >> ensure proper synchronization and avoid race conditions when P
 >> calls wait(C) before C exits?  After C exits?  How do you ensure
