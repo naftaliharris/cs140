@@ -126,7 +126,7 @@ syscall_handler (struct intr_frame *f )
         case SYS_WRITE:
             arg1 = read_frame(f, 4);
             arg2 = read_frame(f, 8);
-            arg3 = (unsigned)read_frame(f, 12);
+            arg3 = read_frame(f, 12);
             f->eax = (uint32_t)LP_write((int)arg1, (const void*)arg2, (unsigned)arg3);
             break;
         case SYS_SEEK:
