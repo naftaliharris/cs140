@@ -892,6 +892,7 @@ static void init_vital_info(struct thread* t) {
     vital_info->tid = t->tid;
     vital_info->parent_is_finished = false;
     vital_info->child_is_finished = false;
+    lock_init(&vital_info->vital_info_lock);
     t->vital_info = vital_info;
     if (t != initial_thread) {
         list_push_back(&t->parent_thread->child_threads, &vital_info->child_elem);

@@ -185,6 +185,8 @@ struct vital_info {
     bool parent_is_finished;
     /* Indicates if this thread has finished */
     bool child_is_finished;
+    /* locks the vital info so only one thread can access it */
+    struct lock vital_info_lock;
     /* allows this thread to be placed in the parent child_threads list */
     struct list_elem child_elem;
 };
