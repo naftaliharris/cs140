@@ -97,7 +97,8 @@ whereas a kernel cannot appropriately handle that.
 
 Another advantage is that shells can define unique behaviour such as
 deciding what should or should not be considered an executable command.
-For instance when setting environment variables. A shell can easily
+For instance when setting environment variables. A shclear
+ell can easily
 implement the below behavior:
 PATH="~"
 which again becomes tricky when you rely on passing all commands
