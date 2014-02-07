@@ -525,7 +525,7 @@ static bool check_file_name_length(const char* filename) {
  ADDITOIN: CHeck every 4kb for every page until length is exceeded. 
  --------------------------------------------------------------------
  */
-#define BYTES_PER_PAGE PGSIZE*1024 
+#define BYTES_PER_PAGE PGSIZE
 static void check_usr_buffer(const void* buffer, unsigned length) {
     check_usr_ptr(buffer);
     unsigned curr_offset = BYTES_PER_PAGE;
