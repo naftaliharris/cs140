@@ -253,13 +253,46 @@ OH, our code makes the minimal amount of checks while ensuring
 kernel safety. 
 
 
-We are already checking the mini
-
-
-What is this asking?
-
 >> B5: Briefly describe your implementation of the "wait" system call
 >> and how it interacts with process termination.
+
+As specified in the spec, when a process calls wait on another process, 
+the call causes the calling process to suspend operation until the 
+designated process exits (assuming the process to wait on is valid) (
+please see code for the specific cases we check in this regard. They
+are also outlined in the spec). 
+
+In order to coordinate this waiting between processes, we use
+a boolean variable to indicate if a child has finished, and
+a semaphore to signal when the child has finished. If the child
+is already finished, the boolean will indicate as such, and the
+waiting process will never have to signal the semaphore. On the 
+other if the process to wait on is not currently finished, then
+we signal the semaphore. 
+
+In process exit, the exiting thread will signal its semaphore. 
+If there is a waiting thread on this semaphore, it well get
+woken accordingly. We also set the boolean child_is_finished
+to true in process_exit. Because child_is_finished is a shared
+boolean, we coordinate its writing and reading between processes
+with a lock. 
+
+Finally, we designed a struct called vital_info, 
+which we malloc. This struct contains the pertinent
+information that needs to exist for wait to function, 
+namely the current operating status of the thread and 
+its parent, and the exit status of the thread. When a thread
+exits, if its parent is still running, the parent could 
+potentially still call wait on the exiting process, so the 
+exiting thread frees all of its resources except the vital_info. 
+The vital info is tracked in the parent thread via a list. 
+
+After the wait call, the parent frees this vital info, as the child
+has exited once we clear the semaphore. 
+
+The last case is the case in which the parent exits before the child
+does. In this case, the child frees its own vital info, as the parent
+is no longer around and in need of accessing it. 
 
 >> B6: Any access to user program memory at a user-specified address
 >> can fail due to a bad pointer value.  Such accesses must cause the
