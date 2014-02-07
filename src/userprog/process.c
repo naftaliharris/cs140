@@ -167,7 +167,7 @@ start_process (void *arg_page_)
                          + num_args * sizeof(char *) /* argv[i] pointers */
                          + sizeof(char **)           /* argv pointer */
                          + sizeof(int)               /* argc */
-                         + sizeof(char **);          /* Fake return value */
+                         + sizeof(char **);          /* Fake return address */
 
     if (max_stack_length > PGSIZE)
     {
@@ -226,7 +226,7 @@ start_process (void *arg_page_)
         *((char**)if_.esp) = args[i];
     }
 
-    /* Add the argv pointer, the argc value, and fake return value */
+    /* Add the argv pointer, the argc value, and fake return address */
     char* argv = if_.esp;
     if_.esp = ((char*)if_.esp) - sizeof(char*);
     *((char**)if_.esp) = argv;

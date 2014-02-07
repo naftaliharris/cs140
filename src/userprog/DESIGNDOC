@@ -30,6 +30,8 @@ Connor Woodson <cwoodson@stanford.edu>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+There were no changed data-structures for this section.
+
 ---- ALGORITHMS ----
 
 >> A2: Briefly describe how you implemented argument parsing.  How do
@@ -67,9 +69,18 @@ These pointers make up argv[]. We then write argv to point to
 argv[0], followed by argc (the number of arguments) and then a null
 pointer to represent our return address.
 
-To avoid overflowing the stack page, our first precaution is that
-the argument string must fit within our temporary page. This means
-that its length must be <= PGSIZE-8. Then.........................
+To avoid overflowing the stack page, before writing any arguments to
+it we upper-bound the amount that we will write. This upper bound is
+simply the length of the argument string, (since every byte in the
+argument string is either a space or a non-space; the non-spaces are
+written over verbatim, and a subset of the spaces are turned into \0's),
+plus the lengths of all the pointers argv pointers we will push onto
+the stack, plus the length of the argv pointer, plus the length of the
+argc value, and plus the length of the fake return return address.
+
+If this this upper-bound is larger than the pagesize, then writing it
+to the stack risks an overflow, so instead we exit the thread with an
+error return value.
 
 ---- RATIONALE ----
 
