@@ -82,6 +82,11 @@ If this this upper-bound is larger than the pagesize, then writing it
 to the stack risks an overflow, so instead we exit the thread with an
 error return value.
 
+Since we parse these arguments from a temporary data page that we
+allocate and pass to thread_create, we make sure not overflow this
+page when we copy the argument string to it by also checking the
+length of the argument string before we begin to copy it.
+
 ---- RATIONALE ----
 
 >> A3: Why does Pintos implement strtok_r() but not strtok()?
