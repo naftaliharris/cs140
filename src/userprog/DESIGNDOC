@@ -308,6 +308,42 @@ is no longer around and in need of accessing it.
 >> paragraphs, describe the strategy or strategies you adopted for
 >> managing these issues.  Give an example.
 
+We start with: how do you best avoid obscuring the primary
+function of code in a morass of error-handling? We do this
+by defining four functions, read_frame, check_usr_ptr, 
+check_usr_string, and check_usr_buffer. These functions
+perform all the necessary checks of user memory. Thus, 
+in each of the cases where we need to check user memory, 
+we make a one-line call to given method. This decomposition 
+makes the code readable, and avoids obscuring the code
+with error handling, as the handling is taken care
+of in the respective functions. 
+
+We next answer: when an error is detected, how do you ensure 
+that all temporarily allocated resources (locks, buffers, etc.) 
+are freed? In our implementation, whenever we encounter
+a user memory issue, we call LP_exit if we are in the sys-call.c
+or call thread_exit() elsewhere. LP_exit calls thread_exit(). 
+thread_exit() calls process_exit(), which calls release_resources, 
+which closes all open files and releases all locks, which as 
+specified in OH, are the only resources we need release. (All
+malloc'd memory is likewise freed, but might be free'd by child
+or parent depending, as outline above). Thus, whenever we detect
+an error, process_exit() gets called, which releases resources. 
+Note, we track the locks held by a thread with our list
+locks_held, which is carried over from project 1. Open files
+are likewise tracked in a list within each thread. 
+
+
+
+
+Note, our method of verifying user memory is to check all 
+pointers. A second option is outlined in spec. Reason we didn;t
+use that strategy is that it is overly complicated, even tho it
+is faster. 
+
+
+
 ---- SYNCHRONIZATION ----
 
 >> B7: The "exec" system call returns -1 if loading the new executable
