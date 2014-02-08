@@ -484,6 +484,9 @@ static struct file* get_file_from_open_list(int fd) {
 static int add_to_open_file_list(struct file* fp) {
     struct thread* curr_thread = thread_current();
     struct file_package* package = malloc(sizeof(struct file_package));
+    if (package == NULL) {
+        return -1;
+    }
     package->position = 0;
     package->fp = fp;
     int fd = curr_thread->fd_counter;

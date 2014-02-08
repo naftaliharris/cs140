@@ -886,6 +886,9 @@ static void init_file_system_info(struct thread* t) {
  */
 static void init_vital_info(struct thread* t) {
     struct vital_info* vital_info = malloc(sizeof(struct vital_info));
+    if (vital_info == NULL) {
+        thread_exit();
+    }
     vital_info->t = t;
     vital_info->exit_status = 0;
     vital_info->has_allready_been_waited_on = false;
