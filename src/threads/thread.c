@@ -867,12 +867,15 @@ static void init_thread (struct thread *t, const char *name, int priority)
 /*
  --------------------------------------------------------------------
  Description: initiliazes the file system info for the thread t
- NOTE: we set fd_counter to 2 to account for STD_IN, STD_OUT.
+ NOTE: we set fd_counter to 2 to account for STD_IN, STD_OUT, 
+    and STD_ERROR. 
+ NOTE: I am not sure if we have to account for std_error, 
+    but the lecture slides include it, so we will. 
  --------------------------------------------------------------------
  */
 static void init_file_system_info(struct thread* t) {
     list_init(&t->open_files);
-    t->fd_counter = 2; 
+    t->fd_counter = 3;
 }
 
 /*
