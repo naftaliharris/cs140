@@ -16,43 +16,33 @@
 #include "userprog/pagedir.h"
 
 
-//TO DO LIST:
-//1. CHECK ALL STRINGS FOR POINTER VALIDITY
-//2. CHECK ALL BUFFERS FOR POINTER VALIDITY
-//3. SYNCHRONIZE ALL FILESYSTEM CALLS WITH A SINGLE LOCK
-//4. THE DEFAULT CASE IN SYSTEM_HANDLER SWITCH STATEMENT
-//5. HOW TO RESPOND IF THE CHECK_FILENAME_LENGTH RETURNS FALSE
-//6. ADD TO PROCESS EXIT
-//7. ADD TO START PROCESS
-
-
 static void syscall_handler (struct intr_frame *);
 
 // BEGIN LP DEFINED HELPER FUNCTIONS//
-void check_usr_ptr(const void* u_ptr);
-void check_usr_string(const char* str);
-void check_usr_buffer(const void* buffer, unsigned length);
-bool check_file_name_length(const char* filename);
-uint32_t read_frame(struct intr_frame* f, int byteOffset);
-int add_to_open_file_list(struct file* fp);
-struct file* get_file_from_open_list(int fd);
-struct file_package* get_file_package_from_open_list(int fd);
+static void check_usr_ptr(const void* u_ptr);
+static void check_usr_string(const char* str);
+static void check_usr_buffer(const void* buffer, unsigned length);
+static bool check_file_name_length(const char* filename);
+static uint32_t read_frame(struct intr_frame* f, int byteOffset);
+static int add_to_open_file_list(struct file* fp);
+static struct file* get_file_from_open_list(int fd);
+static struct file_package* get_file_package_from_open_list(int fd);
 // END LP DEFINED HELPER FUNCTIONS  //
 
 // BEGIN LP DEFINED SYSTEM CALL HANDLERS //
-void LP_halt (void) NO_RETURN;
-void LP_exit (int status) NO_RETURN;
-pid_t LP_exec (const char* command_line);
-int LP_wait (pid_t pid);
-bool LP_create (const char *file, unsigned initial_size);
-bool LP_remove (const char *file);
-int LP_open (const char *file);
-int LP_filesize (int fd);
-int LP_read (int fd, void *buffer, unsigned length);
-int LP_write (int fd, const void *buffer, unsigned length);
-void LP_seek (int fd, unsigned position);
-unsigned LP_tell (int fd);
-void LP_close (int fd);
+static void LP_halt (void) NO_RETURN;
+static void LP_exit (int status) NO_RETURN;
+static pid_t LP_exec (const char* command_line);
+static int LP_wait (pid_t pid);
+static bool LP_create (const char *file, unsigned initial_size);
+static bool LP_remove (const char *file);
+static int LP_open (const char *file);
+static int LP_filesize (int fd);
+static int LP_read (int fd, void *buffer, unsigned length);
+static int LP_write (int fd, const void *buffer, unsigned length);
+static void LP_seek (int fd, unsigned position);
+static unsigned LP_tell (int fd);
+static void LP_close (int fd);
 // END   LP DEFINED SYSTEM CALL HANDLERS //
 
 
@@ -126,7 +116,7 @@ syscall_handler (struct intr_frame *f )
         case SYS_WRITE:
             arg1 = read_frame(f, 4);
             arg2 = read_frame(f, 8);
-            arg3 = (unsigned)read_frame(f, 12);
+            arg3 = read_frame(f, 12);
             f->eax = (uint32_t)LP_write((int)arg1, (const void*)arg2, (unsigned)arg3);
             break;
         case SYS_SEEK:
@@ -143,7 +133,7 @@ syscall_handler (struct intr_frame *f )
             LP_close((int)arg1);
             break;
         default:
-            LP_exit(-1);
+            LP_exit(-1); //should never get here. If we do, exit with -1.
             break;
     }
 }
@@ -158,7 +148,7 @@ syscall_handler (struct intr_frame *f )
     compiler warnings. 
  --------------------------------------------------------------------
  */
-void LP_halt (void) {
+static void LP_halt (void) {
     shutdown_power_off ();
     NOT_REACHED();
 }
@@ -177,9 +167,8 @@ void LP_halt (void) {
     3. process_exit() -- here is where we free our resources. 
  --------------------------------------------------------------------
  */
-void LP_exit (int status) {
+static void LP_exit (int status) {
     thread_current()->vital_info->exit_status = status;
-    //need to check for kernel thread v. user thread here.
     if (thread_current()->is_running_user_program) {
         printf("%s: exit(%d)\n", thread_name(), status);
     }
@@ -208,19 +197,16 @@ void LP_exit (int status) {
     a successful load, or -1 if the load failed. 
  --------------------------------------------------------------------
  */
-pid_t LP_exec (const char* command_line) {
+static pid_t LP_exec (const char* command_line) {
     check_usr_string(command_line);
     struct thread* curr_thread = thread_current();
     pid_t pid = process_execute(command_line);
     if (pid == TID_ERROR) {
-        //in this case the call to thread_create in process_execute failed
-        //if not the case, then we have to wait for the child to signal
-        //that it has loaded, and then return based on the outcome of the
-        //load.
         return -1;
     }
     sema_down(&curr_thread->sema_child_load);
     if (curr_thread->child_did_load_successfully) {
+        curr_thread->child_did_load_successfully = false;
         return pid;
     }
     return -1;
@@ -232,7 +218,7 @@ pid_t LP_exec (const char* command_line) {
     child's exit status.
  --------------------------------------------------------------------
  */
-int LP_wait (pid_t pid) {
+static int LP_wait (pid_t pid) {
     return process_wait(pid);
 }
 
@@ -246,12 +232,11 @@ int LP_wait (pid_t pid) {
     are the only process accessing the file_system. 
  --------------------------------------------------------------------
  */
-bool LP_create (const char *file, unsigned initial_size) {
+static bool LP_create (const char *file, unsigned initial_size) {
     check_usr_string(file);
     if (!check_file_name_length(file)) {
         return false;
     }
-    
     lock_acquire(&file_system_lock);
     bool outcome = filesys_create(file, initial_size);
     lock_release(&file_system_lock);
@@ -269,7 +254,7 @@ bool LP_create (const char *file, unsigned initial_size) {
     are the only process accessing the file_system.
  --------------------------------------------------------------------
  */
-bool LP_remove (const char *file) {
+static bool LP_remove (const char *file) {
     check_usr_string(file);
     if (!check_file_name_length(file)) {
         return -1;
@@ -289,7 +274,7 @@ bool LP_remove (const char *file) {
     file could not be opened.
  --------------------------------------------------------------------
  */
-int LP_open (const char *file) {
+static int LP_open (const char *file) {
     check_usr_string(file);
     if (!check_file_name_length(file)) {
         return -1;
@@ -311,7 +296,7 @@ int LP_open (const char *file) {
  NOTE: if no open file for fd, then returns -1;
  --------------------------------------------------------------------
  */
-int LP_filesize (int fd) {
+static int LP_filesize (int fd) {
     lock_acquire(&file_system_lock);
     struct file* fp = get_file_from_open_list(fd);
     if (fp == NULL) {
@@ -331,7 +316,7 @@ int LP_filesize (int fd) {
     than end of file). Fd 0 reads from the keyboard using input_getc().
  --------------------------------------------------------------------
  */
-int LP_read (int fd, void *buffer, unsigned length) {
+static int LP_read (int fd, void *buffer, unsigned length) {
     check_usr_buffer(buffer, length);
     
     if (fd == STDIN_FILENO) {
@@ -362,7 +347,7 @@ int LP_read (int fd, void *buffer, unsigned length) {
     than size if some bytes could not be written.
  --------------------------------------------------------------------
  */
-int LP_write (int fd, const void *buffer, unsigned length) {
+static int LP_write (int fd, const void *buffer, unsigned length) {
     check_usr_buffer(buffer, length);
     
     if (fd == STDOUT_FILENO) {
@@ -392,7 +377,7 @@ int LP_write (int fd, const void *buffer, unsigned length) {
     us in the write and read implimentations in the filsysem. 
  --------------------------------------------------------------------
  */
-void LP_seek (int fd, unsigned position) {
+static void LP_seek (int fd, unsigned position) {
     lock_acquire(&file_system_lock);
     struct file_package* package = get_file_package_from_open_list(fd);
     if (package == NULL) {
@@ -413,7 +398,7 @@ void LP_seek (int fd, unsigned position) {
     unsigned return value does not allow us to return -1 on error. 
  --------------------------------------------------------------------
  */
-unsigned LP_tell (int fd) {
+static unsigned LP_tell (int fd) {
     lock_acquire(&file_system_lock);
     struct file_package* package = get_file_package_from_open_list(fd);
     if (package == NULL) {
@@ -434,7 +419,7 @@ unsigned LP_tell (int fd) {
     forces us to exit the program. 
  --------------------------------------------------------------------
  */
-void LP_close (int fd) {
+static void LP_close (int fd) {
     lock_acquire(&file_system_lock);
     struct file_package* package = get_file_package_from_open_list(fd);
     if (package == NULL) {
@@ -453,7 +438,7 @@ void LP_close (int fd) {
     given fd in the list of open_files within a process. 
  --------------------------------------------------------------------
  */
-struct file_package* get_file_package_from_open_list(int fd) {
+static struct file_package* get_file_package_from_open_list(int fd) {
     struct thread* curr_thread = thread_current();
     struct list_elem* curr = list_head(&curr_thread->open_files);
     struct list_elem* tail = list_tail(&curr_thread->open_files);
@@ -474,7 +459,7 @@ struct file_package* get_file_package_from_open_list(int fd) {
     contains fd. If none exist, returns NULL.
  --------------------------------------------------------------------
  */
-struct file* get_file_from_open_list(int fd) {
+static struct file* get_file_from_open_list(int fd) {
     struct thread* curr_thread = thread_current();
     struct list_elem* curr = list_head(&curr_thread->open_files);
     struct list_elem* tail = list_tail(&curr_thread->open_files);
@@ -496,9 +481,12 @@ struct file* get_file_from_open_list(int fd) {
     given thread. 
  --------------------------------------------------------------------
  */
-int add_to_open_file_list(struct file* fp) {
+static int add_to_open_file_list(struct file* fp) {
     struct thread* curr_thread = thread_current();
     struct file_package* package = malloc(sizeof(struct file_package));
+    if (package == NULL) {
+        return -1;
+    }
     package->position = 0;
     package->fp = fp;
     int fd = curr_thread->fd_counter;
@@ -515,7 +503,7 @@ int add_to_open_file_list(struct file* fp) {
  --------------------------------------------------------------------
  */
 #define MAX_FILENAME_LENGTH 14
-bool check_file_name_length(const char* filename) {
+static bool check_file_name_length(const char* filename) {
     size_t length = strlen(filename);
     if (length > MAX_FILENAME_LENGTH) return false;
     return true;
@@ -527,19 +515,19 @@ bool check_file_name_length(const char* filename) {
     supplied buffer are proper for user space. 
  NOTE: If this function completes and returns, we know that the 
     buffer is solid. 
+ ADDITOIN: CHeck every 4kb for every page until length is exceeded. 
  --------------------------------------------------------------------
  */
-void check_usr_buffer(const void* buffer, unsigned length) {
+#define BYTES_PER_PAGE PGSIZE
+static void check_usr_buffer(const void* buffer, unsigned length) {
     check_usr_ptr(buffer);
+    unsigned curr_offset = BYTES_PER_PAGE;
+    while (true) {
+        if (curr_offset >= length) break;
+        check_usr_ptr((const void*)((char*)buffer + curr_offset));
+        curr_offset += BYTES_PER_PAGE;
+    }
     check_usr_ptr((const void*)((char*)buffer + length));
-    
-    /*char* buff_as_char_ptr = (char*)buffer;
-    unsigned i;
-    for (i = 0; i < length; i++) {
-        const void* curr_addr = buff_as_char_ptr;
-        check_usr_ptr(curr_addr);
-        buff_as_char_ptr = buff_as_char_ptr + 1;
-    }*/
 }
 
 
@@ -558,7 +546,7 @@ void check_usr_buffer(const void* buffer, unsigned length) {
     the system call.
  --------------------------------------------------------------------
  */
-void check_usr_ptr(const void* ptr) {
+static void check_usr_ptr(const void* ptr) {
     if (ptr == NULL) {
         LP_exit(-1);
     }
@@ -577,7 +565,7 @@ void check_usr_ptr(const void* ptr) {
     and are properly mapped. 
  --------------------------------------------------------------------
  */
-void check_usr_string(const char* str) {
+static void check_usr_string(const char* str) {
     while (true) {
         const void* ptr = (const void*)str;
         check_usr_ptr(ptr);
@@ -597,7 +585,7 @@ void check_usr_string(const char* str) {
     to cast this return value to the appropriate type.
  --------------------------------------------------------------------
  */
-uint32_t read_frame(struct intr_frame* f, int byteOffset) {
+static uint32_t read_frame(struct intr_frame* f, int byteOffset) {
     void* addr = f->esp + byteOffset;
     check_usr_ptr(addr);
     return *(uint32_t*)addr;

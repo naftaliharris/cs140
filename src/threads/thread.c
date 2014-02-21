@@ -867,12 +867,15 @@ static void init_thread (struct thread *t, const char *name, int priority)
 /*
  --------------------------------------------------------------------
  Description: initiliazes the file system info for the thread t
- NOTE: we set fd_counter to 2 to account for STD_IN, STD_OUT.
+ NOTE: we set fd_counter to 2 to account for STD_IN, STD_OUT, 
+ NOTE: I am not sure if we have to account for std_error, 
+     the lecture slides include it, BUT THE ASSINGMENT SPEC DOES
+    NOT! Therefore, we will not include it either. 
  --------------------------------------------------------------------
  */
 static void init_file_system_info(struct thread* t) {
     list_init(&t->open_files);
-    t->fd_counter = 2; 
+    t->fd_counter = 2;
 }
 
 /*
@@ -886,12 +889,16 @@ static void init_file_system_info(struct thread* t) {
  */
 static void init_vital_info(struct thread* t) {
     struct vital_info* vital_info = malloc(sizeof(struct vital_info));
+    if (vital_info == NULL) {
+        thread_exit();
+    }
     vital_info->t = t;
     vital_info->exit_status = 0;
     vital_info->has_allready_been_waited_on = false;
     vital_info->tid = t->tid;
     vital_info->parent_is_finished = false;
     vital_info->child_is_finished = false;
+    lock_init(&vital_info->vital_info_lock);
     t->vital_info = vital_info;
     if (t != initial_thread) {
         list_push_back(&t->parent_thread->child_threads, &vital_info->child_elem);

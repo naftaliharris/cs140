@@ -44,24 +44,28 @@ process_execute (const char *arguments)
   char *fn_copy;
   tid_t tid;
   
-  // strlen(arguments) should be less than PGSIZE
-  int arglen = strnlen(arguments, PGSIZE);
-  if(arglen == 0 || arglen == PGSIZE)
+  // strlen(arguments) should be less than PGSIZE - 8 bytes
+  int maxlen = PGSIZE - sizeof(int) * 2;
+  int arglen = strnlen(arguments, maxlen);
+  if(arglen == 0 || arglen == maxlen)
   {
     return TID_ERROR;
   }
   
-  /* Make a copy of FILE_NAME.
-     Otherwise there's a race between the caller and load(). */
+  /* Allocate a temp page of data that gets passed to our new thread */
   fn_copy = palloc_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
-    
+  
+  // Copy argument string onto our temporary page
+  // After the first two bytes
+  // First byte: pointer to end of string
+  // Second byte:  number of arguments
   int numargs = 0;
   const char* argument_copy = fn_copy + sizeof(int) + sizeof(int);
-  strlcpy (argument_copy, arguments, PGSIZE);
+  strlcpy ((char*)argument_copy, (char*)arguments, PGSIZE);
   
-  char* itr = argument_copy;
+  char* itr = (char*)argument_copy;
   
   // Run through rest of arguments; replace spaces with \0
   // We do this manually instead of using strtok_r
@@ -85,13 +89,15 @@ process_execute (const char *arguments)
   }
   
   // Store number of arguments and pointer to end of written data
-  *((char**) fn_copy) = itr - fn_copy;
+  *((char**) fn_copy) = (char*)(itr - fn_copy);
   *(((int*) fn_copy) + 1) = numargs;
   
   const char* file_name = argument_copy;
   
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  // Free our page if the thread wasn't properly created
+  // Otherwise start_process will free the page
   if (tid == TID_ERROR)
   {
     palloc_free_page (fn_copy); 
@@ -150,14 +156,37 @@ start_process (void *arg_page_)
     }
     
     // With the stack created, modify it and place our arguments into it
+    // From our temporary page, get the number of arguments and a pointer
+    // To the end of our data
     int far_byte = *((int*) arg_page);
     int num_args = *(((int*) arg_page) + 1);
+
+    /* Make sure we won't overflow the stack page */
+    int max_stack_length = far_byte - 8              /* The argument string */
+                         + sizeof(char *)            /* NULL argv[argc] pointer */
+                         + num_args * sizeof(char *) /* argv[i] pointers */
+                         + sizeof(char **)           /* argv pointer */
+                         + sizeof(int)               /* argc */
+                         + sizeof(char **);          /* Fake return address */
+
+    if (max_stack_length > PGSIZE)
+    {
+        palloc_free_page (arg_page);
+        thread_current()->vital_info->exit_status = -1;
+        thread_exit ();
+        NOT_REACHED();
+    }
+
     char* args[num_args];
     
+    // Iterate from the end of our argument string, adding each byte to
+    // The stack. We know each argument is separated by at least one \0
+    // But we only want to write one \0 to the stack between arguments
+    // Keep track of the stack pointers to the beginning of each argument
     int cur_arg = num_args;
     int i;
     bool skipping_nulls = true;
-    for(i = far_byte; i >= sizeof(int) * 2; i--)
+    for(i = far_byte; i >= (int)(sizeof(int) * 2); i--)
     {
         char* copy_byte = arg_page + i;
         if(*copy_byte == '\0')
@@ -166,8 +195,6 @@ start_process (void *arg_page_)
         }
         else
         {
-          // If there were multiple nulls in a row (multiple spaces)
-          // Only copy one of them
           if(skipping_nulls)
           {
             skipping_nulls = false;
@@ -199,7 +226,7 @@ start_process (void *arg_page_)
         *((char**)if_.esp) = args[i];
     }
 
-    /* Add the argv pointer, the argc value, and fake return value */
+    /* Add the argv pointer, the argc value, and fake return address */
     char* argv = if_.esp;
     if_.esp = ((char*)if_.esp) - sizeof(char*);
     *((char**)if_.esp) = argv;
@@ -263,8 +290,12 @@ process_wait (tid_t child_tid)
     if (child_to_wait_on->has_allready_been_waited_on) return -1;
     child_to_wait_on->has_allready_been_waited_on = true;
     int returnVal = 0;
+    lock_acquire(&child_to_wait_on->vital_info_lock);
     if (!child_to_wait_on->child_is_finished) {
+        lock_release(&child_to_wait_on->vital_info_lock);
         sema_down(&child_to_wait_on->t->wait_on_me);
+    } else {
+        lock_release(&child_to_wait_on->vital_info_lock);
     }
     returnVal = child_to_wait_on->exit_status;
     list_remove(&child_to_wait_on->child_elem);
@@ -276,6 +307,11 @@ process_wait (tid_t child_tid)
  ----------------------------------------------------------------
  Description: Returns a pointer to the child thread
     defined by tid. If no thread is in the list, returns NULL.
+ NOTE: There is no race condition here, as the vital info
+    structs are malloc'd, and they are only freed by the child
+    if the parent has exited. Given the parent is executing 
+    this function, we know the parent has not exited, so these
+    structs will always be there. 
  ----------------------------------------------------------------
  */
 struct vital_info* get_child_by_tid(tid_t child_tid) {
@@ -327,10 +363,13 @@ void notify_children_parent_is_finished() {
     while (!list_empty(&curr_thread->child_threads)) {
         struct list_elem* curr = list_pop_front(&curr_thread->child_threads);
         struct vital_info* child_vital_info = list_entry(curr, struct vital_info, child_elem);
+        lock_acquire(&child_vital_info->vital_info_lock);
         if (child_vital_info->child_is_finished) {
+            lock_release(&child_vital_info->vital_info_lock);
             free(child_vital_info);
         } else {
             child_vital_info->parent_is_finished = true;
+            lock_release(&child_vital_info->vital_info_lock); 
         }
     }
 }
@@ -339,6 +378,13 @@ void notify_children_parent_is_finished() {
  ----------------------------------------------------------------
  Description: walks the list of locks held by this thread and 
     releases each one by one. 
+ NOTE: As described in our project 1 implimentation notes and 
+    design document, we use a dummy lock to store the threads
+    initial priority. To designate the dummy lock from valid
+    locks, we use the lock->holder. If NULL, we are holding
+    the dummy lock, else, it is the valid lock. Thus, when we 
+    release all locks, we check for the dummy lock, as we cannot 
+    release it.
  ----------------------------------------------------------------
  */
 void release_all_locks(struct thread* t) {
@@ -389,10 +435,14 @@ process_exit (void)
     struct thread *cur = thread_current ();
     
     //LP Project 2 additions
+    
+    lock_acquire(&cur->vital_info->vital_info_lock);
     if (cur->vital_info->parent_is_finished) {
+        lock_release(&cur->vital_info->vital_info_lock);
         free(cur->vital_info);
     } else {
         cur->vital_info->child_is_finished = true;
+        lock_release(&cur->vital_info->vital_info_lock);
         sema_up(&cur->wait_on_me);
     }
     notify_children_parent_is_finished();

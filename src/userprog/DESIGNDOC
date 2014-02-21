@@ -30,19 +30,95 @@ Connor Woodson <cwoodson@stanford.edu>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+There were no changed data-structures for this section.
+
 ---- ALGORITHMS ----
 
 >> A2: Briefly describe how you implemented argument parsing.  How do
 >> you arrange for the elements of argv[] to be in the right order?
 >> How do you avoid overflowing the stack page?
 
+We start by taking our passed in executable string and copying it
+onto a temporary page of memory. We copy it at byte 8, leaving us
+two bytes in the front which we will use later. We iterate through the
+string and replace spaces with \0's (NOTE: as it's not said anywhere,
+I have ignored the shell behavior of using quotes to have an argument
+that contains spaces). Now what we have is a series of null-terminated
+strings, each one of which is an argument of our new process. We use
+the first byte to point to the end of our list of arguments (the last
+\0), and we use the second byte to store a count of how many arguments.
+We do this work manually instead of using strtok_r. We could use the
+library call, which would do almost all of the same work for us, but
+there is one issue with the call that made us decide going without it
+is easier: if you have multiple spaces in a row, it will only replace
+the fist of those spaces with a \0.
+
+This page of data is passed to the start_process function, which is
+invoked in the creation of the new thread. After the executable is
+loaded for the new thread and the stack is created, we start writing
+our arguments to it. Using the first byte from the temp page, we look
+at the final \0 of our arguments and start copying byte-by-byte from
+there. If there are multiple \0 in a row, we only write one of them
+(this is the case of multiple spaces between arguments). We keep
+track of the beginning of each argument. After we have written all
+of them, we write a null pointer, and then we write the pointers to
+each argument. As we've started from the end of our temp page,
+we've written the arguments so that the last is on top of our stack,
+as it should be. We write the pointers thus in the correct manner.
+These pointers make up argv[]. We then write argv to point to
+argv[0], followed by argc (the number of arguments) and then a null
+pointer to represent our return address.
+
+To avoid overflowing the stack page, before writing any arguments to
+it we upper-bound the amount that we will write. This upper bound is
+simply the length of the argument string, (since every byte in the
+argument string is either a space or a non-space; the non-spaces are
+written over verbatim, and a subset of the spaces are turned into \0's),
+plus the lengths of all the pointers argv pointers we will push onto
+the stack, plus the length of the argv pointer, plus the length of the
+argc value, and plus the length of the fake return return address.
+
+If this upper-bound is larger than the pagesize, then writing it
+to the stack risks an overflow, so instead we exit the thread with an
+error return value.
+
+Since we parse these arguments from a temporary data page that we
+allocate and pass to thread_create, we make sure not overflow this
+page when we copy the argument string to it by also checking the
+length of the argument string before we begin to copy it.
+
 ---- RATIONALE ----
 
 >> A3: Why does Pintos implement strtok_r() but not strtok()?
 
+strtok_r is a reentrant version of strtok, meaning that it saves its
+state in a passed-in variable as opposed to in a global variable.
+This makes the function thread safe. Using strtok prevents two threads
+from using the function at the same time, less they overwrite each
+other's progress. strtok_r makes each call independent, and prevents
+any issue of thread conflict or race conditions.
+
 >> A4: In Pintos, the kernel separates commands into a executable name
 >> and arguments.  In Unix-like systems, the shell does this
 >> separation.  Identify at least two advantages of the Unix approach.
+
+One advantage of the Unix approach is the ability to have shell
+specific functionality. For instance using variables in arguments.
+It is easy for a shell to keep track of its own list of variables,
+and then to substitute them in as arguments in the proper circumstance.
+For example, it becomes trivial for a shell to parse the following
+command and convert it into an execve call:
+echo $PATH
+whereas a kernel cannot appropriately handle that.
+
+Another advantage is that shells can define unique behaviour such as
+deciding what should or should not be considered an executable command.
+For instance when setting environment variables. A shclear
+ell can easily
+implement the below behavior:
+PATH="~"
+which again becomes tricky when you rely on passing all commands
+to the kernel.
 
 			     SYSTEM CALLS
 			     ============
@@ -53,14 +129,208 @@ Connor Woodson <cwoodson@stanford.edu>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+typedef int pid_t;
+Purpose: represent the process id type in the same way as the thread
+
+|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+/*
+ ----------------------------------------------------------------
+ Description: vital_info is the information that has to stay 
+    around even after a thread exits. Thus, we malloc this struct
+    and free the pointer only when we no longer need this 
+    information.
+ ----------------------------------------------------------------
+ */
+struct vital_info {
+    /* pointer to the thread who's vital info this is */
+    struct thread* t;
+    /* Records the processes exit status */
+    int exit_status;
+    /* used to indicate if this thread has been waited on by parent before */
+    bool has_allready_been_waited_on;
+    /* identifier so we can look up by tid */
+    tid_t tid;
+    /* Indicates if the parent thread is finished */
+    bool parent_is_finished;
+    /* Indicates if this thread has finished */
+    bool child_is_finished;
+    /* locks the vital info so only one thread can access it */
+    struct lock vital_info_lock;
+    /* allows this thread to be placed in the parent child_threads list */
+    struct list_elem child_elem;
+};
+
+Purpose: allows us to implement wait, as described below.
+
+|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+/*
+ ----------------------------------------------------------------
+ Description: packages open file information. Processes will
+    manage a list of these file_packages, one for each open file.
+ ----------------------------------------------------------------
+ */
+struct file_package {
+    int fd; //file descriptor
+    unsigned position; //this file_package's position
+    struct file* fp; //file pointer
+    struct list_elem elem; //so it can be placed in a list
+};
+
+Purpose: allows us to track all relevant information for 
+	an open file descriptor.
+
+
+|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+/* global lock to be used for file_system access */
+struct lock file_system_lock;
+
+Purpose: allows only one process at a time to access the file_system, 
+	per the specifications in the handout. 
+
+
+|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+struct thread
+{
+    . . . 
+    
+    //PROJECT 2 ADDITION
+    /* Distinguises between kernel threads and user threads */
+    /* Initially set to false on thread creation, set to true in start_process */
+    bool is_running_user_program;
+    
+    
+    . . . 
+    
+#ifdef USERPROG
+  	.  .  .
+	.  .  .  
+    //FILE INFORMATION
+    /* list of files this thread currently has open */
+    /* note, this list does not require synchronization, as it is only*/
+    /* accessed by the same thread */
+    struct list open_files;
+    /* file descriptor counter */
+    int fd_counter;
+    
+    
+    //CHILD INFORMATION
+    /* synchronizes the process of creating a child*/
+    struct semaphore sema_child_load;
+    /* outcome of the child load. The child will set this field before signaling*/
+    bool child_did_load_successfully;
+    /* allows the child to set fields in the parent struct */
+    struct thread* parent_thread;
+    /* list of child threads spawned by this thread */
+    /* note, this list does not require synchronization, as it is only*/
+    /* accessed by the same thread */
+    struct list child_threads;
+    /* allows parent to wait on child process */
+    struct semaphore wait_on_me;
+    /* pointer to the threads vital_info */
+    struct vital_info* vital_info;
+    //END PROJECT 2 ADDITIONS//
+#endif
+    
+    /* Owned by thread.c. */
+    unsigned magic;                     /* Detects stack overflow. */
+};
+
+Purpose: data added to address requirements of project 2. Cannot address
+	purpose of each addition in 25 words or less for the whole struct. 
+	Thus, please reference comments and definitions that follow in 
+	the longer responses. 
+
+|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+
 >> B2: Describe how file descriptors are associated with open files.
 >> Are file descriptors unique within the entire OS or just within a
 >> single process?
+
+To begin, we note that file descriptors are unique within a single 
+process. 
+
+To implement the notion of open files within a program, we defined 
+the struct file_package. This struct allows us to track all 
+pertinent information for a processes open file in a single location. 
+Furthermore, these structs contain a list_elem, which allows these
+file_packages to be placed in a list. 
+
+Every process contains a list of file_packages, and an int fd_counter.
+The fd_counter is set initially to 2, to account for STD_IN and 
+STD_OUT. When a file is opened, that file receives the current value
+of fd_counter in the thread. Then, fd_counter is incremented. In this
+way, every opened file gets a new and unique file descriptor. 
+
+The file descriptor is unique to an open call for a specific file.
+As stated in the spec, the file position of a given file may not
+consistent across all fd's for a given file. Therefore, we track 
+a file position within the file_package struct as well, which 
+associated with the unique fd. 
+
+It is important to note that we do not recycle used file descriptors
+after they have been closed. We do this for the following reasons:
+1. You can imagine a user program that requests to open a file, 
+receives a file descriptor, and then closes the file. Later the 
+program opens another file, and receives the recycled fd. However,
+the coder, in a lapse of judgement, mistakenly associates the new
+fd with the closed file. In this case, the recycled fd will now be
+valid, only it will be associated with a different file, thus
+making the error harder to catch. Thus, we make fd's unique for each 
+call to open. 
+2. If we were to recycle fd's it would require more code and some
+sort of Data structure. This will inevitably come at a cost. 
+3. As posted on the course group page, we assume that no user program
+will ever open more than INT_MAX -2 files. Given this assumption, 
+there is no reason to recycle fd's, considering the cost of point 2, 
+and the potential debugging issues of point 1. 
+
 
 ---- ALGORITHMS ----
 
 >> B3: Describe your code for reading and writing user data from the
 >> kernel.
+
+Reading and writing user data in the kernel is incredibly dangerous, 
+because the user data could be null, in an unmapped region, or
+not in the user's space. In each of these cases, we have to take
+precaution to ensure that we do not panic the kernel. Instead, if 
+we encounter any of these cases, we end the user program with the 
+corresponding exit status, as specified in the spec. 
+
+In our kernel code, whenever we read from user memory, 
+or write to user memory, we check the pointer we 
+are accessing for each of the cases described above
+via a call to check_usr_ptr. 
+
+check_usr_ptr makes use of the helper functions
+supplied in vaddr.h and pagedir.c to verify that the supplied
+pointer in question is in the user virtual memory space, and 
+is mapped, respectively. It also checks that the pointer is non
+NULL. 
+
+User memory is supplied to the kernel in three forms. Either it
+is an isolated pointer, or it is a string, or it is a buffer. 
+As mentioned in OH, these are the only cases we deal with in this
+class. In the case of a single pointer, we check the pointer with
+check_usr_ptr. In the case of string, we check each byte in the 
+string with check_usr_ptr until we reach the end of the string. 
+This is done with a call to check_usr_string. Finally, for a buffer, 
+we check the initial pointer, and then increment by 4kB's and check 
+the pointer (to test the next page if the buffer transcends multiple 
+pages), or increment by length if length is less than current_offset
+(see check_usr_buffer for specifics). 
 
 >> B4: Suppose a system call causes a full page (4,096 bytes) of data
 >> to be copied from user space into the kernel.  What is the least
@@ -69,8 +339,97 @@ Connor Woodson <cwoodson@stanford.edu>
 >> for a system call that only copies 2 bytes of data?  Is there room
 >> for improvement in these numbers, and how much?
 
+As discussed in OH, if we copy a full page of memory, this implies we 
+are accessing a buffer or a string. in the case of the string, we would 
+make a max of 4,096 calls to pagedir_get_page(), one for each byte in 
+the string (assuming the string is a full page). In the case of a buffer
+of this size, we would make a mx of two calls to pagedir_get_page(), 
+as we check the beginning of the buffer, and then because the offset to 
+next page would equal length in this case, we would make one other 
+call to check the end of the buffer. 
+
+In the case of the string, the least number of checks we would make
+would be the length of the string, as we check each byte. Because the 
+string is a full page (as discussed in OH), this would result in a min
+of 4,096 calls to pagedir_get_page().
+
+In the case of a buffer, the minimum number of calls would again make 
+a minimum of two calls to pagedir_get_page(), one for the beginning, and
+one for the end of the buffer. As discussed in OH, it is important to 
+check the end of the buffer, because if it spans multiple pages, we 
+have to ensure the end is in a mapped user virtual address space, is 
+in user memory, and is non_null (which it will be in this case);
+
+In the case of two bytes of copied data, we would make a max of two calls
+again for the string (one for each byte), and a max of two calls for the 
+buffer, one for the front and one for the back. The minimum cases would 
+both be two as well, for the same reasons mentioned above. 
+
+We cannot improve these numbers without sacrificing kernel safety. 
+As verified in OH, our current algorithm already makes as little
+calls to pagedir_get_page() as possible while ensuring the kernel 
+safety. One idea we discussed to make the string check fewer calls was 
+to determine the length of the string first, and then use the same
+algorithm employed in checking the user_buffer to check the string. 
+However, this would require the use of strlen, which would crash 
+on an improper user string (null, outside bounds, unmapped). 
+Therefore, our only option is to check each byte of the string. In 
+the case of the buffer, we make the minimal checks allowed as we
+are supplied the size, so we only have to check each new page if the
+buffer spans multiple pages, and the end of the buffer. 
+
+Note, one last thing we considered with respect to checking 
+a user supplied string was to determine the current
+position on the given page of the start of the string, and 
+then only call pagedir_get_page() when we were accessing the 
+next character of the string that is on a different page. 
+However, as advised in OH, we did not implement this because
+it would involve modifying page handling code, which is not
+supposed to be modified in this assignment. Thus, as discussed in 
+OH, our code makes the minimal amount of checks while ensuring 
+kernel safety. 
+
+
 >> B5: Briefly describe your implementation of the "wait" system call
 >> and how it interacts with process termination.
+
+As specified in the spec, when a process calls wait on another process, 
+the call causes the calling process to suspend operation until the 
+designated process exits (assuming the process to wait on is valid) (
+please see code for the specific cases we check in this regard. They
+are also outlined in the spec). 
+
+In order to coordinate this waiting between processes, we use
+a boolean variable to indicate if a child has finished, and
+a semaphore to signal when the child has finished. If the child
+is already finished, the boolean will indicate as such, and the
+waiting process will never have to signal the semaphore. On the 
+other if the process to wait on is not currently finished, then
+we signal the semaphore. 
+
+In process exit, the exiting thread will signal its semaphore. 
+If there is a waiting thread on this semaphore, it well get
+woken accordingly. We also set the boolean child_is_finished
+to true in process_exit. Because child_is_finished is a shared
+boolean, we coordinate its writing and reading between processes
+with a lock. 
+
+Finally, we designed a struct called vital_info, 
+which we malloc. This struct contains the pertinent
+information that needs to exist for wait to function, 
+namely the current operating status of the thread and 
+its parent, and the exit status of the thread. When a thread
+exits, if its parent is still running, the parent could 
+potentially still call wait on the exiting process, so the 
+exiting thread frees all of its resources except the vital_info. 
+The vital info is tracked in the parent thread via a list. 
+
+After the wait call, the parent frees this vital info, as the child
+has exited once we clear the semaphore. 
+
+The last case is the case in which the parent exits before the child
+does. In this case, the child frees its own vital info, as the parent
+is no longer around and in need of accessing it. 
 
 >> B6: Any access to user program memory at a user-specified address
 >> can fail due to a bad pointer value.  Such accesses must cause the
@@ -86,12 +445,93 @@ Connor Woodson <cwoodson@stanford.edu>
 >> paragraphs, describe the strategy or strategies you adopted for
 >> managing these issues.  Give an example.
 
+We start with: how do you best avoid obscuring the primary
+function of code in a morass of error-handling? We do this
+by defining four functions, read_frame, check_usr_ptr, 
+check_usr_string, and check_usr_buffer. These functions
+perform all the necessary checks of user memory. Thus, 
+in each of the cases where we need to check user memory, 
+we make a one-line call the respective method. This decomposition 
+makes the code readable, and avoids obscuring the code
+with error handling, as the handling is taken care
+of in the respective functions. 
+
+We next answer: when an error is detected, how do you ensure 
+that all temporarily allocated resources (locks, buffers, etc.) 
+are freed? In our implementation, whenever we encounter
+a user memory issue, we call LP_exit if we are in the sys-call.c
+or call thread_exit() elsewhere. LP_exit calls thread_exit(). 
+thread_exit() calls process_exit(), which calls release_resources, 
+which closes all open files and releases all locks, which as 
+specified in OH, are the only resources we need release. (All
+malloc'd memory is likewise freed, but might be free'd by child
+or parent depending, as outlined above). Thus, whenever we detect
+an error, process_exit() gets called, which releases resources. 
+Note, we track the locks held by a thread with our list
+locks_held, which is carried over from project 1. Open files
+are likewise tracked in a list within each thread (See B1).
+Also, our use of the vital info struct allows some 
+process information to remain accessible even after the process
+has exited, so long as the parent is still alive. 
+
+We now provide an example:
+
+Suppose process ABC is running, it opens two files, and
+acquires a single lock. ABC is the child thread of 123, which
+is also still running. ABC then attempts to read system call, but 
+the supplied buffer to the read call is NULL. Thus, in the 
+LP_read call, the call to check_usr_buffer will fail on
+the check of the buff ptr being NULL, and will trigger a call
+to LP_exit(-1). KP_exit() calls thread_exit(), which calls
+process_exit(). Now, in process_exit(), because the parent 
+thread 123, is still alive, ABC does not free its vital info. 
+Instead, it sets child_finished to true, which means the 123
+will free the vital info when it exits. Then, ABC will consult 
+its list of children. For each child, it will free the vital
+info for the child if the child has exited, or wills set parent
+has exited to true. Then ABC will call release all resources. 
+First, we iterate over the list of open files in the process, 
+and close the open files. Then, we iterate over the locks
+held by the process and release them. Then the thread_exits. 
+
+We conclude this section by addressing our method of 
+accessing user memory. As mentioned in the spec, there
+are two possible solutions to consider. The first is to 
+"verify the validity of user-provided pointer and then 
+dereference it." We employed this strategy. The second is 
+to "to check only that a user pointer points below 
+PHYS_BASE, then dereference it. An invalid user pointer
+ will cause a "page fault" that you can handle by modifying 
+the code for page_fault() in userprog/exception.c." As the spec
+says, this option is faster, as it takes advantage of the 
+processor's MMU. However, it given the complexity 
+involved with freeing of resources with this approach, 
+we opted not to employ it. 
+
+
+
 ---- SYNCHRONIZATION ----
 
 >> B7: The "exec" system call returns -1 if loading the new executable
 >> fails, so it cannot return before the new executable has completed
 >> loading.  How does your code ensure this?  How is the load
 >> success/failure status passed back to the thread that calls "exec"?
+
+Each thread contains a bool child_did_load_successfully. Furthermore, 
+each thread contains a struct semaphore sema_child_load, and a 
+struct thread* parent_thread. When a process calls exec, it downs
+its semaphore sema_child_load, which effectively makes the thread wait.
+In init thread for the new child, the parent thread pointer is set to 
+the parent thread, the one that called exec. The child gains control of 
+itself in start_process. Here, based on the outcome of the load call
+in start_process, the running child thread will access its parent thread
+through the parent_thread pointer, and will set the child_did_load_successfully
+boolean to the outcome of load, and will then sema_up on sema_load_child
+in the parent. This will awake the parent. The parent will read the outcome
+of the load from child_did_load_successfully, and act accordingly. Note, after
+reading the outcome of child_did_load_successfully, the parent will clear
+this field by resetting it to false for future exec calls. 
+
 
 >> B8: Consider parent process P with child process C.  How do you
 >> ensure proper synchronization and avoid race conditions when P
@@ -100,16 +540,127 @@ Connor Woodson <cwoodson@stanford.edu>
 >> terminates without waiting, before C exits?  After C exits?  Are
 >> there any special cases?
 
+The parent child relationship is an important one in the context of an
+OS. The first distinction our implementation makes is between thread
+specific data, and data that potentially is shared between parent and 
+chid. The data that needs to be shared between parent and child is 
+essentially just the tid and exit status of the child. However, 
+coordination of this information is tricky. Outside of this information, 
+all other thread info is unique to the thread struct and need not be shared. 
+
+To make this distinction, we define a vital info struct. Within this struct
+we manage the threads exit status, a copy of its tid, and other variables used
+to synchronize access to this info. These vital info structs are malloc'd, so
+wrt to thread struct size, the cost is negligible. the parent thread tracks 
+child information by storing the vital info of created children in an internal
+list. The child tracks its vital info with a pointer to its vital info. 
+
+To synchronize process termination and wait calls, we use two variables. 
+parent_is_finished, and child_is_finished. These allow us to determine
+whether a parent thread is still running or if a child is still running. Because 
+these fields are accessed by both P and C, we lock it down with a lock. 
+
+How do you ensure proper synchronization and avoid race conditions when P
+calls wait(C) before C exits? :In this case, P calls wait on C. P will
+first check the vital info for C. If C has finished, P will get the exit
+status from the vital info, free the vital info and then return the status. 
+In this case, however, C is still alive, so P will follow the t pointer to 
+C thread, and wait on the semaphore wait_on_me contained in C. P will wait
+until C exits. On exit, C will update child_is_finished to true in its
+vital info, and then signal its semaphore. this will awake P. Because P is 
+still alive, C does not free its vital info. P frees the vital info once it
+wakes up from waiting on the semaphore. A potential race exists on access
+of parent is finished and child is finished. We address this by using a lock
+around access to these variables. 
+
+Now the case of P waiting on C after C exits: C exits, but because P is 
+still alive, C does not free its vital info. C sets child_is_finished to 
+true in its vital info, and then exits. P, then calls wait. It accessed C's
+vital info from its list of children. It sees C has finished, so it does not 
+signal the semaphore as that semaphore no longer exists as C has exited and its
+memory cleared. Thus, P moves on, gets the exit status of C from the 
+vital info, and then frees the info and returns the exit status. 
+
+How do you ensure that all resources are freed in each case?: The exiting
+child will always close its open files and release its locks, and then
+free its thread specific memory, as provided in the code from project 1. The only
+distinction is with the vital info struct. If the child exits before the parent
+the parent will free this vital info struct either with a wait call, or when 
+it exits. If the parent exits before the child, the parent will set 
+parent_is_finished to true, in all still alive child vital info's, which 
+then will cause the children to free their vital info's when they exit. 
+
+How about when P terminates without waiting, before C exits?: In this case, 
+P will set parent_is_finshed in C's vital info, but will not free C's vital info. 
+P will free its resources. When C exits, it will see parent_is_finished is true, 
+and will free its vital info. 
+
+How about when P terminates without waiting, after C exits? C will exit. It will
+see that parent_is_finished is false (false on creation). Thus it will release
+all thread specific resources, but will not free its vital info. Instead, it
+will set child_is_finished to true. When P exits, it will consult its 
+list of children, notice that C has finished, and thus free C's vital info. 
+
+Additional cases:
+
+C exits. While C is exiting, it gets swapped and P exits. Thus there is a race
+between P and C on who can write to/read from parent_is_finished in C's vital
+info. To avoid this, we use a lock around this boolean. This ensures that either 
+P will free C's vital info, or C will free it, depending on who acquires the lock
+first. 
+
+A similar case occurs for P exiting and C exiting "simultaneously." the lock 
+again prevents the race condition. 
+
+
 ---- RATIONALE ----
 
 >> B9: Why did you choose to implement access to user memory from the
 >> kernel in the way that you did?
 
+We chose to verify and dereference as opposed to modifying the fault handler
+because this was a clean and straightforward implementation. While using the
+later option is faster as it takes advantage of the MMU in the processor, 
+it is also more complicated. Given the limitations of pintos, and the tasks it
+will perform, the added complexity to the increase in speed is not worth the 
+tradeoff. 
+
+NOTE: we go into depth on further issues above in B3, B4, B6. In order to 
+avoid copy paste and making the design doc repetitive, we reference those
+sections here. 
+
+
 >> B10: What advantages or disadvantages can you see to your design
 >> for file descriptors?
 
+The disadvantage is that the number of open files is hard capped at 
+INT_MAX -2. However, as stated in the google group, this is a valid 
+limit to impose. 
+
+Advantages: By mallocing the file_package struct, and storing them
+in a list in the thread, we minimize the amount of space used in the
+thread, and thus maximize amount of stack space. Another advantage
+is that we track the file position for each file descriptor, which 
+allows us to let a process have multiple fd's to the same open file, 
+and have them be at different positions. We also go over
+other advantages in B2. Again, In order to avoid copy paste and 
+making the design doc repetitive, we reference those sections here. 
+
+
+Alternative considered: Initially, we were going to create an array
+of 128 in the struct thread, with each entry being a file_package. The 
+file descriptor would have then been an index into this array (- 2 on
+each access). This would have allowed to file descriptor re-use. 
+However the number of open files would have been capped at 128, as opposed
+to INT_MAX - 2, and the struct thread would have been much bigger in size. 
+
 >> B11: The default tid_t to pid_t mapping is the identity mapping.
 >> If you changed it, what advantages are there to your approach?
+
+We did not change from the identity mapping. One reason to change would
+be if we allowed processes to set the process id. We experimented with this
+last year in CS 110. However, because we do not support that as of yet
+in pintos, there is not reason to deviate from the identity mapping. 
 
 			   SURVEY QUESTIONS
 			   ================
