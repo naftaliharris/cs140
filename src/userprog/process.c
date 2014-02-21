@@ -19,6 +19,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/interrupt.h"
+#include "vm/frame.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -702,8 +703,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
 }
 
 /* load() helpers. */
-
-static bool install_page (void *upage, void *kpage, bool writable);
+static bool create_segment_page(void* kaddr, void* aux);
 
 /* 
  ----------------------------------------------------------------
@@ -789,26 +789,17 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      /* Get a page of memory. */
-      uint8_t *kpage = palloc_get_page (PAL_USER);
-      if (kpage == NULL)
+      
+      void* aux[2];
+      aux[0] = file;
+      aux[1] = &page_read_bytes;
+      
+      bool success = frame_handler_create_page(upage, writable, PAL_USER, create_segment_page, aux);
+      if(!success)
+      {
         return false;
-
-      /* Load this page. */
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
-        {
-          palloc_free_page (kpage);
-          return false; 
-        }
-      memset (kpage + page_read_bytes, 0, page_zero_bytes);
-
-      /* Add the page to the process's address space. */
-      if (!install_page (upage, kpage, writable)) 
-        {
-          palloc_free_page (kpage);
-          return false; 
-        }
-
+      }
+      
       /* Advance. */
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
@@ -826,41 +817,26 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 static bool
 setup_stack (void **esp) 
 {
-  uint8_t *kpage;
-  bool success = false;
-
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
-  if (kpage != NULL) 
-    {
-      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-      if (success)
-        *esp = PHYS_BASE;
-      else
-        palloc_free_page (kpage);
-    }
+  void *vaddr = ((uint8_t *) PHYS_BASE) - PGSIZE;
+  bool success = frame_handler_new_page(vaddr, true, PAL_USER | PAL_ZERO);
+  
+  if (success)
+    *esp = PHYS_BASE;
+    
   return success;
 }
 
-/* 
- ----------------------------------------------------------------
- Adds a mapping from user virtual address UPAGE to kernel
-   virtual address KPAGE to the page table.
-   If WRITABLE is true, the user process may modify the page;
-   otherwise, it is read-only.
-   UPAGE must not already be mapped.
-   KPAGE should probably be a page obtained from the user pool
-   with palloc_get_page().
-   Returns true on success, false if UPAGE is already mapped or
-   if memory allocation fails. 
- ----------------------------------------------------------------
- */
-static bool
-install_page (void *upage, void *kpage, bool writable)
-{
-  struct thread *t = thread_current ();
 
-  /* Verify that there's not already a page at that virtual
-     address, then map our page there. */
-  return (pagedir_get_page (t->pagedir, upage) == NULL
-          && pagedir_set_page (t->pagedir, upage, kpage, writable));
+static bool
+create_segment_page(void* kaddr, void* aux)
+{
+  struct file* file = (struct file*)aux[0];
+  size_t page_read_bytes = *(size_t*)aux[1];
+  
+  /* Load this page. */
+  if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
+  {
+    return false; 
+  }
+  memset (kpage + page_read_bytes, 0, page_zero_bytes);
 }
