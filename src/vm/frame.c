@@ -4,9 +4,11 @@
 #include <stddef.h>
 #include <string.h>
 #include <debug.h>
+#include <stdio.h>
 #include "threads/pte.h"
 #include "threads/malloc.h"
 #include "threads/palloc.h"
+#include "threads/synch.h"
 #include "threads/thread.h"
 
 struct frame {
@@ -27,7 +29,9 @@ get_frame_index(void* kaddr)
 {
   ASSERT (first_frame != NULL);
   ASSERT ((uint32_t)first_frame <= (uint32_t)kaddr);
-  return ((uint32_t)kaddr - (uint32_t)first_frame) >> 12;
+  uint32_t index = ((uint32_t)kaddr - (uint32_t)first_frame) >> 12;
+  ASSERT (index < total_frames);
+  return index;
 }
 
 bool
@@ -42,19 +46,20 @@ frame_handler_init(size_t num_frames, uint8_t* frame_base)
     return false;
   }
   struct frame basic_frame;
-  lock_init(&(basic_frame.lock));
-  int i;
+  basic_frame.owner_thread = NULL;
+  basic_frame.vaddr = NULL;
+  size_t i;
   for(i = 0; i < num_frames; i++)
   {
     memcpy((frame_table + i), &basic_frame, sizeof(struct frame));
+    lock_init(&(frame_table[i].lock));
   }
   return true;
 }
 
-bool
-frame_handler_create_user_page(void* vaddr, bool writeable, bool zeroed, create_page_func* func, void* aux)
+void*
+frame_handler_create_user_page(void* vaddr, bool writeable, bool zeroed)
 {
-  struct frame* frame = NULL;
   bool success = false;
   void* kaddr = palloc_get_page (PAL_USER | (zeroed ? PAL_ZERO : 0));
   if (kaddr != NULL)
@@ -79,43 +84,42 @@ frame_handler_create_user_page(void* vaddr, bool writeable, bool zeroed, create_
     struct frame* frame = frame_table + get_frame_index(kaddr);
     ASSERT (frame->owner_thread == NULL);
     lock_acquire(&(frame->lock));
-    lock_release(&frame_table_lock);
     frame->owner_thread = t;
+    lock_release(&frame_table_lock);
     frame->vaddr = vaddr;
-    if(!((func == NULL || func(kaddr, aux)) && pagedir_set_page (t->pagedir, vaddr, kaddr, writeable)))
+    
+    success = pagedir_set_page (t->pagedir, vaddr, kaddr, writeable);
+    if(!success)
     {
       palloc_free_page(kaddr);
       frame->owner_thread = NULL;
-    }
-    else
-    {
-      success = true;
     }
     lock_release(&(frame->lock));
   }
   else
   {
     PANIC("Out Of Frames");
-    frame = evict_frame(); // acquires frame->lock
+    struct frame* frame = evict_frame(); // acquires frame->lock
+    lock_release(&(frame->lock));
   }
-  return success;
+  return success ? kaddr : NULL;
 }
 
 bool
 frame_handler_free_page(void* kaddr, void* uaddr, struct thread* owner)
 {
-  PANIC("Cannot free pages");
-  // More thought needs to be put into this in regards to synchronization
-  // Freeing a page that is in a frame
-  // while(page_table_free_page() == false); page_table_free_page can free from swap or call this func
-  // this func makes sure that the correct frame is being freed
-  /*lock_acquire(&(frame->lock));
   lock_acquire(&frame_table_lock);
-  list_remove(&(frame->elem));
+  struct frame *frame = frame_table + get_frame_index(kaddr);
+  lock_acquire(&(frame->lock));
   lock_release(&frame_table_lock);
-  palloc_free_page(frame->kaddr);
+  bool success = (frame->vaddr == uaddr && frame->owner_thread == owner);
+  if(success)
+  {
+    palloc_free_page(kaddr);
+    frame->owner_thread = NULL;
+    memset(kaddr, 0, PGSIZE);
+  }
   lock_release(&(frame->lock));
-  free(frame);*/
   return false;
 }
 
