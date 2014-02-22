@@ -2,8 +2,9 @@
 #include "threads/thread.h"
 #include "userprog/pagedir.h"
 #include "vm/page.h"
+#include "vm/swap.h"
 
-/* Notes */
+/* Notes from Naftali and Connor's meeting, (to be deleted shortly). */
 
 /* Initialize the SPT in process.c when the user progam's pagedir is initialized.
  *
@@ -32,30 +33,37 @@
  */
 
 
-
-/* 
- ----------------------------------------------------------------
- Adds a mapping from user virtual address UPAGE to kernel
-   virtual address KPAGE to the page table.
-   If WRITABLE is true, the user process may modify the page;
-   otherwise, it is read-only.
-   UPAGE must not already be mapped.
-   KPAGE should probably be a page obtained from the user pool
-   with palloc_get_page().
-   Returns true on success, false if UPAGE is already mapped or
-   if memory allocation fails. 
- ----------------------------------------------------------------
- */
-
 bool
 map_page (void *upage, void *kpage, bool writable)
 {
-  struct thread *t = thread_current ();
+    struct thread *t = thread_current ();
 
-  /* Verify that there's not already a page at that virtual
+    /* Verify that there's not already a page at that virtual
      address, then map our page there. */
-  bool success = (pagedir_get_page (t->pagedir, upage) == NULL
+    bool success = (pagedir_get_page (t->pagedir, upage) == NULL
                  && pagedir_set_page (t->pagedir, upage, kpage, writable));
 
-  //t->spt 
+    //t->spt 
+    return success;
+}
+
+/* Currently just swaps the page out to the swap partition. */
+void evict_page (void *page)
+{
+    struct spte *entry = find_spte(page);
+    ASSERT (entry != NULL);
+
+    struct thread *t = thread_current ();
+    //pagedir_get_page (t->pagedir, upage)
+
+    entry->addr = write_to_swap(page);
+    entry->loc = LOC_SWAPPED;
+}
+
+struct spte *
+find_spte(void *page)
+{
+    struct thread *t = thread_current ();
+
+    return NULL;
 }

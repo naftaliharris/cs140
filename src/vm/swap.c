@@ -26,8 +26,8 @@ init_swap_table (void)
     lock_init(&swap_lock);
 }
 
-/* Writes the page located at kaddr to swap, managing syncronization. */
-void
+/* Writes the page located at kaddr to swap, returning the swap slot. */
+uint32_t
 write_to_swap (void *kaddr)
 {
     /* Only lock the swap table to find an open swap slot, not while writing! */
@@ -52,6 +52,8 @@ write_to_swap (void *kaddr)
         buffer = kaddr + i * BLOCK_SECTOR_SIZE;
         block_write (swap_block, sector, buffer);
     }
+
+    return slot;
 }
 
 /* Reads the data located at the given swap slot into the page-sized kaddr,
