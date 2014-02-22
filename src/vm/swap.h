@@ -6,6 +6,9 @@
 #include <stddef.h>
 #include "devices/block.h"
 #include "threads/synch.h"
+#include "threads/vaddr.h"
+
+#define SECTORS_PER_PAGE    (PGSIZE / BLOCK_SECTOR_SIZE)
 
 struct block *swap_block; /* The swap device */
 
@@ -15,11 +18,13 @@ struct block *swap_block; /* The swap device */
 
 uint32_t *swap_table;  /* Array of open indices */
 uint32_t swap_slots;   /* Size of the array */
-int swap_top;     /* Current location in the array */
+int swap_top;          /* Index of the top open swap slot */
 struct lock swap_lock; /* Lock for the swap table */
 
 
 
 void init_swap_table (void);
+void write_to_swap (void *);
+void read_from_swap (void *, uint32_t);
 
 #endif /* vm/swap.h */
