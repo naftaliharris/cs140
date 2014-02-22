@@ -1,5 +1,7 @@
-#ifndef PAGE_H
-#define PAGE_H
+#ifndef VM_PAGE_H
+#define VM_PAGE_H
+
+#include <list.h>
 
 /* Possible locations of pages */
 typedef enum
@@ -10,10 +12,12 @@ typedef enum
 } page_loc;
 
 /* Supplementary Page Table. This is a per-process data structure.  */
-struct spt
+struct supp_page_table
 {
-    uint32_t    *addr;      /* The frame address or disk address */
+    struct list_elem   elem;       /* For the per-process list */
+    uint32_t    *kaddr;      /* The frame address or disk address */
     page_loc    loc;        /* Whether the frame is swapped or on disk */
-}
+    /* Also need the file and offset, (if on disk ie executable) */
+};
 
-#endif
+#endif /* vm/page.h */

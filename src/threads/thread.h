@@ -6,6 +6,7 @@
 #include <threads/synch.h>
 #include <stdint.h>
 #include "threads/fixed-point.h"
+#include "vm/page.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -158,6 +159,15 @@ struct thread
     
     
     //END PROJECT 2 ADDITIONS//
+#endif
+
+#ifdef VM
+    /* Project 3 Additions */
+
+    /* Supplementary Page Table */
+    struct supp_page_table spt;
+
+    /* End Projecdt 3 Additions */
 #endif
     
     /* Owned by thread.c. */
