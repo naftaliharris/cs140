@@ -52,18 +52,60 @@ void evict_page (void *page)
 {
     struct spte *entry = find_spte(page);
     ASSERT (entry != NULL);
+    ASSERT (entry->loc == LOC_MEMORY);
 
     struct thread *t = thread_current ();
-    //pagedir_get_page (t->pagedir, upage)
 
-    entry->addr = write_to_swap(page);
-    entry->loc = LOC_SWAPPED;
+    /* If the page is writeable, place into swap */
+    if (pagedir_is_writeable(t->pagedir, page))
+    {
+        entry->addr = write_to_swap(page);
+        entry->loc = LOC_SWAPPED;
+    } else {
+        /* TODO: Figure out where on disk this page resides */
+        entry->addr = (uint32_t)NULL;
+        entry->loc = LOC_DISK;
+    }
 }
 
 struct spte *
-find_spte(void *page)
+find_spte (void *page)
 {
     struct thread *t = thread_current ();
+    struct list_elem *e;
+
+    for (e = list_begin(&t->spt); e != list_end(&t->spt); e = list_next (e))
+    {
+      struct spte *entry = list_entry (e, struct spte, elem);
+      if (entry->addr == (uint32_t)page)
+          return entry;
+    }
 
     return NULL;
+}
+
+void
+free_page (struct spte *entry)
+{
+    switch (entry->loc)
+    {
+        case LOC_MEMORY:
+            break;
+        case LOC_SWAPPED:
+            free_slot (entry->addr);
+            break;
+        case LOC_DISK:
+            /* Don't need to do anything */
+            break;
+    }
+}
+
+void
+free_spt (struct list *spt)
+{
+    struct list_elem *e;
+    for (e = list_begin(spt); e != list_end(spt); e = list_next (e))
+        free_page(list_entry (e, struct spte, elem));
+
+    /* TODO: Free the malloc'd memory */
 }

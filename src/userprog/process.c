@@ -457,6 +457,11 @@ process_exit (void)
     pd = cur->pagedir;
     if (pd != NULL)
     {
+#ifdef VM
+        /* Destroy the SPT */
+        free_spt (&cur->spt);
+#endif
+
         /* Correct ordering here is crucial.  We must set
          cur->pagedir to NULL before switching page directories,
          so that a timer interrupt can't switch back to the
@@ -592,8 +597,10 @@ load (const char *file_name, void (**eip) (void), void **esp)
   if (t->pagedir == NULL) 
     goto done;
 
+#ifdef VM
   /* Prepare the supplementary page table */
-  // t->spt = ...;
+  list_init(&t->spt);
+#endif
 
   process_activate ();
 

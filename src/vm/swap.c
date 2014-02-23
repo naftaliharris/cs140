@@ -56,6 +56,16 @@ write_to_swap (void *kaddr)
     return slot;
 }
 
+/* Frees the particular slot */
+void free_slot (uint32_t slot)
+{
+    lock_acquire(&swap_lock);
+    swap_top++;
+    ASSERT(swap_top < swap_slots);
+    swap_table[swap_top] = slot;
+    lock_release(&swap_lock);
+}
+
 /* Reads the data located at the given swap slot into the page-sized kaddr,
  * and frees the slot in the swap table. */
 void
@@ -73,9 +83,5 @@ read_from_swap (void *kaddr, uint32_t slot)
     }
 
     /* Tell the swap table that this slot is now free */
-    lock_acquire(&swap_lock);
-    swap_top++;
-    ASSERT(swap_top < swap_slots);
-    swap_table[swap_top] = slot;
-    lock_release(&swap_lock);
+    free_slot (slot);
 }
