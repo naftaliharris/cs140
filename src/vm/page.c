@@ -1,5 +1,6 @@
 #include <stdbool.h>
 #include "threads/thread.h"
+#include "threads/malloc.h"  /* XXX can we malloc? */
 #include "userprog/pagedir.h"
 #include "vm/page.h"
 #include "vm/swap.h"
@@ -43,8 +44,16 @@ map_page (void *upage, void *kpage, bool writable)
     bool success = (pagedir_get_page (t->pagedir, upage) == NULL
                  && pagedir_set_page (t->pagedir, upage, kpage, writable));
 
-    //t->spt 
-    return success;
+    if (success)
+    {
+        struct spte *entry = malloc(sizeof(struct spte));  /* XXX: Is this kosher? */
+        if (entry == NULL)
+            return false;
+        entry->addr = (uint32_t)kpage;
+        entry->loc = LOC_MEMORY;
+        list_push_back (&t->spt, &entry->elem);
+    }
+    return true;
 }
 
 /* Currently just swaps the page out to the swap partition. */

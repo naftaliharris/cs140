@@ -26,5 +26,6 @@ struct lock swap_lock; /* Lock for the swap table */
 void init_swap_table (void);
 uint32_t write_to_swap (void *);
 void read_from_swap (void *, uint32_t);
+void free_swap (uint32_t);
 
 #endif /* vm/swap.h */
