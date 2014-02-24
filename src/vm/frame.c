@@ -10,6 +10,7 @@
 #include "threads/palloc.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
+#include "vm/page.h"
 
 struct frame {
   struct thread* owner_thread; // if NULL, no page mapped
@@ -88,7 +89,7 @@ frame_handler_create_user_page(void* vaddr, bool writeable, bool zeroed)
     lock_release(&frame_table_lock);
     frame->vaddr = vaddr;
     
-    success = pagedir_set_page (t->pagedir, vaddr, kaddr, writeable);
+    success = map_page (t->pagedir, vaddr, kaddr, writeable);
     if(!success)
     {
       palloc_free_page(kaddr);
