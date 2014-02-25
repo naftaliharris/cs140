@@ -15,13 +15,15 @@
 struct frame {
   struct thread* owner_thread; // if NULL, no page mapped
   void* vaddr; // user virtual address, for use when referencing page table, and perhaps for when converting between kaddr/uaddr
+  void* kaddr;
   struct lock lock;
 };
 
 static struct frame* frame_table;
 static size_t total_frames;
 static void* first_frame;
-static struct lock frame_table_lock;
+struct lock frame_evict_lock;
+static uint32_t frame_table_iterator = 0;
 
 static struct frame* evict_frame(void);
 
@@ -40,7 +42,7 @@ frame_handler_init(size_t num_frames, uint8_t* frame_base)
 {
   total_frames = num_frames;
   first_frame = frame_base;
-  lock_init(&frame_table_lock);
+  lock_init(&frame_evict_lock);
   frame_table = malloc(sizeof(struct frame) * num_frames);
   if(frame_table == NULL)
   {
@@ -49,11 +51,12 @@ frame_handler_init(size_t num_frames, uint8_t* frame_base)
   struct frame basic_frame;
   basic_frame.owner_thread = NULL;
   basic_frame.vaddr = NULL;
-  size_t i;
+  uint32_t i;
   for(i = 0; i < num_frames; i++)
   {
     memcpy((frame_table + i), &basic_frame, sizeof(struct frame));
     lock_init(&(frame_table[i].lock));
+    frame_table[i].kaddr = (void*)((uint32_t)first_frame + (i << 12));
   }
   return true;
 }
@@ -62,45 +65,48 @@ void*
 frame_handler_create_user_page(void* vaddr, bool writeable, bool zeroed)
 {
   bool success = false;
+  struct thread *t = thread_current ();
   void* kaddr = palloc_get_page (PAL_USER | (zeroed ? PAL_ZERO : 0));
   if (kaddr != NULL)
   {
-    /* 
-   ----------------------------------------------------------------
-   Adds a mapping from user virtual address UPAGE to kernel
-     virtual address KPAGE to the page table.
-     If WRITABLE is true, the user process may modify the page;
-     otherwise, it is read-only.
-     UPAGE must not already be mapped.
-     KPAGE should probably be a page obtained from the user pool
-     with palloc_get_page().
-     Returns true on success, false if UPAGE is already mapped or
-     if memory allocation fails. 
-   ----------------------------------------------------------------
-   */
-   /* Verify that there's not already a page at that virtual
-     address, then map our page there. */
-    struct thread *t = thread_current ();
-    lock_acquire(&frame_table_lock);
     struct frame* frame = frame_table + get_frame_index(kaddr);
-    ASSERT (frame->owner_thread == NULL);
     lock_acquire(&(frame->lock));
-    frame->owner_thread = t;
-    lock_release(&frame_table_lock);
-    frame->vaddr = vaddr;
+    ASSERT (frame->owner_thread == NULL);
     
     success = map_page (t->pagedir, vaddr, kaddr, writeable);
     if(!success)
     {
-      palloc_free_page(kaddr);
       frame->owner_thread = NULL;
+      barrier();
+      palloc_free_page(kaddr);
+    }
+    else
+    {
+      frame->owner_thread = t;
+      frame->vaddr = vaddr;
     }
     lock_release(&(frame->lock));
   }
   else
   {
-    PANIC("Out Of Frames");
     struct frame* frame = evict_frame(); // acquires frame->lock
+    if(zeroed)
+    {
+      memset (frame->kaddr, 0, PGSIZE);
+    }
+    
+    success = map_page (t->pagedir, vaddr, kaddr, writeable);
+    if(!success)
+    {
+      frame->owner_thread = NULL;
+      barrier();
+      palloc_free_page(frame->kaddr);
+    }
+    else
+    {
+      frame->owner_thread = t;
+      frame->vaddr = vaddr;
+    }
     lock_release(&(frame->lock));
   }
   return success ? kaddr : NULL;
@@ -116,17 +122,59 @@ frame_handler_free_page(void* kaddr, void* uaddr, struct thread* owner)
   bool success = (frame->vaddr == uaddr && frame->owner_thread == owner);
   if(success)
   {
-    palloc_free_page(kaddr);
     frame->owner_thread = NULL;
+    barrier();
+    palloc_free_page(kaddr);
     memset(kaddr, 0, PGSIZE);
   }
   lock_release(&(frame->lock));
   return false;
 }
 
+// UPDATE FOR EXTRA CREDIT - CHECK ALL MAPPED PAGES
+/*  iterate through list with clock pointer
+    try to acquire a lock
+    if fails, continue
+    if succeeds, check accessed bit
+    if accessed == 1, set it to 0 and continue
+    else, return this frame
+    Check the accessed bits for user AND kernel virtual address*/
 static struct frame*
 evict_frame(void)
 {
-  // set page to 0s
-  return NULL;
+  lock_acquire(&frame_evict_lock);
+  
+  struct frame* frame;
+  while(true)
+  {
+    frame = &(frame_table[frame_table_iterator]);
+    if(lock_try_acquire(&(frame->lock)))
+    {
+      if(frame->owner_thread == NULL)
+      {
+        PANIC("I don't think we're supposed to reach here");
+        break;
+      }
+      uint32_t* pagedir = frame->owner_thread->pagedir;
+      bool accessed = pagedir_is_accessed(pagedir, frame->kaddr) || pagedir_is_accessed(pagedir, frame->vaddr);
+      if(accessed)
+      {
+        pagedir_set_accessed(pagedir, frame->kaddr, false);
+        pagedir_set_accessed(pagedir, frame->vaddr, false);
+        lock_release(&(frame->lock));
+      }
+      else
+      {
+        break;
+      }
+    }
+    frame_table_iterator++;
+    if(frame_table_iterator >= total_frames)
+    {
+      frame_table_iterator = 0;
+    }
+  }
+  
+  lock_release(&frame_evict_lock);
+  return frame;
 }
