@@ -459,7 +459,7 @@ process_exit (void)
     {
 #ifdef VM
         /* Destroy the SPT */
-        free_spt (&cur->spt);
+        free_spte_table(&thread_current()->spte_table);
 #endif
 
         /* Correct ordering here is crucial.  We must set

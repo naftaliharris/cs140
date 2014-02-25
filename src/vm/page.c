@@ -23,7 +23,11 @@ struct spte* create_spte(uint32_t paddr, uint32_t vaddr, page_loc loc, page_type
     new_spte->loc = loc;
     new_spte->type = type;
     new_spte->file_ptr = file_ptr;
-    //HAVE TO ADD TO THREAD SPECIFIC DATA STRUCTURE
+    struct hash* table = &thread_current()->spte_table;
+    struct hash_elem* outcome = hash_insert(table, new_spte);
+    if (outcome != NULL) {
+        PANIC("An SPTE allready exists");
+    }
     return new_spte;
 }
 
@@ -42,6 +46,7 @@ void free_spte(struct spte* spte) {
  --------------------------------------------------------------------
  IMPLIMENTATION NOTES:
  NOTE: Need to implement these functions. 
+ NOTE: Need to add the mapping by calling page_dir_set_page
  --------------------------------------------------------------------
  */
 void load_page_into_physical_memory(struct spte* spte) {
@@ -66,7 +71,9 @@ void load_page_into_physical_memory(struct spte* spte) {
 
 /*
  --------------------------------------------------------------------
- IMPLIMENTATION
+ IMPLIMENTATION:
+ NOTE: need to break the prevous mapping from virtual address to
+    physcial frame by calling page_dir_clear_page
  --------------------------------------------------------------------
  */
 void evict_page_from_physical_memory(struct spte* spte) {
@@ -84,6 +91,7 @@ void evict_page_from_physical_memory(struct spte* spte) {
         default:
             break;
     }
+    //clear the previous mapping
 }
 
 /*
@@ -133,6 +141,23 @@ static bool less_func(const struct hash_elem *a, const struct hash_elem *b, void
 
 /*
  --------------------------------------------------------------------
+ DESCRIPTION: frees all resources associated with a given spte
+    entry. 
+ NOTE: need to check if the page is currently in a frame. If it is
+    we might have to free that frame here!!
+ --------------------------------------------------------------------
+ */
+static void free_hash_entry(struct hash_elem* e, void* aux UNUSED) {
+    struct spte* spte = hash_entry(e, struct spte, elem);
+    
+    //check if the spte page is in phyical memory. If so, handle
+        // the frame disposal here
+    free_spte(spte);
+    
+}
+
+/*
+ --------------------------------------------------------------------
  IMPLIMENTATION NOTES: initializes the given hash table.
  --------------------------------------------------------------------
  */
@@ -141,6 +166,15 @@ void init_spte_table(struct hash* thread_hash_table) {
     if (!success) {
         PANIC("Could not initialize the spte_hash table");
     }
+}
+
+/*
+ --------------------------------------------------------------------
+ IMPLIMENTATION NOTES:
+ --------------------------------------------------------------------
+ */
+void free_spte_table(struct hash* thread_hash_table) {
+    hash_destroy(thread_hash_table, free_hash_entry);
 }
 
 

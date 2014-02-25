@@ -126,6 +126,15 @@ struct spte* find_spte(void* virtual_address);
  */
 void init_spte_table(struct hash* thread_hash_table);
 
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: frees the spe_table hash table, removing all
+    malloc'd spte structs that reside in the hash table in 
+    the process
+ --------------------------------------------------------------------
+ */
+void free_spte_table(struct hash* thread_hash_table);
+
 
 
 
