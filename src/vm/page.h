@@ -8,6 +8,7 @@
 //TO DO
 //1. SWITCH TO A HASHMAP
 //2. ADD AN SPTE_TABLE INIT METHOD TO THE THREAD.C FILE
+//3. RELEASE ALL SPTE STRUCTS WHEN THREAD EXITS
 
 /* Possible locations of pages */
 typedef enum

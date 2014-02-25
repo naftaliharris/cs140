@@ -7,13 +7,6 @@
 
 //-----------------NOTES MOVED TO BOTTOM OF FILE-------------------//
 
-/*
- --------------------------------------------------------------------
- DESCRIPTION:
- --------------------------------------------------------------------
- */
-static unsigned hash_function(const struct hash_elem* e, void* aux UNUSED);
-
 
 /*
  --------------------------------------------------------------------
@@ -52,6 +45,7 @@ void free_spte(struct spte* spte) {
  --------------------------------------------------------------------
  */
 void load_page_into_physical_memory(struct spte* spte) {
+    //get frame
     ASSERT(spte != NULL);
     switch (spte->type) {
         case STACK_PAGE:
@@ -65,6 +59,8 @@ void load_page_into_physical_memory(struct spte* spte) {
             break;
         default:
             break;
+        //rewire the page table entry so that the virtual address
+            //points to the new frame
     }
 }
 
@@ -92,12 +88,22 @@ void evict_page_from_physical_memory(struct spte* spte) {
 
 /*
  --------------------------------------------------------------------
- IMPLIMENTATION NOTES:
+ IMPLIMENTATION NOTES: declare a local spte on the stack to 
+    search against. 
+ NOTE: Returns null if no element could be found. 
  --------------------------------------------------------------------
  */
 struct spte* find_spte(void* virtual_address) {
     uint32_t spte_id = page_round_down(virtual_address);
-    //NOW LOOK UP THE SPTE IN THE THREAD SPECIFIC DATA STRUCTURE.
+    struct spte dummy;
+    dummy.vaddr = spte_id;
+    
+    struct hash* table = &thread_current()->spte_table;
+    struct hash_elem* match = hash_find(table, &dummy.elem);
+    if (match) {
+        return hash_entry(match, struct spte, elem);
+    }
+    return NULL;
 }
 
 /*
