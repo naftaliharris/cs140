@@ -4,6 +4,10 @@
 #include <list.h>
 #include "threads/thread.h"
 
+
+//TO DO
+//1. SWITCH TO A HASHMAP
+
 /* Possible locations of pages */
 typedef enum
 {
@@ -37,12 +41,12 @@ typedef enum {
  */
 struct spte
 {
-    struct list_elem   elem; /* For the per-process list */
-    uint32_t paddr;          /* The frame address or swap slot */
+    struct list_elem   elem; /* For the per-process list                   */
+    uint32_t paddr;          /* The frame address or swap slot             */
     uint32_t vaddr;
-    page_loc loc;            /* Whether the frame is swapped or on disk */
+    page_loc loc;            /* Whether the frame is swapped or on disk    */
     page_type type;        
-    struct file* file_ptr;       /* Allows us to locate the file on disk for a */
+    struct file* file_ptr;   /* Allows us to locate the file on disk for a */
                              /* page that resides in a file */
 };
 
@@ -51,9 +55,32 @@ struct spte
  --------------------------------------------------------------------
  DESCRIPTION: This function creates a new spte struct, populates
     the fields with the supplied data, and then returns the struct.
+ NOTE: Need to add the spte to thread specific data structure. 
  --------------------------------------------------------------------
  */
 struct spte* create_spte(uint32_t paddr, uint32_t vadd, page_loc loc, page_type type, struct file* file);
+
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: this function frees the resources that an spte uses
+    to track a page. 
+ NOTE: Here we release all resources attained in the process of 
+    managing a page with an spte. This involces the following:
+    1. Remove the spte from the data structure it is a part of
+    2. Freeing memory
+    3. Releasing locks
+ --------------------------------------------------------------------
+ */
+void free_spte(struct spte* spte);
+
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: Loads a page into a physical memory frame.
+ NOTE: This function gets called AFTER!! the create_spte has been 
+    called. 
+ --------------------------------------------------------------------
+ */
+void load_page_into_physical_memory(struct spte* spte);
 
 
 bool map_page (struct thread*, void *, void *, bool);

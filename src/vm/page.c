@@ -22,9 +22,42 @@ struct spte* create_spte(uint32_t paddr, uint32_t vaddr, page_loc loc, page_type
     new_spte->loc = loc;
     new_spte->type = type;
     new_spte->file_ptr = file_ptr;
+    //HAVE TO ADD TO THREAD SPECIFIC DATA STRUCTURE
     return new_spte;
 }
 
+
+/*
+ --------------------------------------------------------------------
+ IMPLIMENTATION NOTES:
+ --------------------------------------------------------------------
+ */
+void free_spte(struct spte* spte) {
+    //HAVE TO REMOVE FROM DATA STRUCTURE
+    free(spte);
+}
+
+/*
+ --------------------------------------------------------------------
+ IMPLIMENTATION NOTES:
+ --------------------------------------------------------------------
+ */
+void load_page_into_physical_memory(struct spte* spte) {
+    ASSERT(spte != NULL);
+    switch (spte->type) {
+        case STACK_PAGE:
+            load_stack_page(spte);
+            break;
+        case FILE_PAGE:
+            load_file_page(spte);
+            break;
+        case MMAPED_PAGE:
+            load_mmaped_page(spte);
+            break;
+        default:
+            break;
+    }
+}
 
 
 
