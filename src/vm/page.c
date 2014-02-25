@@ -106,7 +106,7 @@ struct spte* find_spte(void* virtual_address) {
     down virtual address, ie the page number. 
  --------------------------------------------------------------------
  */
-static unsigned hash_hash_func(const struct hash_elem* e, void* aux UNUSED) {
+static unsigned hash_func(const struct hash_elem* e, void* aux UNUSED) {
     struct spte* spte = hash_entry(e, struct spte, elem);
     return hash_int(spte->vaddr);
 }
@@ -118,7 +118,7 @@ static unsigned hash_hash_func(const struct hash_elem* e, void* aux UNUSED) {
     than or equal to b.
  --------------------------------------------------------------------
  */
-static bool hash_less_func(const struct hash_elem *a, const struct hash_elem *b, void *aux) {
+static bool less_func(const struct hash_elem *a, const struct hash_elem *b, void *aux) {
     struct spte* A_spte = hash_entry(a, struct spte, elem);
     struct spte* B_spte = hash_entry(b, struct spte, elem);
     if (A_spte->vaddr < B_spte->vaddr) return true;
@@ -131,7 +131,7 @@ static bool hash_less_func(const struct hash_elem *a, const struct hash_elem *b,
  --------------------------------------------------------------------
  */
 void init_spte_table(struct hash* thread_hash_table) {
-    bool success = hash_init(thread_hash_table, hash_hash_func, hash_less_func, NULL);
+    bool success = hash_init(thread_hash_table, hash_func, less_func, NULL);
     if (!success) {
         PANIC("Could not initialize the spte_hash table");
     }
