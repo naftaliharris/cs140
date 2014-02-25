@@ -42,9 +42,18 @@ struct spte
     uint32_t vaddr;
     page_loc loc;            /* Whether the frame is swapped or on disk */
     page_type type;        
-    struct file* file;       /* Allows us to locate the file on disk for a */
+    struct file* file_ptr;       /* Allows us to locate the file on disk for a */
                              /* page that resides in a file */
 };
+
+//--------------------LP ADDED FUNCTIONS------------------------//
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: This function creates a new spte struct, populates
+    the fields with the supplied data, and then returns the struct.
+ --------------------------------------------------------------------
+ */
+struct spte* create_spte(uint32_t paddr, uint32_t vadd, page_loc loc, page_type type, struct file* file);
 
 
 bool map_page (struct thread*, void *, void *, bool);
