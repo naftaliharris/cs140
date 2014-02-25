@@ -9,6 +9,14 @@
 
 /*
  --------------------------------------------------------------------
+ DESCRIPTION:
+ --------------------------------------------------------------------
+ */
+static unsigned hash_function(const struct hash_elem* e, void* aux UNUSED);
+
+
+/*
+ --------------------------------------------------------------------
  IMPLIMENTATION NOTES:
  --------------------------------------------------------------------
  */
@@ -90,6 +98,43 @@ void evict_page_from_physical_memory(struct spte* spte) {
 struct spte* find_spte(void* virtual_address) {
     uint32_t spte_id = page_round_down(virtual_address);
     //NOW LOOK UP THE SPTE IN THE THREAD SPECIFIC DATA STRUCTURE.
+}
+
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: hashes based on the spte id which is the rounded
+    down virtual address, ie the page number. 
+ --------------------------------------------------------------------
+ */
+static unsigned hash_hash_func(const struct hash_elem* e, void* aux UNUSED) {
+    struct spte* spte = hash_entry(e, struct spte, elem);
+    return hash_int(spte->vaddr);
+}
+
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: Compares the keys stored in elements a and b. 
+    Returns true if a is less than b, false if a is greater 
+    than or equal to b.
+ --------------------------------------------------------------------
+ */
+static bool hash_less_func(const struct hash_elem *a, const struct hash_elem *b, void *aux) {
+    struct spte* A_spte = hash_entry(a, struct spte, elem);
+    struct spte* B_spte = hash_entry(b, struct spte, elem);
+    if (A_spte->vaddr < B_spte->vaddr) return true;
+    return false;
+}
+
+/*
+ --------------------------------------------------------------------
+ IMPLIMENTATION NOTES: initializes the given hash table.
+ --------------------------------------------------------------------
+ */
+void init_spte_table(struct hash* thread_hash_table) {
+    bool success = hash_init(thread_hash_table, hash_hash_func, hash_less_func, NULL);
+    if (!success) {
+        PANIC("Could not initialize the spte_hash table");
+    }
 }
 
 

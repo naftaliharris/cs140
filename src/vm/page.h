@@ -24,6 +24,7 @@ typedef enum {
     MMAPED_PAGE;
 } page_type;
 
+
 /* 
  --------------------------------------------------------------------
  DESCRIPTION: tracks the additional info we need to keep tabs on 
@@ -42,7 +43,7 @@ typedef enum {
  */
 struct spte
 {
-    struct list_elem   elem; /* For the per-process list                   */
+    struct hash_elem elem; /* For the per-process list                   */
     uint32_t paddr;          /* The frame address or swap slot             */
     uint32_t vaddr;
     page_loc loc;            /* Whether the frame is swapped or on disk    */
@@ -122,9 +123,7 @@ struct spte* find_spte(void* virtual_address);
  DESCRIPTION: initializes the given hash table.
  --------------------------------------------------------------------
  */
-void init_spte_table(struct hash* thread_hash_table) {
-    
-}
+void init_spte_table(struct hash* thread_hash_table);
 
 
 
