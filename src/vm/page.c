@@ -40,6 +40,7 @@ void free_spte(struct spte* spte) {
 /*
  --------------------------------------------------------------------
  IMPLIMENTATION NOTES:
+ NOTE: Need to implement these functions. 
  --------------------------------------------------------------------
  */
 void load_page_into_physical_memory(struct spte* spte) {
@@ -53,6 +54,28 @@ void load_page_into_physical_memory(struct spte* spte) {
             break;
         case MMAPED_PAGE:
             load_mmaped_page(spte);
+            break;
+        default:
+            break;
+    }
+}
+
+/*
+ --------------------------------------------------------------------
+ IMPLIMENTATION
+ --------------------------------------------------------------------
+ */
+void evict_page_from_physical_memory(struct spte* spte) {
+    ASSERT(spte != NULL);
+    switch (spte->type) {
+        case STACK_PAGE:
+            evict_stack_page(spte);
+            break;
+        case FILE_PAGE:
+            evict_file_page(spte);
+            break;
+        case MMAPED_PAGE:
+            evict_mmaped_page(spte);
             break;
         default:
             break;

@@ -78,9 +78,28 @@ void free_spte(struct spte* spte);
  DESCRIPTION: Loads a page into a physical memory frame.
  NOTE: This function gets called AFTER!! the create_spte has been 
     called. 
+ NOTE: A page is loaded into memory when the user calls palloc
+    or from the page fault handler. The process of loading a page
+    of memory is different for the different types of pages.
+    Thus, we use a switch statement based on page type to 
+    load the page
+ NOTE: Need to finish implimentation of the specific load page
+    functions in page.c
  --------------------------------------------------------------------
  */
 void load_page_into_physical_memory(struct spte* spte);
+
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: Removes a page that is currently residing in a physcal
+    frame, and moves it to another location. 
+ NOTE: this function can only be called if the given page is currently
+    in physical memory!
+ NOTE: The process of moving a page is dependent on the page type.
+    Thus, we use a switch statement, just as in load page. 
+ --------------------------------------------------------------------
+ */
+void evict_page_from_physical_memory(struct spte* spte);
 
 
 bool map_page (struct thread*, void *, void *, bool);
