@@ -82,6 +82,16 @@ void evict_page_from_physical_memory(struct spte* spte) {
     }
 }
 
+/*
+ --------------------------------------------------------------------
+ IMPLIMENTATION NOTES:
+ --------------------------------------------------------------------
+ */
+struct spte* find_spte(void* virtual_address) {
+    uint32_t spte_id = page_round_down(virtual_address);
+    
+}
+
 
 
 

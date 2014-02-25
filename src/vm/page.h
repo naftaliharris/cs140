@@ -101,6 +101,21 @@ void load_page_into_physical_memory(struct spte* spte);
  */
 void evict_page_from_physical_memory(struct spte* spte);
 
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: looks up an spte entry for a given virtual address.
+ NOTE: Our method of identifiying pages to spte's is by rounded 
+    down virtual address. Thus, to get the spte entry for a given 
+    virtual address, we pass the address to this function, we
+    round the address down, and then we look up the spte entry in the
+    per thread data structure based on the rounded down virtual 
+    address.
+ NOTE: The rounded down vitual address is the page number, given
+    the settup of the virtual address. 
+ --------------------------------------------------------------------
+ */
+struct spte* find_spte(void* virtual_address);
+
 
 bool map_page (struct thread*, void *, void *, bool);
 void evict_page (struct thread*, void *);
