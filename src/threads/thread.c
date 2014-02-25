@@ -101,6 +101,9 @@ static void init_file_system_info(struct thread* t);
 static void init_child_managment_info(struct thread* t);
 static void init_vital_info(struct thread* t);
 
+/* LP Project 3 additions */
+static void init_spte_hash_table(struct thread* t);
+
 
 /*
  --------------------------------------------------------------------
@@ -284,19 +287,20 @@ void thread_init (void)
    Also creates the idle thread. 
  --------------------------------------------------------------------
  */
-void thread_start (void) 
+void thread_start (void)
 {
-  /* Create the idle thread. */
-  struct semaphore idle_started;
-  sema_init (&idle_started, 0);
-  init_vital_info(initial_thread);
-  thread_create ("idle", PRI_MIN, idle, &idle_started);
-
-  /* Start preemptive thread scheduling. */
-  intr_enable ();
-
-  /* Wait for the idle thread to initialize idle_thread. */
-  sema_down (&idle_started);
+    /* Create the idle thread. */
+    struct semaphore idle_started;
+    sema_init (&idle_started, 0);
+    init_vital_info(initial_thread);
+    init_spte_hash_table(initial_thread);
+    thread_create ("idle", PRI_MIN, idle, &idle_started);
+    
+    /* Start preemptive thread scheduling. */
+    intr_enable ();
+    
+    /* Wait for the idle thread to initialize idle_thread. */
+    sema_down (&idle_started);
 }
 
 
@@ -407,6 +411,7 @@ tid_t thread_create (const char *name, int priority,
     init_thread (t, name, priority);
     tid = t->tid = allocate_tid ();
     init_vital_info(t);
+    init_spte_hash_table(t);
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
@@ -1180,6 +1185,19 @@ struct thread* get_highest_priority_thread(struct list* list,
     if (currHighest != NULL && should_remove) list_remove(&(currHighest->elem));
     intr_set_level(old_level);
     return currHighest;
+}
+
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: Initializes the supplementatry page hash table. As 
+    each spte_table is thread specific, we create a new one for 
+    each thread.
+ NOTE: calls the page table init function written in page.c
+ --------------------------------------------------------------------
+ */
+static void init_spte_hash_table(struct thread* t) {
+    struct hash hash_table = t->spte_table;
+    init_spte_table(&hash_table);
 }
 
 /* Offset of `stack' member within `struct thread'.

@@ -117,6 +117,15 @@ void evict_page_from_physical_memory(struct spte* spte);
  */
 struct spte* find_spte(void* virtual_address);
 
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: initializes the given hash table.
+ --------------------------------------------------------------------
+ */
+void init_spte_table(struct hash* thread_hash_table) {
+    
+}
+
 
 
 

@@ -165,7 +165,7 @@ struct thread
     /* Project 3 Additions */
 
     /* Supplementary Page Table */
-    struct list spt;
+    struct hash spte_table;
 
     /* End Projecdt 3 Additions */
 #endif
