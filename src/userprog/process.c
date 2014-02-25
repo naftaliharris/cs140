@@ -713,6 +713,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
   return success;
 }
 
+/* load() helpers. */
+static bool create_segment_page(void* kaddr, void* aux);
+
 /* 
  ----------------------------------------------------------------
  Checks whether PHDR describes a valid, loadable segment in
@@ -797,17 +800,15 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
       
-      void* kpage = frame_handler_create_user_page(upage, writable, false);
-      if(!kpage)
+      void* aux[2];
+      aux[0] = file;
+      aux[1] = &page_read_bytes;
+      
+      bool success = frame_handler_create_user_page(upage, writable, false, create_segment_page, aux);
+      if(!success)
       {
         return false;
       }
-      
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
-      {
-        return false; 
-      }
-      memset (kpage + page_read_bytes, 0, page_zero_bytes);
       
       /* Advance. */
       read_bytes -= page_read_bytes;
@@ -827,10 +828,26 @@ static bool
 setup_stack (void **esp) 
 {
   void *vaddr = ((uint8_t *) PHYS_BASE) - PGSIZE;
-  bool success = frame_handler_create_user_page(vaddr, true, true) != NULL;
+  bool success = frame_handler_create_user_page(vaddr, true, true, NULL, NULL);
   
   if (success)
     *esp = PHYS_BASE;
     
   return success;
+}
+
+static bool
+create_segment_page(void* kaddr, void* aux)
+{
+  struct file* file = (struct file*)((void**)aux)[0];
+  size_t page_read_bytes = *(size_t*)((void**)aux)[1];
+  size_t page_zero_bytes = PGSIZE - page_read_bytes;
+  
+  /* Load this page. */
+  if (file_read (file, kaddr, page_read_bytes) != (int) page_read_bytes)
+  {
+    return false; 
+  }
+  memset (kaddr + page_read_bytes, 0, page_zero_bytes);
+  return true;
 }

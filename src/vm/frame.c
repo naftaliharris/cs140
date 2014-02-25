@@ -12,13 +12,6 @@
 #include "threads/thread.h"
 #include "vm/page.h"
 
-struct frame {
-  struct thread* owner_thread; // if NULL, no page mapped
-  void* vaddr; // user virtual address, for use when referencing page table, and perhaps for when converting between kaddr/uaddr
-  void* kaddr;
-  struct lock lock;
-};
-
 static struct frame* frame_table;
 static size_t total_frames;
 static void* first_frame;
@@ -61,19 +54,21 @@ frame_handler_init(size_t num_frames, uint8_t* frame_base)
   return true;
 }
 
-void*
-frame_handler_create_user_page(void* vaddr, bool writeable, bool zeroed)
+bool
+frame_handler_create_user_page(void* vaddr, bool writeable, bool zeroed, create_page_func* func, void* aux)
 {
   bool success = false;
   struct thread *t = thread_current ();
+  lock_acquire(&frame_evict_lock);
   void* kaddr = palloc_get_page (PAL_USER | (zeroed ? PAL_ZERO : 0));
   if (kaddr != NULL)
   {
     struct frame* frame = frame_table + get_frame_index(kaddr);
     lock_acquire(&(frame->lock));
+    lock_release(&frame_evict_lock);
     ASSERT (frame->owner_thread == NULL);
     
-    success = map_page (t->pagedir, vaddr, kaddr, writeable);
+    success = map_page (t, vaddr, kaddr, writeable) && (func == NULL || func(kaddr, aux));
     if(!success)
     {
       frame->owner_thread = NULL;
@@ -95,7 +90,7 @@ frame_handler_create_user_page(void* vaddr, bool writeable, bool zeroed)
       memset (frame->kaddr, 0, PGSIZE);
     }
     
-    success = map_page (t->pagedir, vaddr, kaddr, writeable);
+    success = map_page (t, vaddr, kaddr, writeable) && (func == NULL || func(kaddr, aux));
     if(!success)
     {
       frame->owner_thread = NULL;
@@ -109,16 +104,14 @@ frame_handler_create_user_page(void* vaddr, bool writeable, bool zeroed)
     }
     lock_release(&(frame->lock));
   }
-  return success ? kaddr : NULL;
+  return success;
 }
 
 bool
 frame_handler_free_page(void* kaddr, void* uaddr, struct thread* owner)
 {
-  lock_acquire(&frame_table_lock);
   struct frame *frame = frame_table + get_frame_index(kaddr);
   lock_acquire(&(frame->lock));
-  lock_release(&frame_table_lock);
   bool success = (frame->vaddr == uaddr && frame->owner_thread == owner);
   if(success)
   {
@@ -142,14 +135,14 @@ frame_handler_free_page(void* kaddr, void* uaddr, struct thread* owner)
 static struct frame*
 evict_frame(void)
 {
-  lock_acquire(&frame_evict_lock);
-  
+  ASSERT (lock_held_by_current_thread(&frame_evict_lock));
   struct frame* frame;
   while(true)
   {
     frame = &(frame_table[frame_table_iterator]);
     if(lock_try_acquire(&(frame->lock)))
     {
+      lock_release(&frame_evict_lock);
       if(frame->owner_thread == NULL)
       {
         PANIC("I don't think we're supposed to reach here");
@@ -167,6 +160,7 @@ evict_frame(void)
       {
         break;
       }
+      lock_acquire(&frame_evict_lock);
     }
     frame_table_iterator++;
     if(frame_table_iterator >= total_frames)
@@ -174,7 +168,6 @@ evict_frame(void)
       frame_table_iterator = 0;
     }
   }
-  
-  lock_release(&frame_evict_lock);
+  evict_page(frame->owner_thread, frame->vaddr);
   return frame;
 }
