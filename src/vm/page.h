@@ -7,6 +7,7 @@
 
 //TO DO
 //1. SWITCH TO A HASHMAP
+//2. ADD AN SPTE_TABLE INIT METHOD TO THE THREAD.C FILE
 
 /* Possible locations of pages */
 typedef enum
@@ -116,6 +117,20 @@ void evict_page_from_physical_memory(struct spte* spte);
  */
 struct spte* find_spte(void* virtual_address);
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+//------------------PREVIOUS DECLERATIONS--------------------//
 
 bool map_page (struct thread*, void *, void *, bool);
 void evict_page (struct thread*, void *);

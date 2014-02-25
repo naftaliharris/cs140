@@ -89,12 +89,25 @@ void evict_page_from_physical_memory(struct spte* spte) {
  */
 struct spte* find_spte(void* virtual_address) {
     uint32_t spte_id = page_round_down(virtual_address);
-    
+    //NOW LOOK UP THE SPTE IN THE THREAD SPECIFIC DATA STRUCTURE.
 }
 
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+//-------------------previous functions--------------------------//
 
 
 
