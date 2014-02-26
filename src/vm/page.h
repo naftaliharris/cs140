@@ -5,19 +5,24 @@
 #include "threads/thread.h"
 
 
+//TO DO:
+//1. free frame resources in free_hash_entry
+
+
 /* The different types of pages */
 typedef enum {
-    STACK_PAGE;
+    SWAP_PAGE;
     FILE_PAGE;
     MMAPED_PAGE;
-} page_type;
+} page_location;
 
 
 /* 
  --------------------------------------------------------------------
  DESCRIPTION: tracks the additional info we need to keep tabs on 
     for a page.
- NOTE: type indicates the type of page
+ NOTE: location indicates where to access page if not in physical
+    memory
  NOTE: page_id is how we identify pages. It is the equivalent of 
     calling round down on a virtual address.
  NOTE: the pinned filed is used for page eviction. If a page
@@ -27,7 +32,7 @@ typedef enum {
 struct spte
 {
     struct hash_elem elem; /* For the per-process list                   */
-    page_type type;
+    page_location location;
     void* page_id;
     
     bool is_writeable;   /*true if the page can be written to */
@@ -52,7 +57,7 @@ struct spte
     spte to the supplemental page table.
  --------------------------------------------------------------------
  */
-void create_spte_and_add_to_table(page_type type, void* page_id, bool is_writeable, bool is_loaded, bool pinned, struct file* file_ptr, off_t offset, uint32_t read_bytes, uint32_t zero_bytes);
+void create_spte_and_add_to_table(page_location location, void* page_id, bool is_writeable, bool is_loaded, bool pinned, struct file* file_ptr, off_t offset, uint32_t read_bytes, uint32_t zero_bytes);
 
 /*
  --------------------------------------------------------------------

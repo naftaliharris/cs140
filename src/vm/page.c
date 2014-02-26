@@ -13,12 +13,12 @@
  IMPLIMENTATION NOTES:
  --------------------------------------------------------------------
  */
-void create_spte_and_add_to_table(page_type type, void* page_id, bool is_writeable, bool is_loaded, bool pinned, struct file* file_ptr, off_t offset, uint32_t read_bytes, uint32_t zero_bytes) {
+void create_spte_and_add_to_table(page_location location, void* page_id, bool is_writeable, bool is_loaded, bool pinned, struct file* file_ptr, off_t offset, uint32_t read_bytes, uint32_t zero_bytes) {
     struct spte* spte = malloc(sizeof(struct spte));
     if (spte == NULL) {
         PANIC("Could not allocate spte");
     }
-    spte->type = type;
+    spte->location = location;
     spte->page_id = page_id;
     spte->is_writeable = is_writeable;
     spte->is_loaded = is_loaded;

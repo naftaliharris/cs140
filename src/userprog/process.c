@@ -792,25 +792,32 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
         size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
         size_t page_zero_bytes = PGSIZE - page_read_bytes;
         
+        //LP Project 3 addition
+        create_spte_and_add_to_table(FILE_PAGE, (void*)upage, writable, false, false, file, ofs, read_bytes, zero_bytes);
+        //End LP Project 3 addition
+        
+        
         /* Get a page of memory. */
-        uint8_t *kpage = palloc_get_page (PAL_USER);
+       /* uint8_t *kpage = palloc_get_page (PAL_USER);
         if (kpage == NULL)
-            return false;
+            return false;*/
         
         /* Load this page. */
-        if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
+        /*if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
         {
             palloc_free_page (kpage);
             return false;
         }
-        memset (kpage + page_read_bytes, 0, page_zero_bytes);
+        memset (kpage + page_read_bytes, 0, page_zero_bytes); */
         
         /* Add the page to the process's address space. */
-        if (!install_page (upage, kpage, writable))
+       /* if (!install_page (upage, kpage, writable))
         {
             palloc_free_page (kpage);
             return false;
-        }
+        }*/
+        
+        
         
         /* Advance. */
         read_bytes -= page_read_bytes;
