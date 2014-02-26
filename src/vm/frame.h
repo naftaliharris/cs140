@@ -35,6 +35,7 @@ struct frame {
  */
 void init_frame_table(size_t num_frames, uint8_t* frame_base);
 
+
 /*
  --------------------------------------------------------------------
  DESCRIPTION: this function allocates a new page of memory to the 
@@ -49,7 +50,16 @@ void init_frame_table(size_t num_frames, uint8_t* frame_base);
     memory. 
  --------------------------------------------------------------------
  */
-void* frame_handler_palloc(bool zeros, struct spte* spte);
+bool frame_handler_palloc(bool zeros, struct spte* spte);
+
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: Wrapper around the call to palloc_free. In addition
+    to calling palloc_free(physical_memory_address), also takes care of
+    frame cleanup...
+ --------------------------------------------------------------------
+ */
+bool frame_handler_palloc_free(void* physical_memory_address, struct spte* spte);
 
 
 #endif /* __VM_FRAME_H */

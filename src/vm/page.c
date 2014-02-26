@@ -13,7 +13,7 @@
  IMPLIMENTATION NOTES:
  --------------------------------------------------------------------
  */
-void create_spte_and_add_to_table(page_location location, void* page_id, bool is_writeable, bool is_loaded, bool pinned, struct file* file_ptr, off_t offset, uint32_t read_bytes, uint32_t zero_bytes) {
+struct spte* create_spte_and_add_to_table(page_location location, void* page_id, bool is_writeable, bool is_loaded, bool pinned, struct file* file_ptr, off_t offset, uint32_t read_bytes, uint32_t zero_bytes) {
     struct spte* spte = malloc(sizeof(struct spte));
     if (spte == NULL) {
         PANIC("Could not allocate spte");
@@ -34,6 +34,7 @@ void create_spte_and_add_to_table(page_location location, void* page_id, bool is
     if (outcome == false) {
         PANIC("Trying to add two spte's for the same page");
     }
+    return spte;
 }
 
 /*
@@ -68,6 +69,7 @@ bool load_page_into_physical_memory(struct spte* spte, void* physcial_mem_addres
         default:
             break;
     }
+    return install_page(spte->page_id, physcial_mem_address, spte->is_writeable);
 }
 
 /*
@@ -92,7 +94,7 @@ bool evict_page_from_physical_memory(struct spte* spte, void* physcial_mem_addre
         default:
             break;
     }
-    //clear the previous mapping
+    clear_page(spte->page_id, spte->owner_thread);
 }
 
 /*
@@ -177,3 +179,51 @@ void init_spte_table(struct hash* thread_hash_table) {
 void free_spte_table(struct hash* thread_hash_table) {
     hash_destroy(thread_hash_table, free_hash_entry);
 }
+
+/*
+ --------------------------------------------------------------------
+ IMPLIMENTATION NOTES:
+ NOTE: Implimentation verifies that there's not already a 
+    page at that virtual address, then map our page there. 
+ --------------------------------------------------------------------
+ */
+static bool install_page(void *upage, void *kpage, bool writable) {
+    struct thread *t = thread_current ();
+    
+    return (pagedir_get_page (t->pagedir, upage) == NULL
+            && pagedir_set_page (t->pagedir, upage, kpage, writable));
+}
+
+/*
+ --------------------------------------------------------------------
+ IMPLIMENTATION NOTES:
+ --------------------------------------------------------------------
+ */
+static void clear_page(void* upage, struct thread* t) {
+    ASSERT(thread_current() == t);
+    pagedir_clear_page(t->pagedir, upage);
+}
+
+/*
+ --------------------------------------------------------------------
+ IMPLIMENTATION NOTES:
+ --------------------------------------------------------------------
+ */
+bool is_valid_stack_access(void* esp, void* user_virtual_address) {
+    
+}
+
+/*
+ --------------------------------------------------------------------
+ IMPLIMENTATION NOTES:
+ NOTE: we take care of freeing the palloc'd page on error within 
+    frame_handler_palloc
+ --------------------------------------------------------------------
+ */
+bool grow_stack(void* page_id) {
+    struct spte* spte = create_spte_and_add_to_table(SWAP_PAGE, page_id, true, true, false, NULL, 0, 0, 0);
+    bool outcome = frame_handler_palloc(true, spte);
+    return outcome;
+}
+
+

@@ -58,7 +58,7 @@ struct spte
     spte to the supplemental page table.
  --------------------------------------------------------------------
  */
-void create_spte_and_add_to_table(page_location location, void* page_id, bool is_writeable, bool is_loaded, bool pinned, struct file* file_ptr, off_t offset, uint32_t read_bytes, uint32_t zero_bytes);
+struct spte* create_spte_and_add_to_table(page_location location, void* page_id, bool is_writeable, bool is_loaded, bool pinned, struct file* file_ptr, off_t offset, uint32_t read_bytes, uint32_t zero_bytes);
 
 /*
  --------------------------------------------------------------------
@@ -131,6 +131,53 @@ void init_spte_table(struct hash* thread_hash_table);
  --------------------------------------------------------------------
  */
 void free_spte_table(struct hash* thread_hash_table);
+
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: Taken out of process.c, and moved here. This function
+    installs the address translation from upage virtual address to
+    kpage which is a physical_memory_address of a frame.
+ NOTE: Adds a mapping from user virtual address UPAGE to kernel
+    virtual address KPAGE to the page table.
+    If WRITABLE is true, the user process may modify the page;
+    otherwise, it is read-only.
+    UPAGE must not already be mapped.
+    KPAGE should probably be a page obtained from the user pool
+    with palloc_get_page().
+    Returns true on success, false if UPAGE is already mapped or
+    if memory allocation fails.
+ --------------------------------------------------------------------
+ */
+static bool install_page (void *upage, void *kpage, bool writable);
+
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: The opposite of install_page. Wrapper around the call
+    to pagedir_clear_page to remove the address translation from
+    upage to kpage.
+ --------------------------------------------------------------------
+ */
+static void clear_page(void* upage, struct thread* t);
+
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: checks to ensure that a stack access is valid.
+ --------------------------------------------------------------------
+ */
+bool is_valid_stack_access(void* esp, void* user_virtual_address);
+
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: grows the current processes stack by creating and adding
+    an spte for the given page_id, and then calling frame_handler_palloc
+    to load the page into physical memory.
+ NOTE: this function assumes that check_stack_growth has been called 
+    beforehand ensuring that the stack access is valid. The only time
+    we do not call is_valid_stack_access is when creating the initial
+    stack page of a process.
+ --------------------------------------------------------------------
+ */
+bool grow_stack(void* page_id);
 
 
 #endif /* vm/page.h */

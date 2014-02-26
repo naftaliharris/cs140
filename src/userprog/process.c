@@ -836,41 +836,11 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 static bool
 setup_stack (void **esp)
 {
-    uint8_t *kpage;
-    bool success = false;
-    
-    kpage = palloc_get_page (PAL_USER | PAL_ZERO);
-    if (kpage != NULL)
-    {
-        success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-        if (success)
-            *esp = PHYS_BASE;
-        else
-            palloc_free_page (kpage);
+    void* upage = (void*)(((uint8_t *) PHYS_BASE) - PGSIZE);
+    bool success = grow_stack(upage);
+    if (success) {
+        *esp = PHYS_BASE;
     }
     return success;
 }
 
-/*
- ----------------------------------------------------------------
- Adds a mapping from user virtual address UPAGE to kernel
- virtual address KPAGE to the page table.
- If WRITABLE is true, the user process may modify the page;
- otherwise, it is read-only.
- UPAGE must not already be mapped.
- KPAGE should probably be a page obtained from the user pool
- with palloc_get_page().
- Returns true on success, false if UPAGE is already mapped or
- if memory allocation fails. 
- ----------------------------------------------------------------
- */
-static bool
-install_page (void *upage, void *kpage, bool writable)
-{
-    struct thread *t = thread_current ();
-    
-    /* Verify that there's not already a page at that virtual
-     address, then map our page there. */
-    return (pagedir_get_page (t->pagedir, upage) == NULL
-            && pagedir_set_page (t->pagedir, upage, kpage, writable));
-}
