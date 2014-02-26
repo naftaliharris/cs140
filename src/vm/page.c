@@ -1,11 +1,14 @@
 #include <stdbool.h>
 #include "threads/thread.h"
-#include "threads/malloc.h"  /* XXX can we malloc? */
+#include "threads/malloc.h"  
 #include "userprog/pagedir.h"
 #include "vm/page.h"
 #include "vm/swap.h"
 
-//-----------------NOTES MOVED TO BOTTOM OF FILE-------------------//
+
+static void load_swap_page(struct spte* spte, void* frame_base);
+static void load_file_page(struct spte* spte, void* frame_base);
+static void evict_stack_page(struct spte* spte, void* physcial_mem_address)
 
 
 /*
@@ -13,7 +16,7 @@
  IMPLIMENTATION NOTES:
  --------------------------------------------------------------------
  */
-struct spte* create_spte_and_add_to_table(page_location location, void* page_id, bool is_writeable, bool is_loaded, bool pinned, struct file* file_ptr, off_t offset, uint32_t read_bytes, uint32_t zero_bytes) {
+struct spte* create_spte_and_add_to_table(page_location location, void* page_id, bool is_writeable, bool is_loaded, struct file* file_ptr, off_t offset, uint32_t read_bytes, uint32_t zero_bytes) {
     struct spte* spte = malloc(sizeof(struct spte));
     if (spte == NULL) {
         PANIC("Could not allocate spte");
@@ -23,7 +26,7 @@ struct spte* create_spte_and_add_to_table(page_location location, void* page_id,
     spte->page_id = page_id;
     spte->is_writeable = is_writeable;
     spte->is_loaded = is_loaded;
-    spte->is_pinned = pinned;
+    spte->frame = NULL;
     spte->file_ptr = file_ptr;
     spte->offset_in_file = offset;
     spte->read_bytes = read_bytes;
@@ -49,6 +52,36 @@ void free_spte(struct spte* spte) {
 
 /*
  --------------------------------------------------------------------
+ DESCRIPTION: loads a page from swap to physical memory
+ --------------------------------------------------------------------
+ */
+static void load_swap_page(struct spte* spte, void* frame_base) {
+    read_from_swap(frame_base, spte->swap_index);
+}
+
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: loads a page from swap to physical memory
+ NOTE: this function is called by frame_handler_palloc, which
+    locks the frame, so we do not need to pin here.
+ --------------------------------------------------------------------
+ */
+static void load_file_page(struct spte* spte, void* frame_base) {
+    if (spte->zero_bytes == PGSIZE) {
+        memset(frame_base, 0, PGSIZE);
+        return;
+    }
+    int bytes_read = file_read (spte->file_ptr, frame_base, spte->read_bytes);
+    if (bytes_read != spte->read_bytes) {
+        //HERE WE NEED TO HANDLE THIS ERROR CONDITION!!
+    }
+    if (spte->read_bytes != PGSIZE) {
+        memset (frame_base + spte->read_bytes, 0, spte->zero_bytes);
+    }
+}
+
+/*
+ --------------------------------------------------------------------
  IMPLIMENTATION NOTES:
  NOTE: Need to implement these functions. 
  NOTE: Need to add the mapping by calling page_dir_set_page
@@ -58,18 +91,46 @@ bool load_page_into_physical_memory(struct spte* spte, void* physcial_mem_addres
     ASSERT(spte != NULL);
     switch (spte->location) {
         case SWAP_PAGE:
-            load_stack_page(spte, void* physcial_mem_address);
+            load_swap_page(spte, physcial_mem_address);
             break;
         case FILE_PAGE:
-            load_file_page(spte, void* physcial_mem_address);
+            load_file_page(spte, physcial_mem_address);
             break;
         case MMAPED_PAGE:
-            load_mmaped_page(spte, void* physcial_mem_address);
+            load_mmaped_page(spte, physcial_mem_address);
             break;
         default:
             break;
     }
     return install_page(spte->page_id, physcial_mem_address, spte->is_writeable);
+}
+
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION:In this function, we copy a page from a physcial
+    frame to a swap slot
+ --------------------------------------------------------------------
+ */
+static void evict_stack_page(struct spte* spte, void* physcial_mem_address) {
+    uint32_t swap_index = write_to_swap(spte->frame->physical_mem_frame_base);
+    spte->swap_index = swap_index;
+}
+
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: moves a page containing file data to a swap slot
+    if the page is dirty. Else, we do nothing.
+ --------------------------------------------------------------------
+ */
+static void evict_file_page(struct spte* spte) {
+    uint32_t* pagedir = frame->spte->owner_thread->pagedir;
+    bool dirty = pagedir_is_dirty(pagedir, spte->frame->physical_mem_frame_base);
+    if (dirty) {
+        spte->location = 
+    }
+    //if page is dirty, change the page location to swap, and then
+    //write to swap.
+    //else, we do nothing.
 }
 
 /*
@@ -83,13 +144,13 @@ bool evict_page_from_physical_memory(struct spte* spte, void* physcial_mem_addre
     ASSERT(spte != NULL);
     switch (spte->location) {
         case SWAP_PAGE:
-            evict_stack_page(spte, void* physcial_mem_address);
+            evict_stack_page(spte, physcial_mem_address);
             break;
         case FILE_PAGE:
-            evict_file_page(spte, void* physcial_mem_address);
+            evict_file_page(spte, physcial_mem_address);
             break;
         case MMAPED_PAGE:
-            evict_mmaped_page(spte, void* physcial_mem_address);
+            evict_mmaped_page(spte, physcial_mem_address);
             break;
         default:
             break;
@@ -233,7 +294,7 @@ bool is_valid_stack_access(void* esp, void* user_virtual_address) {
  --------------------------------------------------------------------
  */
 bool grow_stack(void* page_id) {
-    struct spte* spte = create_spte_and_add_to_table(SWAP_PAGE, page_id, true, true, false, NULL, 0, 0, 0);
+    struct spte* spte = create_spte_and_add_to_table(SWAP_PAGE, page_id, true, true, NULL, 0, 0, 0);
     bool outcome = frame_handler_palloc(true, spte);
     return outcome;
 }
@@ -241,10 +302,27 @@ bool grow_stack(void* page_id) {
 /*
  --------------------------------------------------------------------
  IMPLIMENTATION NOTES:
+ TO DO: We need to handle the case where the page is currently in memory
  --------------------------------------------------------------------
  */
-bool is_all_zeros(struct* spte) {
-    UNUSED;
+void pin_page(void* virtual_address) {
+    struct spte* spte = find_spte(virtual_address);
+    if (spte->is_loaded != true) {
+        frame_handler_palloc(false, spte, true);
+    } else {
+        //HERE WE NEED TO LOCK THE FRAME WE ARE CURRENTLY IN
+    }
+}
+
+/*
+ --------------------------------------------------------------------
+ IMPLIMENTATION NOTES:
+ --------------------------------------------------------------------
+ */
+void un_pin_page(void* virtual_address) {
+    struct spte* spte = find_spte(virtual_address);
+    ASSERT(lock_held_by_current_thread(&spte->frame->frame_lock));
+    lock_release(&spte->frame->frame_lock);
 }
 
 

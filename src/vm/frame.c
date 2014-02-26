@@ -114,9 +114,11 @@ static inline uint32_t get_frame_index(void* physical_memory_addr) {
 /*
  --------------------------------------------------------------------
  IMPLIMENTATION NOTES: 
+ NOTE: Update so that this takes a boolean and releases the lock
+    only if boolean is true
  --------------------------------------------------------------------
  */
-bool frame_handler_palloc(bool zeros, struct spte* spte) {
+bool frame_handler_palloc(bool zeros, struct spte* spte, bool should_pin) {
     lock_aquire(&frame_evict_lock);
     void* physical_memory_addr = palloc_get_page (PAL_USER | (zeros ? PAL_ZERO : 0));
     
@@ -138,8 +140,11 @@ bool frame_handler_palloc(bool zeros, struct spte* spte) {
         palloc_free_page(physical_memory_addr);
     } else {
         frame->resident_page = spte;
+        spte->is_loaded = true;
     }
-    lock_release(&frame->frame_lock);
+    if (should_pin == false) {
+        lock_release(&frame->frame_lock);
+    }
     return success;
 }
 

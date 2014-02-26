@@ -793,7 +793,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
         size_t page_zero_bytes = PGSIZE - page_read_bytes;
         
         //LP Project 3 addition
-        create_spte_and_add_to_table(FILE_PAGE, (void*)upage, writable, false, false, file, ofs, read_bytes, zero_bytes);
+        create_spte_and_add_to_table(FILE_PAGE, (void*)upage, writable, false, file, ofs, read_bytes, zero_bytes);
         //End LP Project 3 addition
         
         

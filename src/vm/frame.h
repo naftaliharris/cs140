@@ -24,7 +24,6 @@ struct frame {
     struct spte* resident_page;
     struct void* physical_mem_frame_base;
     struct lock frame_lock;
-    struct list_elem elem;
 };
 
 
@@ -48,9 +47,11 @@ void init_frame_table(size_t num_frames, uint8_t* frame_base);
  NOTE: this function does not modify the data in the page. It 
     simply returns the base address of a physical page of 
     memory. 
+ NOTE: does not release the lock if should_pin is true. This 
+    is only the case when we pin a frame from a system call. 
  --------------------------------------------------------------------
  */
-bool frame_handler_palloc(bool zeros, struct spte* spte);
+bool frame_handler_palloc(bool zeros, struct spte* spte, bool should_pin);
 
 /*
  --------------------------------------------------------------------

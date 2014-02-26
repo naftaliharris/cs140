@@ -35,10 +35,10 @@ struct spte
     page_location location;
     struct thread* owner_thread; /* needed to access pd */
     void* page_id;
+    struct frame* frame; /* the physical frame of the page if it is memory */
     
     bool is_writeable;   /*true if the page can be written to */
     bool is_loaded;      /*true if the page is currently loaded in memory */
-    bool is_pinned;         /*pinning for page eviction */
            
     struct file* file_ptr;
     off_t offset_in_file;
@@ -58,7 +58,7 @@ struct spte
     spte to the supplemental page table.
  --------------------------------------------------------------------
  */
-struct spte* create_spte_and_add_to_table(page_location location, void* page_id, bool is_writeable, bool is_loaded, bool pinned, struct file* file_ptr, off_t offset, uint32_t read_bytes, uint32_t zero_bytes);
+struct spte* create_spte_and_add_to_table(page_location location, void* page_id, bool is_writeable, bool is_loaded, struct file* file_ptr, off_t offset, uint32_t read_bytes, uint32_t zero_bytes);
 
 /*
  --------------------------------------------------------------------
@@ -181,11 +181,19 @@ bool grow_stack(void* page_id);
 
 /*
  --------------------------------------------------------------------
- DESCRIPTION: determines if the page is all zeros, or if it is not
-    True if all zeros, false if not
+ DESCRIPTION: takes in a virtual address, finds the spte for the address
+    ensures that the page the address resides on is in memory, and then
+    aquires the lock on the frame the page resides in. 
  --------------------------------------------------------------------
  */
-bool is_all_zeros(struct* spte);
+void pin_page(void* virtual_address);
+
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: unpins a page by releasing the frame lock
+ --------------------------------------------------------------------
+ */
+void un_pin_page(void* virtual_address);
 
 
 #endif /* vm/page.h */
