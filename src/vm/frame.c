@@ -18,17 +18,17 @@
  IMPLIMENTATION NOTES:
  --------------------------------------------------------------------
  */
-void init_frame_table(int num_frames) {
-    num_frames = max_frames;
-    frame_table = malloc(sizeof(struct frame)*num_frames);
-    for (int i = 0; i < num_frames; i++) {
-        frame_table[i]->resident_page = NULL;
-        frame_table[i]->frame_base = NULL;
-        lock_init(&frame_table[i]->frame_lock);
-    }
-    lock_init(&frame_table_lock);
+void init_frame_table() {
+    list_init(&list_of_frames);
+    lock_init(&frame_list_lock);
 }
 
+/*
+ --------------------------------------------------------------------
+ IMPLIMENTATION NOTES:
+ --------------------------------------------------------------------
+ */
+void* allocate_frame()
 
 
 
@@ -47,6 +47,15 @@ void init_frame_table(int num_frames) {
 
 
 
+/*
+ num_frames = max_frames;
+ frame_table = malloc(sizeof(struct frame)*num_frames);
+ for (int i = 0; i < num_frames; i++) {
+ frame_table[i]->resident_page = NULL;
+ frame_table[i]->frame_base = NULL;
+ lock_init(&frame_table[i]->frame_lock);
+ }
+ */
 
 
 

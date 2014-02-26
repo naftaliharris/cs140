@@ -34,25 +34,28 @@ struct frame {
  NOTE: num_frames is the number of frames in the array.
  --------------------------------------------------------------------
  */
-static struct frame* frame_table;
-static int num_frames;
-static lock frame_table_lock;
+static struct list list_of_frames;
+static lock frame_list_lock;
 
 
 
 /*
  --------------------------------------------------------------------
  DESCRIPTION: initializes the frame table.
- NOTE: max_frames is the maximum number of frames
-    of physical memory.
  --------------------------------------------------------------------
  */
-void init_frame_table(int max_frames);
+void init_frame_table();
 
 /*
  --------------------------------------------------------------------
  DESCRIPTION: this function allocates a new page of memory to the 
     user. 
+ NOTE: In this allocate frame function, we do the following:
+    1. Create an spte
+    2. select a frame for the page to reside in by calling palloc
+    3. if palloc returns null, we evict a page from a frame. This will
+    involve removing the mapping for that page
+    4. Wire up the new address transaltion for the new page.
  NOTE: if there are no free pages to allocate, we have to evict one.
  NOTE: we call pallac to get a physica frame. If none exist, we
     evict a page. 

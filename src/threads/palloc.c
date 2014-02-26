@@ -61,11 +61,9 @@ palloc_init (size_t user_page_limit)
   init_pool (&user_pool, free_start + kernel_pages * PGSIZE,
              user_pages, "user pool");
   
-  if(!frame_handler_init(user_pages, user_pool.base))
-  {
-    // failed to allocate frame table; kernel panic
-    PANIC("Failed to initialize Frame Handler");
-  }
+    //LP PROJECT 3 ADDITION
+    init_frame_table();
+    //END LP project 3 addition
 }
 
 /* Obtains and returns a group of PAGE_CNT contiguous free pages.
