@@ -54,8 +54,8 @@ void free_spte(struct spte* spte) {
  */
 void load_page_into_physical_memory(struct spte* spte) {
     ASSERT(spte != NULL);
-    switch (spte->type) {
-        case STACK_PAGE:
+    switch (spte->location) {
+        case SWAP_PAGE:
             load_stack_page(spte);
             break;
         case FILE_PAGE:
@@ -78,8 +78,8 @@ void load_page_into_physical_memory(struct spte* spte) {
  */
 void evict_page_from_physical_memory(struct spte* spte) {
     ASSERT(spte != NULL);
-    switch (spte->type) {
-        case STACK_PAGE:
+    switch (spte->location) {
+        case SWAP_PAGE:
             evict_stack_page(spte);
             break;
         case FILE_PAGE:
