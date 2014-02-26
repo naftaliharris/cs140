@@ -12,6 +12,47 @@
 #include "threads/thread.h"
 #include "vm/page.h"
 
+
+/*
+ --------------------------------------------------------------------
+ IMPLIMENTATION NOTES:
+ --------------------------------------------------------------------
+ */
+void init_frame_table(int num_frames) {
+    num_frames = max_frames;
+    frame_table = malloc(sizeof(struct frame)*num_frames);
+    for (int i = 0; i < num_frames; i++) {
+        frame_table[i]->resident_page = NULL;
+        frame_table[i]->frame_base = NULL;
+        lock_init(&frame_table[i]->frame_lock);
+    }
+    lock_init(&frame_table_lock);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//-----------------------BELOW IS CONNOR'S CODE---------------------//
+
 static struct frame* frame_table;
 static size_t total_frames;
 static void* first_frame;
