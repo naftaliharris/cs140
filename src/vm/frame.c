@@ -19,6 +19,8 @@ static void* first_frame;
 struct lock frame_evict_lock;
 static uint32_t clock_hand = 0;
 
+static void advance_clock_hand(void);
+
 
 /*
  --------------------------------------------------------------------
@@ -32,10 +34,10 @@ void init_frame_table(size_t num_frames, uint8_t* frame_base) {
     frame_table = malloc(sizeof(struct frame) * num_frames);
     if(frame_table == NULL)
     {
-        return false;
+        PANIC("could not allocate frame table");
     }
     struct frame basic_frame;
-    basic_frame.spte = NULL;
+    basic_frame.resident_page = NULL;
     basic_frame.physical_mem_frame_base = NULL;
     uint32_t i;
     for(i = 0; i < num_frames; i++)
@@ -52,7 +54,7 @@ void init_frame_table(size_t num_frames, uint8_t* frame_base) {
  NOTE: the frame_evict_lock must be held by the current thread.
  --------------------------------------------------------------------
  */
-void advance_clock_hand() {
+static void advance_clock_hand() {
     ASSERT(lock_held_by_current_thread(&frame_evict_lock));
     clock_hand++;
     if (clock_hand >= total_frames) {
@@ -79,20 +81,19 @@ static struct frame* evict_frame(void) {
         bool aquired = lock_try_acquire(&frame->frame_lock);
         if (aquired) {
             lock_release(&frame_evict_lock);
-            uint32_t* pagedir = frame->spte->owner_thread->pagedir;
-            bool accessed = pagedir_is_accessed(pagedir, frame->physical_memory_addr);
-            bool pinned = frame->spte->is_pinned;
-            if (accessed || pinned) {
-                pagedir_set_accessed(pagedir, frame->physical_memory_addr, false);
+            uint32_t* pagedir = frame->resident_page->owner_thread->pagedir;
+            bool accessed = pagedir_is_accessed(pagedir, frame->physical_mem_frame_base);
+            if (accessed) {
+                pagedir_set_accessed(pagedir, frame->physical_mem_frame_base, false);
                 lock_release(&frame->frame_lock);
             } else {
                 break;
             }
-            lock_aquire(&frame_evict_lock);
+            lock_acquire(&frame_evict_lock);
         }
         advance_clock_hand();
     }
-    evict_page_from_physical_memory(frame->spte, frame->physical_memory_addr);
+    evict_page_from_physical_memory(frame->resident_page);
     return frame;
 }
 
@@ -105,8 +106,8 @@ static struct frame* evict_frame(void) {
  */
 static inline uint32_t get_frame_index(void* physical_memory_addr) {
     ASSERT (first_frame != NULL);
-    ASSERT ((uint32_t)first_frame <= (uint32_t)kaddr);
-    uint32_t index = ((uint32_t)kaddr - (uint32_t)first_frame) >> 12;
+    ASSERT ((uint32_t)first_frame <= (uint32_t)physical_memory_addr);
+    uint32_t index = ((uint32_t)physical_memory_addr - (uint32_t)first_frame) >> 12;
     ASSERT (index < total_frames);
     return index;
 }
@@ -119,24 +120,26 @@ static inline uint32_t get_frame_index(void* physical_memory_addr) {
  --------------------------------------------------------------------
  */
 bool frame_handler_palloc(bool zeros, struct spte* spte, bool should_pin) {
-    lock_aquire(&frame_evict_lock);
+    lock_acquire(&frame_evict_lock);
     void* physical_memory_addr = palloc_get_page (PAL_USER | (zeros ? PAL_ZERO : 0));
     
     struct frame* frame;
     if (physical_memory_addr != NULL) {
         frame = frame_table + get_frame_index(physical_memory_addr);
-        lock_aquire(&frame->frame_lock);
+        lock_acquire(&frame->frame_lock);
         lock_release(&frame_evict_lock);
         ASSERT(frame->resident_page == NULL)
     } else {
         frame = evict_frame();
     }
     
-    if (zeros) memset(frame->physical_memory_addr, 0, PGSIZE);
-    bool success = load_page_into_physical_memory(spte, physical_memory_addr);
+    if (zeros) memset(frame->physical_mem_frame_base, 0, PGSIZE);
+    spte->frame = frame;
+    bool success = load_page_into_physical_memory(spte);
     
     if (!success) {
         barrier();
+        spte->frame = NULL;
         palloc_free_page(physical_memory_addr);
     } else {
         frame->resident_page = spte;

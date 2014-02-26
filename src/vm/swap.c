@@ -6,6 +6,8 @@
 #include "threads/malloc.h"
 #include "vm/swap.h"
 
+static void free_slot (uint32_t slot);
+
 void
 init_swap_table (void)
 {
@@ -57,11 +59,11 @@ write_to_swap (void *kaddr)
 }
 
 /* Frees the particular slot */
-void free_slot (uint32_t slot)
+static void free_slot (uint32_t slot)
 {
     lock_acquire(&swap_lock);
     swap_top++;
-    ASSERT(swap_top < swap_slots);
+    ASSERT(swap_top < (int)swap_slots);
     swap_table[swap_top] = slot;
     lock_release(&swap_lock);
 }

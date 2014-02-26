@@ -3,6 +3,10 @@
 
 #include <list.h>
 #include "threads/thread.h"
+#include <hash.h>
+#include "filesys/off_t.h"
+#include "frame.h"
+
 
 
 //TO DO:
@@ -11,9 +15,9 @@
 
 /* The different types of pages */
 typedef enum {
-    SWAP_PAGE;
-    FILE_PAGE;
-    MMAPED_PAGE;
+    SWAP_PAGE,
+    FILE_PAGE,
+    MMAPED_PAGE,
 } page_location;
 
 
@@ -87,7 +91,7 @@ void free_spte(struct spte* spte);
     functions in page.c
  --------------------------------------------------------------------
  */
-bool load_page_into_physical_memory(struct spte* spte, void* physical_mem_address);
+bool load_page_into_physical_memory(struct spte* spte);
 
 /*
  --------------------------------------------------------------------
@@ -99,7 +103,7 @@ bool load_page_into_physical_memory(struct spte* spte, void* physical_mem_addres
     Thus, we use a switch statement, just as in load page. 
  --------------------------------------------------------------------
  */
-bool evict_page_from_physical_memory(struct spte* spte, void* physical_mem_address);
+bool evict_page_from_physical_memory(struct spte* spte);
 
 /*
  --------------------------------------------------------------------
@@ -148,7 +152,7 @@ void free_spte_table(struct hash* thread_hash_table);
     if memory allocation fails.
  --------------------------------------------------------------------
  */
-static bool install_page (void *upage, void *kpage, bool writable);
+bool install_page (void *upage, void *kpage, bool writable);
 
 /*
  --------------------------------------------------------------------
@@ -157,7 +161,7 @@ static bool install_page (void *upage, void *kpage, bool writable);
     upage to kpage.
  --------------------------------------------------------------------
  */
-static void clear_page(void* upage, struct thread* t);
+void clear_page(void* upage, struct thread* t);
 
 /*
  --------------------------------------------------------------------

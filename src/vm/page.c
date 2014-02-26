@@ -1,14 +1,23 @@
 #include <stdbool.h>
 #include "threads/thread.h"
 #include "threads/malloc.h"  
+#include "threads/palloc.h"
 #include "userprog/pagedir.h"
 #include "vm/page.h"
 #include "vm/swap.h"
+#include <stdio.h>
+#include <stddef.h>
+#include "filesys/file.h"
+#include <string.h>
 
 
-static void load_swap_page(struct spte* spte, void* frame_base);
-static void load_file_page(struct spte* spte, void* frame_base);
-static void evict_stack_page(struct spte* spte, void* physcial_mem_address)
+static void load_swap_page(struct spte* spte);
+static void load_file_page(struct spte* spte);
+static void load_mmaped_page(struct spte* spte);
+static void evict_swap_page(struct spte* spte);
+static void evict_file_page(struct spte* spte);
+static void evict_mmaped_page(struct spte* spte);
+
 
 
 /*
@@ -55,8 +64,8 @@ void free_spte(struct spte* spte) {
  DESCRIPTION: loads a page from swap to physical memory
  --------------------------------------------------------------------
  */
-static void load_swap_page(struct spte* spte, void* frame_base) {
-    read_from_swap(frame_base, spte->swap_index);
+static void load_swap_page(struct spte* spte) {
+    read_from_swap(spte->frame->physical_mem_frame_base, spte->swap_index);
 }
 
 /*
@@ -66,18 +75,27 @@ static void load_swap_page(struct spte* spte, void* frame_base) {
     locks the frame, so we do not need to pin here.
  --------------------------------------------------------------------
  */
-static void load_file_page(struct spte* spte, void* frame_base) {
+static void load_file_page(struct spte* spte) {
     if (spte->zero_bytes == PGSIZE) {
-        memset(frame_base, 0, PGSIZE);
+        memset(spte->frame->physical_mem_frame_base, 0, PGSIZE);
         return;
     }
-    int bytes_read = file_read (spte->file_ptr, frame_base, spte->read_bytes);
+    uint32_t bytes_read = file_read (spte->file_ptr, spte->frame->physical_mem_frame_base, spte->read_bytes);
     if (bytes_read != spte->read_bytes) {
         //HERE WE NEED TO HANDLE THIS ERROR CONDITION!!
     }
     if (spte->read_bytes != PGSIZE) {
-        memset (frame_base + spte->read_bytes, 0, spte->zero_bytes);
+        memset (spte->frame->physical_mem_frame_base + spte->read_bytes, 0, spte->zero_bytes);
     }
+}
+
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: loads a memory mapped page into memory
+ --------------------------------------------------------------------
+ */
+static void load_mmaped_page(struct spte* spte) {
+    return;
 }
 
 /*
@@ -87,22 +105,22 @@ static void load_file_page(struct spte* spte, void* frame_base) {
  NOTE: Need to add the mapping by calling page_dir_set_page
  --------------------------------------------------------------------
  */
-bool load_page_into_physical_memory(struct spte* spte, void* physcial_mem_address) {
+bool load_page_into_physical_memory(struct spte* spte) {
     ASSERT(spte != NULL);
     switch (spte->location) {
         case SWAP_PAGE:
-            load_swap_page(spte, physcial_mem_address);
+            load_swap_page(spte);
             break;
         case FILE_PAGE:
-            load_file_page(spte, physcial_mem_address);
+            load_file_page(spte);
             break;
         case MMAPED_PAGE:
-            load_mmaped_page(spte, physcial_mem_address);
+            load_mmaped_page(spte);
             break;
         default:
             break;
     }
-    return install_page(spte->page_id, physcial_mem_address, spte->is_writeable);
+    return install_page(spte->page_id, spte->frame->physical_mem_frame_base, spte->is_writeable);
 }
 
 /*
@@ -111,7 +129,7 @@ bool load_page_into_physical_memory(struct spte* spte, void* physcial_mem_addres
     frame to a swap slot
  --------------------------------------------------------------------
  */
-static void evict_stack_page(struct spte* spte, void* physcial_mem_address) {
+static void evict_swap_page(struct spte* spte) {
     uint32_t swap_index = write_to_swap(spte->frame->physical_mem_frame_base);
     spte->swap_index = swap_index;
 }
@@ -123,14 +141,22 @@ static void evict_stack_page(struct spte* spte, void* physcial_mem_address) {
  --------------------------------------------------------------------
  */
 static void evict_file_page(struct spte* spte) {
-    uint32_t* pagedir = frame->spte->owner_thread->pagedir;
+    uint32_t* pagedir = spte->owner_thread->pagedir;
     bool dirty = pagedir_is_dirty(pagedir, spte->frame->physical_mem_frame_base);
     if (dirty) {
-        spte->location = 
+        spte->location = SWAP_PAGE;
+        evict_swap_page(spte);
     }
-    //if page is dirty, change the page location to swap, and then
-    //write to swap.
-    //else, we do nothing.
+}
+
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: moves a mmapped page from physical memory to another
+    location
+ --------------------------------------------------------------------
+ */
+static void evict_mmaped_page(struct spte* spte) {
+    
 }
 
 /*
@@ -140,22 +166,23 @@ static void evict_file_page(struct spte* spte) {
     physcial frame by calling page_dir_clear_page
  --------------------------------------------------------------------
  */
-bool evict_page_from_physical_memory(struct spte* spte, void* physcial_mem_address) {
+bool evict_page_from_physical_memory(struct spte* spte) {
     ASSERT(spte != NULL);
     switch (spte->location) {
         case SWAP_PAGE:
-            evict_stack_page(spte, physcial_mem_address);
+            evict_swap_page(spte);
             break;
         case FILE_PAGE:
-            evict_file_page(spte, physcial_mem_address);
+            evict_file_page(spte);
             break;
         case MMAPED_PAGE:
-            evict_mmaped_page(spte, physcial_mem_address);
+            evict_mmaped_page(spte);
             break;
         default:
             break;
     }
     clear_page(spte->page_id, spte->owner_thread);
+    return true;
 }
 
 /*
@@ -166,7 +193,7 @@ bool evict_page_from_physical_memory(struct spte* spte, void* physcial_mem_addre
  --------------------------------------------------------------------
  */
 struct spte* find_spte(void* virtual_address) {
-    void* spte_id = page_round_down(virtual_address);
+    void* spte_id = (void*)pg_round_down(virtual_address);
     struct spte dummy;
     dummy.page_id = spte_id;
     
@@ -186,7 +213,7 @@ struct spte* find_spte(void* virtual_address) {
  */
 static unsigned hash_func(const struct hash_elem* e, void* aux UNUSED) {
     struct spte* spte = hash_entry(e, struct spte, elem);
-    return hash_int(spte->vaddr);
+    return hash_int((uint32_t)spte->page_id);
 }
 
 /*
@@ -196,7 +223,7 @@ static unsigned hash_func(const struct hash_elem* e, void* aux UNUSED) {
     than or equal to b.
  --------------------------------------------------------------------
  */
-static bool less_func(const struct hash_elem *a, const struct hash_elem *b, void *aux) {
+static bool less_func(const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED) {
     struct spte* A_spte = hash_entry(a, struct spte, elem);
     struct spte* B_spte = hash_entry(b, struct spte, elem);
     if ((uint32_t)A_spte->page_id < (uint32_t)B_spte->page_id) return true;
@@ -248,7 +275,7 @@ void free_spte_table(struct hash* thread_hash_table) {
     page at that virtual address, then map our page there. 
  --------------------------------------------------------------------
  */
-static bool install_page(void *upage, void *kpage, bool writable) {
+bool install_page(void *upage, void *kpage, bool writable) {
     struct thread *t = thread_current ();
     
     return (pagedir_get_page (t->pagedir, upage) == NULL
@@ -260,7 +287,7 @@ static bool install_page(void *upage, void *kpage, bool writable) {
  IMPLIMENTATION NOTES:
  --------------------------------------------------------------------
  */
-static void clear_page(void* upage, struct thread* t) {
+void clear_page(void* upage, struct thread* t) {
     ASSERT(thread_current() == t);
     pagedir_clear_page(t->pagedir, upage);
 }
@@ -277,13 +304,14 @@ bool is_valid_stack_access(void* esp, void* user_virtual_address) {
     if ((uint32_t)user_virtual_address < (uint32_t)acceptable_depth) {
         return false;
     }
-    uint32_t stack_bottom_limit = PHYS_BASE - MAX_STACK_SIZE_IN_BYTES;
+    uint32_t stack_bottom_limit = (uint32_t)(PHYS_BASE - MAX_STACK_SIZE_IN_BYTES);
     if ((uint32_t)user_virtual_address < stack_bottom_limit) {
         return false;
     }
-    if ((uint32_t)user_virtual_address > PHYS_BASE) {
+    if ((uint32_t)user_virtual_address > (uint32_t)PHYS_BASE) {
         return false;
     }
+    return true;
 }
 
 /*
@@ -295,7 +323,7 @@ bool is_valid_stack_access(void* esp, void* user_virtual_address) {
  */
 bool grow_stack(void* page_id) {
     struct spte* spte = create_spte_and_add_to_table(SWAP_PAGE, page_id, true, true, NULL, 0, 0, 0);
-    bool outcome = frame_handler_palloc(true, spte);
+    bool outcome = frame_handler_palloc(true, spte, false);
     return outcome;
 }
 

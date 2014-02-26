@@ -4,6 +4,8 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "vm/frame.h"
+#include "threads/vaddr.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -179,11 +181,11 @@ page_fault (struct intr_frame *f)
     if (user) {
         struct spte* spte = find_spte(fault_addr);
         if (spte != NULL) {
-            bool unused = frame_handler_palloc(false, spte);
+            bool unused = frame_handler_palloc(false, spte, false);
             return;
         } else {
             if (is_valid_stack_access(f->esp, fault_addr)) {
-                void* next_stack_page = page_round_down(fault_addr);
+                void* next_stack_page = (void*)pg_round_down(fault_addr);
                 bool unused = grow_stack(next_stack_page);
                 return;
             }

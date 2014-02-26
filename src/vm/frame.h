@@ -22,7 +22,7 @@
  */
 struct frame {
     struct spte* resident_page;
-    struct void* physical_mem_frame_base;
+    void* physical_mem_frame_base;
     struct lock frame_lock;
 };
 
