@@ -62,5 +62,25 @@ bool frame_handler_palloc(bool zeros, struct spte* spte, bool should_pin);
  */
 bool frame_handler_palloc_free(struct spte* spte);
 
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: this function tries to acquire the lock on the given
+    frame. Once the lock is aquired, we check if the resident_page 
+    matches spte, If so, than the stpe is the owner, and has just
+    aquired its own lock. If not, we release the lock and return false.
+ NOTE: CHECK FOR DEADLOCK HERE!!
+ NOTE: if we aquire lock and we are owner, return true, else, release
+    lock and return false.
+ NOTE: in the case where we return false, we simply call 
+    frame_handler_palloc with pin value set to true.
+ SYNCHRONIZATION TO CEHCK FOR: we have to check for the case
+    in which the page trying to acquire the lock on its
+    frame gets evicted while in this call. In that case, the page
+    trying to aquire the lock will no longer be the owner of the frame
+    and so we do not want to pin this page.
+ --------------------------------------------------------------------
+ */
+bool aquire_frame_lock(struct frame* frame, struct spte* page_trying_to_pin);
+
 
 #endif /* __VM_FRAME_H */

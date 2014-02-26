@@ -174,4 +174,18 @@ bool frame_handler_palloc_free(struct spte* spte) {
     return true;
 }
 
+/*
+ --------------------------------------------------------------------
+ IMPLIMENTATION NOTES:
+ --------------------------------------------------------------------
+ */
+bool aquire_frame_lock(struct frame* frame, struct spte* page_trying_to_pin) {
+    lock_acquire(&frame->frame_lock);
+    if (frame->resident_page == page_trying_to_pin) {
+        return true;
+    }
+    lock_release(&frame->frame_lock);
+    return false;
+}
+
 

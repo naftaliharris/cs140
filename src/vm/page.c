@@ -330,7 +330,14 @@ bool grow_stack(void* page_id) {
 /*
  --------------------------------------------------------------------
  IMPLIMENTATION NOTES:
- TO DO: We need to handle the case where the page is currently in memory
+ NOTE: if the page is not curently in memory, this case is easy, as 
+    we simply call frame_handler_palloc(false, spte, true), as the
+    last true field will pin frame. 
+ NOTE: if the page is in memory, synchronization becomes an issue.
+    In this case we have to repeatedly try to acquire the 
+    lock for the page if it is in physical memory. If we find that
+    it isn't at any time during this process, we revert to the above
+    easy case.
  --------------------------------------------------------------------
  */
 void pin_page(void* virtual_address) {
@@ -338,7 +345,16 @@ void pin_page(void* virtual_address) {
     if (spte->is_loaded != true) {
         frame_handler_palloc(false, spte, true);
     } else {
-        //HERE WE NEED TO LOCK THE FRAME WE ARE CURRENTLY IN
+        while (true) {
+            bool success = aquire_frame_lock(spte->frame, spte);
+            if (success) {
+                break;
+            } else if (spte->is_loaded != true) {
+                frame_handler_palloc(false, spte, true);
+                break;
+            }
+        }
+        
     }
 }
 
