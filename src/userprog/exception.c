@@ -175,6 +175,7 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
+  //LP Project 3 code
     if (user) {
         struct spte* spte = find_spte(fault_addr);
         if (spte != NULL) {
@@ -183,10 +184,12 @@ page_fault (struct intr_frame *f)
         } else {
             if (is_valid_stack_access(f->esp, fault_addr)) {
                 void* next_stack_page = page_round_down(fault_addr);
-                
+                bool unused = grow_stack(next_stack_page);
+                return;
             }
         }
     }
+  //END LP Poject 3 code
     
     
   printf ("Page fault at %p: %s error %s page in %s context.\n",
