@@ -45,7 +45,7 @@ static lock frame_list_lock;
  DESCRIPTION: initializes the frame table.
  --------------------------------------------------------------------
  */
-void init_frame_table();
+void init_frame_table(size_t num_frames, uint8_t* frame_base);
 
 /*
  --------------------------------------------------------------------
@@ -63,14 +63,24 @@ void init_frame_table();
  */
 void* allocate_user_page(bool zeros, struct spte* spte);
 
-/*
- DESCRIPTION: this function loads a page of memory into a frame. 
- NOTE: this is different than allocate, as the page allready exists.
-    all we need to do is the following:
-    1. call allocate frame to get a region of physical memory
-    2. Then, copy the page from its current location to
-    to the region of physical memory we just aquired. 
- */
-void load_page_into_frame();
+
+
+
+//====================================
+struct frame {
+    struct thread* owner_thread; // if NULL, no page mapped
+    void* vaddr; // user virtual address, for use when referencing page table, and perhaps for when converting between kaddr/uaddr
+    void* kaddr;
+    struct lock lock;
+};
+
+bool frame_handler_init(size_t num_frames, uint8_t* frame_base);
+
+typedef bool create_page_func (void* kaddr, void* aux);
+bool frame_handler_create_user_page(void* virtaddr, bool writeable, bool zeroed, create_page_func* func, void* aux);
+
+bool frame_handler_free_page(void* kaddr, void* uaddr, struct thread* owner);
+
+
 
 #endif /* __VM_FRAME_H */
