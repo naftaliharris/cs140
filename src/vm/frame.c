@@ -17,7 +17,7 @@ static struct frame* frame_table;
 static size_t total_frames;
 static void* first_frame;
 struct lock frame_evict_lock;
-static uint32_t frame_table_iterator = 0;
+static uint32_t clock_hand = 0;
 
 
 /*
@@ -49,14 +49,22 @@ void init_frame_table(size_t num_frames, uint8_t* frame_base) {
 /*
  --------------------------------------------------------------------
  DESCRIPTION: evict frame. This is a private function of the frame 
-    file. In this function, we check the list of frames, and when
+    file. In this function, we check the table of frames, and when
     we find one suitable for eviction, we write the contents of the
-    frame to associated memory location, and then remove the frame
-    from the list, and then return the frame.
+    frame to associated memory location, and then return the frame.
  --------------------------------------------------------------------
  */
-static struct frame* evict_frame() {
-    
+static struct frame* evict_frame(void) {
+    ASSERT(lock_held_by_current_thread(&frame_evict_lock));
+    struct frame* frame;
+    while (true) {
+        frame = &(frame_table[clock_hand]);
+        bool aquired = lock_try_acquire(&frame->frame_lock);
+        if (aquired) {
+            lock_release(&frame_evict_lock);
+            uint32_t* pagedir = frame->spte->owner_thread->pagedir;
+        }
+    }
 }
 
 /*
