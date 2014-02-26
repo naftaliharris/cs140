@@ -5,19 +5,6 @@
 #include "threads/thread.h"
 
 
-//TO DO
-//1. SWITCH TO A HASHMAP
-//2. ADD AN SPTE_TABLE INIT METHOD TO THE THREAD.C FILE
-//3. RELEASE ALL SPTE STRUCTS WHEN THREAD EXITS
-
-/* Possible locations of pages */
-typedef enum
-{
-    LOC_MEMORY,
-    LOC_SWAPPED,
-    LOC_DISK
-} page_loc;
-
 /* The different types of pages */
 typedef enum {
     STACK_PAGE;
@@ -30,38 +17,46 @@ typedef enum {
  --------------------------------------------------------------------
  DESCRIPTION: tracks the additional info we need to keep tabs on 
     for a page.
- NOTE: this is a per-process data structure. 
- NOTE: paddr is a versatile field. It is used to track the physical 
-    location of the page, wherever it may be. This field may be
-    an offset into a file on disk, a frame in physical memory, or
-    an index into the swap partition. 
- NOTE: vaddr is the identifier for this spte. It is our method of 
-    associating pages with supplemental page entries. Our method of
-    identification is to use the base page number, (ie the rounded
-    down virtual address.)
- TO DO: Chnage to hashmap, not a list
+ NOTE: type indicates the type of page
+ NOTE: page_id is how we identify pages. It is the equivalent of 
+    calling round down on a virtual address.
+ NOTE: the pinned filed is used for page eviction. If a page
+    is pinned, it cannot be evicted. 
  --------------------------------------------------------------------
  */
 struct spte
 {
     struct hash_elem elem; /* For the per-process list                   */
-    uint32_t paddr;          /* The frame address or swap slot             */
-    uint32_t vaddr;
-    page_loc loc;            /* Whether the frame is swapped or on disk    */
-    page_type type;        
-    struct file* file_ptr;   /* Allows us to locate the file on disk for a */
-                             /* page that resides in a file */
+    page_type type;
+    void* page_id;
+    
+    bool is_writeable;   /*true if the page can be written to */
+    bool is_loaded;      /*true if the page is currently loaded in memory */
+    bool pinned;         /*pinning for page eviction */
+           
+    struct file* file_ptr;
+    off_t offset_in_file;
+    uint32_t read_bytes;
+    uint32_t zero_bytes;
+    
+    uint32_t swap_index; /* index into the swap sector */
+    
+    
 };
 
 //--------------------LP ADDED FUNCTIONS------------------------//
 /*
  --------------------------------------------------------------------
  DESCRIPTION: This function creates a new spte struct, populates
-    the fields with the supplied data, and then returns the struct.
- NOTE: Need to add the spte to thread specific data structure. 
+    the fields with the supplied data, and then adds the created
+    spte to the supplemental page table.
  --------------------------------------------------------------------
  */
-struct spte* create_spte(uint32_t paddr, uint32_t vadd, page_loc loc, page_type type, struct file* file);
+void create_spte_and_add_to_table(page_type type, void* page_id, bool is_writeable, bool is_loaded, bool pinned, struct file* file_ptr, off_t offset, uint32_t read_bytes, uint32_t zero_bytes);
+
+
+
+
 
 /*
  --------------------------------------------------------------------
