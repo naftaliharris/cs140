@@ -13,24 +13,27 @@
  IMPLIMENTATION NOTES:
  --------------------------------------------------------------------
  */
-struct spte* create_spte(uint32_t paddr, uint32_t vaddr, page_loc loc, page_type type, struct file* file_ptr) {
-    struct spte* new_spte = malloc(sizeof(struct spte));
-    if (new_spte == NULL) {
-        PANIC("Malloc returned null in create_spte");
+void create_spte_and_add_to_table(page_type type, void* page_id, bool is_writeable, bool is_loaded, bool pinned, struct file* file_ptr, off_t offset, uint32_t read_bytes, uint32_t zero_bytes) {
+    struct spte* spte = malloc(sizeof(struct spte));
+    if (spte == NULL) {
+        PANIC("Could not allocate spte");
     }
-    new_spte->paddr = paddr;
-    new_spte->vaddr = vaddr;
-    new_spte->loc = loc;
-    new_spte->type = type;
-    new_spte->file_ptr = file_ptr;
-    struct hash* table = &thread_current()->spte_table;
-    struct hash_elem* outcome = hash_insert(table, new_spte);
-    if (outcome != NULL) {
-        PANIC("An SPTE allready exists");
+    spte->type = type;
+    spte->page_id = page_id;
+    spte->is_writeable = is_writeable;
+    spte->is_loaded = is_loaded;
+    spte->is_pinned = pinned;
+    spte->file_ptr = file_ptr;
+    spte->offset_in_file = offset;
+    spte->read_bytes = read_bytes;
+    spte->zero_bytes = zero_bytes;
+    spte->swap_index = 0; //IS THIS CORRECT???
+    struct hash* target_table = &thread_current()->spte_table;
+    bool outcome = hash_insert(target_table, &spte->elem);
+    if (outcome == false) {
+        PANIC("Trying to add two spte's for the same page");
     }
-    return new_spte;
 }
-
 
 /*
  --------------------------------------------------------------------
@@ -50,7 +53,6 @@ void free_spte(struct spte* spte) {
  --------------------------------------------------------------------
  */
 void load_page_into_physical_memory(struct spte* spte) {
-    //get frame
     ASSERT(spte != NULL);
     switch (spte->type) {
         case STACK_PAGE:
@@ -64,8 +66,6 @@ void load_page_into_physical_memory(struct spte* spte) {
             break;
         default:
             break;
-        //rewire the page table entry so that the virtual address
-            //points to the new frame
     }
 }
 
@@ -102,9 +102,9 @@ void evict_page_from_physical_memory(struct spte* spte) {
  --------------------------------------------------------------------
  */
 struct spte* find_spte(void* virtual_address) {
-    uint32_t spte_id = page_round_down(virtual_address);
+    void* spte_id = page_round_down(virtual_address);
     struct spte dummy;
-    dummy.vaddr = spte_id;
+    dummy.page_id = spte_id;
     
     struct hash* table = &thread_current()->spte_table;
     struct hash_elem* match = hash_find(table, &dummy.elem);
@@ -135,7 +135,7 @@ static unsigned hash_func(const struct hash_elem* e, void* aux UNUSED) {
 static bool less_func(const struct hash_elem *a, const struct hash_elem *b, void *aux) {
     struct spte* A_spte = hash_entry(a, struct spte, elem);
     struct spte* B_spte = hash_entry(b, struct spte, elem);
-    if (A_spte->vaddr < B_spte->vaddr) return true;
+    if ((uint32_t)A_spte->page_id < (uint32_t)B_spte->page_id) return true;
     return false;
 }
 
@@ -144,14 +144,14 @@ static bool less_func(const struct hash_elem *a, const struct hash_elem *b, void
  DESCRIPTION: frees all resources associated with a given spte
     entry. 
  NOTE: need to check if the page is currently in a frame. If it is
-    we might have to free that frame here!!
+    we have to free those frame resources.
  --------------------------------------------------------------------
  */
 static void free_hash_entry(struct hash_elem* e, void* aux UNUSED) {
     struct spte* spte = hash_entry(e, struct spte, elem);
-    
-    //check if the spte page is in phyical memory. If so, handle
-        // the frame disposal here
+    if (spte->is_loaded) {
+        //here we free any resources for the frame
+    }
     free_spte(spte);
     
 }
@@ -176,149 +176,3 @@ void init_spte_table(struct hash* thread_hash_table) {
 void free_spte_table(struct hash* thread_hash_table) {
     hash_destroy(thread_hash_table, free_hash_entry);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//-------------------previous functions--------------------------//
-
-
-
-
-
-
-
-
-
-
-bool
-map_page (struct thread *t, void *upage, void *kpage, bool writable)
-{
-    // TODO: make sure that upage is page aligned
-
-    /* Verify that there's not already a page at that virtual
-     address, then map our page there. */
-    bool success = (pagedir_get_page (t->pagedir, upage) == NULL
-                 && pagedir_set_page (t->pagedir, upage, kpage, writable));
-
-    if (success)
-    {
-        struct spte *entry = malloc(sizeof(struct spte));  /* XXX: Is this kosher? */
-        if (entry == NULL)
-            return false;
-        entry->paddr = (uint32_t)kpage;
-        entry->vaddr = (uint32_t)upage;
-        entry->loc = LOC_MEMORY;
-        list_push_back (&t->spt, &entry->elem);
-    }
-    return success;
-}
-
-/* Currently just swaps the page out to the swap partition. */
-void evict_page (struct thread *t, void *page)
-{
-    struct spte *entry = find_spte(t, page);
-    ASSERT (entry != NULL);
-    ASSERT (entry->loc == LOC_MEMORY);
-    pagedir_clear_page(t->pagedir, page);
-
-    /* If the page is writeable, place into swap */
-    if (pagedir_is_writeable(t->pagedir, page))
-    {
-        entry->paddr = write_to_swap(page);
-        entry->loc = LOC_SWAPPED;
-    } else {
-        /* TODO: Figure out where on disk this page resides */
-        entry->paddr = (uint32_t)NULL;
-        entry->loc = LOC_DISK;
-    }
-}
-
-struct spte *
-find_spte (struct thread *t, void *page)
-{
-    struct list_elem *e;
-
-    for (e = list_begin(&t->spt); e != list_end(&t->spt); e = list_next (e))
-    {
-      struct spte *entry = list_entry (e, struct spte, elem);
-      if (entry->paddr == (uint32_t)page)
-          return entry;
-    }
-
-    return NULL;
-}
-
-void
-free_page (struct thread *t, struct spte *entry)
-{
-  while(true)
-  {
-    switch (entry->loc)
-    {
-        case LOC_MEMORY:
-            if(frame_handler_free_page(entry->paddr, entry->vaddr, t))
-              return;
-        case LOC_SWAPPED:
-            free_slot (entry->paddr);
-            return;
-        case LOC_DISK:
-            /* Don't need to do anything */
-            break;
-    }
-  }
-}
-
-void
-free_spt (struct list *spt)
-{
-    struct list_elem *e;
-    for (e = list_begin(spt); e != list_end(spt); e = list_next (e))
-        free_page(thread_current(), list_entry (e, struct spte, elem));
-
-    /* TODO: Free the malloc'd memory */
-}
-
-
-
-
-
-/* Notes from Naftali and Connor's meeting, (to be deleted shortly). */
-
-/* Initialize the SPT in process.c when the user progam's pagedir is initialized.
- *
- * Perhaps write function wrapping pagedir_set_page and pagedir_clear_page that also modify the SPT.
- *
- * Perhaps write nice little evict_page functions and similar that will swap to and from disk.
- *
- * Write these API calls:
- *
- * 1)
- * map_page function does two things: one, calls pagedir_set_page, (which puts into the PT), and
- * two, it adds it to the supplementary page table, (marking it as in memory). Model off of
- * install_page function in process.c. Return just like install_page, (true for success,
- * false for failure).
- *
- * 2)
- * evict_page function: Get's rid of the referred page, putting it swapping it to disk or just
- * removing the page (as necessary). (Does NOT touch the frame table, which will be taken care of
- * by the frame table code that will call this function).
- *
- * 3)
- * remove_page function: For when we free pages. Will interact with pagedir_destroy.
- *
- * Take care of freeing pages, and use frame_handler_free_page. Note that may need to be careful
- * of race condition where try to free and evict page at the same time.
- */

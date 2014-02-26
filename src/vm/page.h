@@ -32,7 +32,7 @@ struct spte
     
     bool is_writeable;   /*true if the page can be written to */
     bool is_loaded;      /*true if the page is currently loaded in memory */
-    bool pinned;         /*pinning for page eviction */
+    bool is_pinned;         /*pinning for page eviction */
            
     struct file* file_ptr;
     off_t offset_in_file;
@@ -53,10 +53,6 @@ struct spte
  --------------------------------------------------------------------
  */
 void create_spte_and_add_to_table(page_type type, void* page_id, bool is_writeable, bool is_loaded, bool pinned, struct file* file_ptr, off_t offset, uint32_t read_bytes, uint32_t zero_bytes);
-
-
-
-
 
 /*
  --------------------------------------------------------------------
@@ -130,25 +126,5 @@ void init_spte_table(struct hash* thread_hash_table);
  */
 void free_spte_table(struct hash* thread_hash_table);
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-//------------------PREVIOUS DECLERATIONS--------------------//
-
-bool map_page (struct thread*, void *, void *, bool);
-void evict_page (struct thread*, void *);
-struct spte *find_spte(struct thread*, void *);
-void free_page (struct thread*, struct spte *);
-void free_spt (struct list *);
 
 #endif /* vm/page.h */
