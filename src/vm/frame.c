@@ -28,7 +28,18 @@ void init_frame_table() {
  IMPLIMENTATION NOTES:
  --------------------------------------------------------------------
  */
-void* allocate_frame()
+void* allocate_user_page(bool zeros, bool writeable, struct spte* spte) {
+    void* physical_memory_addr = palloc_get_page (PAL_USER | (zeros ? PAL_ZERO : 0));
+    if (physical_memory_addr == NULL) {
+        //here we evict a page
+    } else {
+        struct frame* new_frame = malloc(sizeof(struct frame));
+        new_frame->resident_page = spte;
+        new_frame->physical_mem_frame_base = physical_memory_addr;
+        lock_init(&frame_lock);
+    }
+    
+}
 
 
 

@@ -22,7 +22,7 @@
  */
 struct frame {
     struct spte* resident_page;
-    struct void* frame_base;
+    struct void* physical_mem_frame_base;
     struct lock frame_lock;
 };
 
@@ -50,20 +50,27 @@ void init_frame_table();
  --------------------------------------------------------------------
  DESCRIPTION: this function allocates a new page of memory to the 
     user. 
- NOTE: In this allocate frame function, we do the following:
-    1. Create an spte
-    2. select a frame for the page to reside in by calling palloc
-    3. if palloc returns null, we evict a page from a frame. This will
-    involve removing the mapping for that page
-    4. Wire up the new address transaltion for the new page.
- NOTE: if there are no free pages to allocate, we have to evict one.
- NOTE: we call pallac to get a physica frame. If none exist, we
-    evict a page. 
- NOTE: physcial memory frames are given back to the system when
-    palloc_free is called. 
+ NOTE: simply a wrapper around palloc. Calls palloc to get a 
+    page of memory. If palloc returns null, we evict a page by 
+    consulting our frame_table. 
+ NOTE: the spte is created before the call to this function. 
+    The spte contains all of the information about the page.
+ NOTE: this function does not modify the data in the page. It 
+    simply returns the base address of a physical page of 
+    memory. 
  --------------------------------------------------------------------
  */
-void* allocate_frame(FLAGS, PARAMS)
+void* allocate_user_page(bool zeros, bool writeable, struct spte* spte);
+
+/*
+ DESCRIPTION: this function loads a page of memory into a frame. 
+ NOTE: this is different than allocate, as the page allready exists.
+    all we need to do is the following:
+    1. call allocate frame to get a region of physical memory
+    2. Then, copy the page from its current location to
+    to the region of physical memory we just aquired. 
+ */
+void load_page_into_frame();
 
 
 
