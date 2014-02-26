@@ -204,13 +204,25 @@ static void clear_page(void* upage, struct thread* t) {
     pagedir_clear_page(t->pagedir, upage);
 }
 
+#define PUSHA_BYTE_DEPTH 32
+#define MAX_STACK_SIZE_IN_BYTES 8392000
 /*
  --------------------------------------------------------------------
  IMPLIMENTATION NOTES:
  --------------------------------------------------------------------
  */
 bool is_valid_stack_access(void* esp, void* user_virtual_address) {
-    
+    void* acceptable_depth = (void*)((char*)esp - PUSHA_BYTE_DEPTH);
+    if ((uint32_t)user_virtual_address < (uint32_t)acceptable_depth) {
+        return false;
+    }
+    uint32_t stack_bottom_limit = PHYS_BASE - MAX_STACK_SIZE_IN_BYTES;
+    if ((uint32_t)user_virtual_address < stack_bottom_limit) {
+        return false;
+    }
+    if ((uint32_t)user_virtual_address > PHYS_BASE) {
+        return false;
+    }
 }
 
 /*
@@ -224,6 +236,15 @@ bool grow_stack(void* page_id) {
     struct spte* spte = create_spte_and_add_to_table(SWAP_PAGE, page_id, true, true, false, NULL, 0, 0, 0);
     bool outcome = frame_handler_palloc(true, spte);
     return outcome;
+}
+
+/*
+ --------------------------------------------------------------------
+ IMPLIMENTATION NOTES:
+ --------------------------------------------------------------------
+ */
+bool is_all_zeros(struct* spte) {
+    UNUSED;
 }
 
 

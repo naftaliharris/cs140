@@ -179,5 +179,13 @@ bool is_valid_stack_access(void* esp, void* user_virtual_address);
  */
 bool grow_stack(void* page_id);
 
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: determines if the page is all zeros, or if it is not
+    True if all zeros, false if not
+ --------------------------------------------------------------------
+ */
+bool is_all_zeros(struct* spte);
+
 
 #endif /* vm/page.h */
