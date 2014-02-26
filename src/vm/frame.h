@@ -27,18 +27,6 @@ struct frame {
     struct list_elem elem;
 };
 
-/*
- --------------------------------------------------------------------
- DESCRIPTION: the frame table. An array of frame structs. Because the
-    size of physical memory is variable, we cannot declare the array
-    statically, has to be dynamically created. 
- NOTE: num_frames is the number of frames in the array.
- --------------------------------------------------------------------
- */
-static struct list list_of_frames;
-static lock frame_list_lock;
-
-
 
 /*
  --------------------------------------------------------------------
@@ -61,26 +49,7 @@ void init_frame_table(size_t num_frames, uint8_t* frame_base);
     memory. 
  --------------------------------------------------------------------
  */
-void* allocate_user_page(bool zeros, struct spte* spte);
-
-
-
-
-//====================================
-struct frame {
-    struct thread* owner_thread; // if NULL, no page mapped
-    void* vaddr; // user virtual address, for use when referencing page table, and perhaps for when converting between kaddr/uaddr
-    void* kaddr;
-    struct lock lock;
-};
-
-bool frame_handler_init(size_t num_frames, uint8_t* frame_base);
-
-typedef bool create_page_func (void* kaddr, void* aux);
-bool frame_handler_create_user_page(void* virtaddr, bool writeable, bool zeroed, create_page_func* func, void* aux);
-
-bool frame_handler_free_page(void* kaddr, void* uaddr, struct thread* owner);
-
+void* frame_handler_palloc(bool zeros, struct spte* spte);
 
 
 #endif /* __VM_FRAME_H */

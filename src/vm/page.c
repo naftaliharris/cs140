@@ -19,6 +19,7 @@ void create_spte_and_add_to_table(page_location location, void* page_id, bool is
         PANIC("Could not allocate spte");
     }
     spte->location = location;
+    spte->owner_thread = thread_current();
     spte->page_id = page_id;
     spte->is_writeable = is_writeable;
     spte->is_loaded = is_loaded;
@@ -52,17 +53,17 @@ void free_spte(struct spte* spte) {
  NOTE: Need to add the mapping by calling page_dir_set_page
  --------------------------------------------------------------------
  */
-void load_page_into_physical_memory(struct spte* spte) {
+bool load_page_into_physical_memory(struct spte* spte, void* physcial_mem_address) {
     ASSERT(spte != NULL);
     switch (spte->location) {
         case SWAP_PAGE:
-            load_stack_page(spte);
+            load_stack_page(spte, void* physcial_mem_address);
             break;
         case FILE_PAGE:
-            load_file_page(spte);
+            load_file_page(spte, void* physcial_mem_address);
             break;
         case MMAPED_PAGE:
-            load_mmaped_page(spte);
+            load_mmaped_page(spte, void* physcial_mem_address);
             break;
         default:
             break;
@@ -76,17 +77,17 @@ void load_page_into_physical_memory(struct spte* spte) {
     physcial frame by calling page_dir_clear_page
  --------------------------------------------------------------------
  */
-void evict_page_from_physical_memory(struct spte* spte) {
+bool evict_page_from_physical_memory(struct spte* spte, void* physcial_mem_address) {
     ASSERT(spte != NULL);
     switch (spte->location) {
         case SWAP_PAGE:
-            evict_stack_page(spte);
+            evict_stack_page(spte, void* physcial_mem_address);
             break;
         case FILE_PAGE:
-            evict_file_page(spte);
+            evict_file_page(spte, void* physcial_mem_address);
             break;
         case MMAPED_PAGE:
-            evict_mmaped_page(spte);
+            evict_mmaped_page(spte, void* physcial_mem_address);
             break;
         default:
             break;

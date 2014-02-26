@@ -62,7 +62,7 @@ palloc_init (size_t user_page_limit)
              user_pages, "user pool");
   
     //LP PROJECT 3 ADDITION
-    init_frame_table();
+    init_frame_table(user_pages, user_pool.base);
     //END LP project 3 addition
 }
 

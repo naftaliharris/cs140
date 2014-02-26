@@ -33,6 +33,7 @@ struct spte
 {
     struct hash_elem elem; /* For the per-process list                   */
     page_location location;
+    struct thread* owner_thread; /* needed to access pd */
     void* page_id;
     
     bool is_writeable;   /*true if the page can be written to */
@@ -86,7 +87,7 @@ void free_spte(struct spte* spte);
     functions in page.c
  --------------------------------------------------------------------
  */
-void load_page_into_physical_memory(struct spte* spte);
+bool load_page_into_physical_memory(struct spte* spte, void* physical_mem_address);
 
 /*
  --------------------------------------------------------------------
@@ -98,7 +99,7 @@ void load_page_into_physical_memory(struct spte* spte);
     Thus, we use a switch statement, just as in load page. 
  --------------------------------------------------------------------
  */
-void evict_page_from_physical_memory(struct spte* spte);
+bool evict_page_from_physical_memory(struct spte* spte, void* physical_mem_address);
 
 /*
  --------------------------------------------------------------------
