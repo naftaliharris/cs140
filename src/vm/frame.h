@@ -60,7 +60,7 @@ bool frame_handler_palloc(bool zeros, struct spte* spte, bool should_pin);
     frame cleanup...
  --------------------------------------------------------------------
  */
-bool frame_handler_palloc_free(void* physical_memory_address, struct spte* spte);
+bool frame_handler_palloc_free(struct spte* spte);
 
 
 #endif /* __VM_FRAME_H */

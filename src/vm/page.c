@@ -241,7 +241,7 @@ static bool less_func(const struct hash_elem *a, const struct hash_elem *b, void
 static void free_hash_entry(struct hash_elem* e, void* aux UNUSED) {
     struct spte* spte = hash_entry(e, struct spte, elem);
     if (spte->is_loaded) {
-        //here we free any resources for the frame
+        frame_handler_palloc_free(spte);
     }
     free_spte(spte);
     

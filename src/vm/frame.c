@@ -71,10 +71,15 @@ static void advance_clock_hand() {
  NOTE: when checking the access bits, we need to make sure that if
     multiple virtual addresses refer to same frame, that they all
     see the update. Curently do so by only checking the kernel address.
+ NOTE: we have to call advance clock_hand at the beginning to ensure 
+    we move on from the prevous frame we evicted last. This will cause
+    first sweep of eviction to begin at frame index 1, but that is
+    ok, as subsequent frame sweeps will be in proper cycle.
  --------------------------------------------------------------------
  */
 static struct frame* evict_frame(void) {
     ASSERT(lock_held_by_current_thread(&frame_evict_lock));
+    advance_clock_hand();
     struct frame* frame;
     while (true) {
         frame = &(frame_table[clock_hand]);
@@ -154,12 +159,19 @@ bool frame_handler_palloc(bool zeros, struct spte* spte, bool should_pin) {
 /*
  --------------------------------------------------------------------
  IMPLIMENTATION NOTES:
+ NOTE: Not sure why we are returning a boolean here?
  --------------------------------------------------------------------
  */
-bool frame_handler_palloc_free(void* physical_memory_address, struct spte* spte) {
-    struct frame* frame = frame_table + get_frame_index(physical_memory_address);
+bool frame_handler_palloc_free(struct spte* spte) {
+    struct frame* frame = frame_table + get_frame_index(spte->frame->physical_mem_frame_base);
     lock_acquire(&frame->frame_lock);
-    
+    if (frame->resident_page == spte) {
+        //in this case, we are still the owner of the frame, so we can free the page
+        palloc_free_page(frame->physical_mem_frame_base);
+    }
+    //If we are not the current owner, than some other thread swooped in and is using
+    //the page, so we do not want to free it, thus do nothing.
+    return true;
 }
 
 

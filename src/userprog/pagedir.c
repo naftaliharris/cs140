@@ -5,6 +5,8 @@
 #include "threads/init.h"
 #include "threads/pte.h"
 #include "threads/palloc.h"
+#include "vm/page.h"
+#include "threads/thread.h"
 
 static uint32_t *active_pd (void);
 static void invalidate_pagedir (uint32_t *);
@@ -43,6 +45,9 @@ pagedir_destroy (uint32_t *pd)
           free_page (find_spte(*pte));*/
         palloc_free_page (pt);
       }
+    //LP ADDition, project 3, frees all pages we currently
+    //own in physical memory.
+    free_spte_table(&thread_current()->spte_table);
   palloc_free_page (pd);
 }
 
