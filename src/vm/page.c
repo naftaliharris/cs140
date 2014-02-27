@@ -344,7 +344,7 @@ bool is_valid_stack_access(void* esp, void* user_virtual_address) {
     if ((uint32_t)user_virtual_address >= (uint32_t)PHYS_BASE) {
         return false;
     }
-    if ((uint32_t)user_virtual_address > (uint32_t)esp) {
+    if ((uint32_t)user_virtual_address >= (uint32_t)esp) {
         return true;
     }
     void* acceptable_depth_pushA = (void*)((char*)esp - PUSHA_BYTE_DEPTH);

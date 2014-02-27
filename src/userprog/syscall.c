@@ -19,9 +19,9 @@
 static void syscall_handler (struct intr_frame *);
 
 // BEGIN LP DEFINED HELPER FUNCTIONS//
-static void check_usr_ptr(const void* u_ptr);
-static void check_usr_string(const char* str);
-static void check_usr_buffer(const void* buffer, unsigned length);
+static void check_usr_ptr(const void* u_ptr, void* esp);
+static void check_usr_string(const char* str, void* esp);
+static void check_usr_buffer(const void* buffer, unsigned length, void* esp);
 static bool check_file_name_length(const char* filename);
 static uint32_t read_frame(struct intr_frame* f, int byteOffset);
 static int add_to_open_file_list(struct file* fp);
@@ -32,14 +32,14 @@ static struct file_package* get_file_package_from_open_list(int fd);
 // BEGIN LP DEFINED SYSTEM CALL HANDLERS //
 static void LP_halt (void) NO_RETURN;
 static void LP_exit (int status) NO_RETURN;
-static pid_t LP_exec (const char* command_line);
+static pid_t LP_exec (const char* command_line, void* esp);
 static int LP_wait (pid_t pid);
-static bool LP_create (const char *file, unsigned initial_size);
-static bool LP_remove (const char *file);
-static int LP_open (const char *file);
+static bool LP_create (const char *file, unsigned initial_size, void* esp);
+static bool LP_remove (const char *file, void* esp);
+static int LP_open (const char *file, void* esp);
 static int LP_filesize (int fd);
-static int LP_read (int fd, void *buffer, unsigned length);
-static int LP_write (int fd, const void *buffer, unsigned length);
+static int LP_read (int fd, void *buffer, unsigned length, void* esp);
+static int LP_write (int fd, const void *buffer, unsigned length, void* esp);
 static void LP_seek (int fd, unsigned position);
 static unsigned LP_tell (int fd);
 static void LP_close (int fd);
@@ -88,7 +88,7 @@ syscall_handler (struct intr_frame *f )
             break;
         case SYS_EXEC:
             arg1 = read_frame(f, 4);
-            f->eax = (uint32_t)LP_exec((char*)arg1);
+            f->eax = (uint32_t)LP_exec((char*)arg1, f->esp);
             break;
         case SYS_WAIT:
             arg1 = read_frame(f, 4);
@@ -97,15 +97,15 @@ syscall_handler (struct intr_frame *f )
         case SYS_CREATE:
             arg1 = read_frame(f, 4);
             arg2 = read_frame(f, 8);
-            f->eax = (uint32_t)LP_create((const char*)arg1, (unsigned)arg2);
+            f->eax = (uint32_t)LP_create((const char*)arg1, (unsigned)arg2, f->esp);
             break;
         case SYS_REMOVE:
             arg1 = read_frame(f, 4);
-            f->eax = (uint32_t)LP_remove((const char*)arg1);
+            f->eax = (uint32_t)LP_remove((const char*)arg1, f->esp);
             break;
         case SYS_OPEN:
             arg1 = read_frame(f, 4);
-            f->eax = (uint32_t)LP_open((const char*)arg1);
+            f->eax = (uint32_t)LP_open((const char*)arg1, f->esp);
             break;
         case SYS_FILESIZE:
             arg1 = read_frame(f, 4);
@@ -115,13 +115,13 @@ syscall_handler (struct intr_frame *f )
             arg1 = read_frame(f, 4);
             arg2 = read_frame(f, 8);
             arg3 = read_frame(f, 12);
-            f->eax = (int)LP_read((int)arg1, (void*)arg2, (unsigned)arg3);
+            f->eax = (int)LP_read((int)arg1, (void*)arg2, (unsigned)arg3, f->esp);
             break;
         case SYS_WRITE:
             arg1 = read_frame(f, 4);
             arg2 = read_frame(f, 8);
             arg3 = read_frame(f, 12);
-            f->eax = (uint32_t)LP_write((int)arg1, (const void*)arg2, (unsigned)arg3);
+            f->eax = (uint32_t)LP_write((int)arg1, (const void*)arg2, (unsigned)arg3, f->esp);
             break;
         case SYS_SEEK:
             arg1 = read_frame(f, 4);
@@ -201,8 +201,8 @@ static void LP_exit (int status) {
     a successful load, or -1 if the load failed. 
  --------------------------------------------------------------------
  */
-static pid_t LP_exec (const char* command_line) {
-    check_usr_string(command_line);
+static pid_t LP_exec (const char* command_line, void* esp) {
+    check_usr_string(command_line, esp);
     struct thread* curr_thread = thread_current();
     pid_t pid = process_execute(command_line);
     if (pid == TID_ERROR) {
@@ -236,8 +236,8 @@ static int LP_wait (pid_t pid) {
     are the only process accessing the file_system. 
  --------------------------------------------------------------------
  */
-static bool LP_create (const char *file, unsigned initial_size) {
-    check_usr_string(file);
+static bool LP_create (const char *file, unsigned initial_size, void* esp) {
+    check_usr_string(file, esp);
     if (!check_file_name_length(file)) {
         return false;
     }
@@ -258,8 +258,8 @@ static bool LP_create (const char *file, unsigned initial_size) {
     are the only process accessing the file_system.
  --------------------------------------------------------------------
  */
-static bool LP_remove (const char *file) {
-    check_usr_string(file);
+static bool LP_remove (const char *file, void* esp) {
+    check_usr_string(file, esp);
     if (!check_file_name_length(file)) {
         return -1;
     }
@@ -278,8 +278,8 @@ static bool LP_remove (const char *file) {
     file could not be opened.
  --------------------------------------------------------------------
  */
-static int LP_open (const char *file) {
-    check_usr_string(file);
+static int LP_open (const char *file, void* esp) {
+    check_usr_string(file, esp);
     if (!check_file_name_length(file)) {
         return -1;
     }
@@ -320,8 +320,8 @@ static int LP_filesize (int fd) {
     than end of file). Fd 0 reads from the keyboard using input_getc().
  --------------------------------------------------------------------
  */
-static int LP_read (int fd, void *buffer, unsigned length) {
-    check_usr_buffer(buffer, length);
+static int LP_read (int fd, void *buffer, unsigned length, void* esp) {
+    check_usr_buffer(buffer, length, esp);
     pinning_for_system_call(buffer, length, true);
     
     if (fd == STDIN_FILENO) {
@@ -355,8 +355,8 @@ static int LP_read (int fd, void *buffer, unsigned length) {
     than size if some bytes could not be written.
  --------------------------------------------------------------------
  */
-static int LP_write (int fd, const void *buffer, unsigned length) {
-    check_usr_buffer(buffer, length);
+static int LP_write (int fd, const void *buffer, unsigned length, void* esp) {
+    check_usr_buffer(buffer, length, esp);
     pinning_for_system_call(buffer, length, true);
     
     if (fd == STDOUT_FILENO) {
@@ -531,15 +531,15 @@ static bool check_file_name_length(const char* filename) {
  --------------------------------------------------------------------
  */
 #define BYTES_PER_PAGE PGSIZE
-static void check_usr_buffer(const void* buffer, unsigned length) {
-    check_usr_ptr(buffer);
+static void check_usr_buffer(const void* buffer, unsigned length, void* esp) {
+    check_usr_ptr(buffer, esp);
     unsigned curr_offset = BYTES_PER_PAGE;
     while (true) {
         if (curr_offset >= length) break;
-        check_usr_ptr((const void*)((char*)buffer + curr_offset));
+        check_usr_ptr((const void*)((char*)buffer + curr_offset), esp);
         curr_offset += BYTES_PER_PAGE;
     }
-    check_usr_ptr((const void*)((char*)buffer + length));
+    check_usr_ptr((const void*)((char*)buffer + length), esp);
 }
 
 
@@ -560,7 +560,7 @@ static void check_usr_buffer(const void* buffer, unsigned length) {
     to get spte, as the page we are accessing might not be mapped.
  --------------------------------------------------------------------
  */
-static void check_usr_ptr(const void* ptr) {
+static void check_usr_ptr(const void* ptr, void* esp) {
     if (ptr == NULL) {
         LP_exit(-1);
     }
@@ -571,7 +571,12 @@ static void check_usr_ptr(const void* ptr) {
         LP_exit(-1);
     }*/
     if (find_spte(ptr) == NULL) {
-        LP_exit(-1);
+        if (is_valid_stack_access(esp, ptr)) {
+            void* new_stack_page = pg_round_down(ptr);
+            grow_stack(new_stack_page);
+        } else {
+            LP_exit(-1);
+        }
     }
 }
 
@@ -582,10 +587,10 @@ static void check_usr_ptr(const void* ptr) {
     and are properly mapped. 
  --------------------------------------------------------------------
  */
-static void check_usr_string(const char* str) {
+static void check_usr_string(const char* str, void* esp) {
     while (true) {
         const void* ptr = (const void*)str;
-        check_usr_ptr(ptr);
+        check_usr_ptr(ptr, esp);
         if (*str == '\0') break;
         str = (char*)str + 1;
     }
@@ -604,7 +609,7 @@ static void check_usr_string(const char* str) {
  */
 static uint32_t read_frame(struct intr_frame* f, int byteOffset) {
     void* addr = f->esp + byteOffset;
-    check_usr_ptr(addr);
+    check_usr_ptr(addr, f->esp);
     return *(uint32_t*)addr;
 }
 
