@@ -87,9 +87,9 @@ static struct frame* evict_frame(void) {
         if (aquired) {
             lock_release(&frame_evict_lock);
             uint32_t* pagedir = frame->resident_page->owner_thread->pagedir;
-            bool accessed = pagedir_is_accessed(pagedir, frame->physical_mem_frame_base);
+            bool accessed = pagedir_is_accessed(pagedir, frame->resident_page->page_id);
             if (accessed) {
-                pagedir_set_accessed(pagedir, frame->physical_mem_frame_base, false);
+                pagedir_set_accessed(pagedir, frame->resident_page->page_id, false);
                 lock_release(&frame->frame_lock);
             } else {
                 break;
