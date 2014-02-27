@@ -105,20 +105,22 @@ static void load_mmaped_page(struct spte* spte) {
  NOTE: Need to add the mapping by calling page_dir_set_page
  --------------------------------------------------------------------
  */
-bool load_page_into_physical_memory(struct spte* spte) {
+bool load_page_into_physical_memory(struct spte* spte, bool is_fresh_stack_page) {
     ASSERT(spte != NULL);
-    switch (spte->location) {
-        case SWAP_PAGE:
-            load_swap_page(spte);
-            break;
-        case FILE_PAGE:
-            load_file_page(spte);
-            break;
-        case MMAPED_PAGE:
-            load_mmaped_page(spte);
-            break;
-        default:
-            break;
+    if (is_fresh_stack_page == false) {
+        switch (spte->location) {
+            case SWAP_PAGE:
+                load_swap_page(spte);
+                break;
+            case FILE_PAGE:
+                load_file_page(spte);
+                break;
+            case MMAPED_PAGE:
+                load_mmaped_page(spte);
+                break;
+            default:
+                break;
+        }
     }
     return install_page(spte->page_id, spte->frame->physical_mem_frame_base, spte->is_writeable);
 }
@@ -328,7 +330,7 @@ bool is_valid_stack_access(void* esp, void* user_virtual_address) {
  */
 bool grow_stack(void* page_id) {
     struct spte* spte = create_spte_and_add_to_table(SWAP_PAGE, page_id, true, true, NULL, 0, 0, 0);
-    bool outcome = frame_handler_palloc(true, spte, false);
+    bool outcome = frame_handler_palloc(true, spte, false, true);
     return outcome;
 }
 
@@ -348,14 +350,14 @@ bool grow_stack(void* page_id) {
 void pin_page(void* virtual_address) {
     struct spte* spte = find_spte(virtual_address);
     if (spte->is_loaded != true) {
-        frame_handler_palloc(false, spte, true);
+        frame_handler_palloc(false, spte, true, false);
     } else {
         while (true) {
             bool success = aquire_frame_lock(spte->frame, spte);
             if (success) {
                 break;
             } else if (spte->is_loaded != true) {
-                frame_handler_palloc(false, spte, true);
+                frame_handler_palloc(false, spte, true, false);
                 break;
             }
         }

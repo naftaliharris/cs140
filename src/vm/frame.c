@@ -122,9 +122,11 @@ static inline uint32_t get_frame_index(void* physical_memory_addr) {
  IMPLIMENTATION NOTES: 
  NOTE: Update so that this takes a boolean and releases the lock
     only if boolean is true
+ NOTE: if is_fresh_stack_page is true, then we do not load from
+    swao, because it is our first swap page.
  --------------------------------------------------------------------
  */
-bool frame_handler_palloc(bool zeros, struct spte* spte, bool should_pin) {
+bool frame_handler_palloc(bool zeros, struct spte* spte, bool should_pin, bool is_fresh_stack_page) {
     lock_acquire(&frame_evict_lock);
     void* physical_memory_addr = palloc_get_page (PAL_USER | (zeros ? PAL_ZERO : 0));
     
@@ -140,11 +142,13 @@ bool frame_handler_palloc(bool zeros, struct spte* spte, bool should_pin) {
     
     if (zeros) memset(frame->physical_mem_frame_base, 0, PGSIZE);
     spte->frame = frame;
-    bool success = load_page_into_physical_memory(spte);
+    
+    bool success = load_page_into_physical_memory(spte, is_fresh_stack_page);
     
     if (!success) {
         barrier();
         spte->frame = NULL;
+        spte->is_loaded = false;
         palloc_free_page(physical_memory_addr);
     } else {
         frame->resident_page = spte;

@@ -51,7 +51,7 @@ void init_frame_table(size_t num_frames, uint8_t* frame_base);
     is only the case when we pin a frame from a system call. 
  --------------------------------------------------------------------
  */
-bool frame_handler_palloc(bool zeros, struct spte* spte, bool should_pin);
+bool frame_handler_palloc(bool zeros, struct spte* spte, bool should_pin, bool is_fresh_stack_page);
 
 /*
  --------------------------------------------------------------------

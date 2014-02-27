@@ -181,7 +181,7 @@ page_fault (struct intr_frame *f)
     if (not_present && user) {
         struct spte* spte = find_spte(fault_addr);
         if (spte != NULL) {
-            bool unused = frame_handler_palloc(false, spte, false);
+            bool unused = frame_handler_palloc(false, spte, false, false);
             return;
         } else {
             if (is_valid_stack_access(f->esp, fault_addr)) {
@@ -194,11 +194,11 @@ page_fault (struct intr_frame *f)
   //END LP Poject 3 code
     
     
-  printf ("Page fault at %p: %s error %s page in %s context.\n",
+  /*printf ("Page fault at %p: %s error %s page in %s context.\n",
           fault_addr,
           not_present ? "not present" : "rights violation",
           write ? "writing" : "reading",
           user ? "user" : "kernel");
-  kill (f);
+  kill (f);*/
 }
 

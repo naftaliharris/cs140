@@ -91,7 +91,7 @@ void free_spte(struct spte* spte);
     functions in page.c
  --------------------------------------------------------------------
  */
-bool load_page_into_physical_memory(struct spte* spte);
+bool load_page_into_physical_memory(struct spte* spte, bool is_fresh_stack_page);
 
 /*
  --------------------------------------------------------------------
