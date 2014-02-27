@@ -294,7 +294,7 @@ void thread_start (void)
     struct semaphore idle_started;
     sema_init (&idle_started, 0);
     init_vital_info(initial_thread);
-    init_spte_hash_table(initial_thread);
+    //init_spte_hash_table(initial_thread);
     thread_create ("idle", PRI_MIN, idle, &idle_started);
     
     /* Start preemptive thread scheduling. */
@@ -412,7 +412,7 @@ tid_t thread_create (const char *name, int priority,
     init_thread (t, name, priority);
     tid = t->tid = allocate_tid ();
     init_vital_info(t);
-    init_spte_hash_table(t);
+    //init_spte_hash_table(t);
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);

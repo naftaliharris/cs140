@@ -127,6 +127,7 @@ process_execute (const char *arguments)
 static void
 start_process (void *arg_page_)
 {
+    init_spte_table(&thread_current()->spte_table);
     char *arg_page = arg_page_;
     char *file_name = arg_page_ + sizeof(int) + sizeof(int);
     struct intr_frame if_;
@@ -791,7 +792,9 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
         size_t page_zero_bytes = PGSIZE - page_read_bytes;
         
         //LP Project 3 addition
-        create_spte_and_add_to_table(FILE_PAGE, (void*)upage, writable, false, file, ofs, read_bytes, zero_bytes);
+        
+        void* spte_id = (void*)pg_round_down(upage);
+        create_spte_and_add_to_table(FILE_PAGE, spte_id, writable, false, file, ofs, read_bytes, zero_bytes);
         //End LP Project 3 addition
         
         
@@ -820,6 +823,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
         /* Advance. */
         read_bytes -= page_read_bytes;
         zero_bytes -= page_zero_bytes;
+        //ofs += page_read_bytes;
         upage += PGSIZE;
     }
     return true;

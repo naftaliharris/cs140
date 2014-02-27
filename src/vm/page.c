@@ -42,8 +42,8 @@ struct spte* create_spte_and_add_to_table(page_location location, void* page_id,
     spte->zero_bytes = zero_bytes;
     spte->swap_index = 0; //IS THIS CORRECT???
     struct hash* target_table = &thread_current()->spte_table;
-    bool outcome = hash_insert(target_table, &spte->elem);
-    if (outcome == false) {
+    struct spte* outcome = hash_insert(target_table, &spte->elem);
+    if (outcome != NULL) {
         PANIC("Trying to add two spte's for the same page");
     }
     return spte;
@@ -293,6 +293,7 @@ void clear_page(void* upage, struct thread* t) {
 }
 
 #define PUSHA_BYTE_DEPTH 32
+#define PUSH_BYTE_DEPTH 4
 #define MAX_STACK_SIZE_IN_BYTES 8392000
 /*
  --------------------------------------------------------------------
@@ -300,18 +301,22 @@ void clear_page(void* upage, struct thread* t) {
  --------------------------------------------------------------------
  */
 bool is_valid_stack_access(void* esp, void* user_virtual_address) {
-    void* acceptable_depth = (void*)((char*)esp - PUSHA_BYTE_DEPTH);
-    if ((uint32_t)user_virtual_address < (uint32_t)acceptable_depth) {
-        return false;
-    }
     uint32_t stack_bottom_limit = (uint32_t)(PHYS_BASE - MAX_STACK_SIZE_IN_BYTES);
     if ((uint32_t)user_virtual_address < stack_bottom_limit) {
         return false;
     }
-    if ((uint32_t)user_virtual_address > (uint32_t)PHYS_BASE) {
+    if ((uint32_t)user_virtual_address >= (uint32_t)PHYS_BASE) {
         return false;
     }
-    return true;
+    void* acceptable_depth_pushA = (void*)((char*)esp - PUSHA_BYTE_DEPTH);
+    if ((uint32_t)user_virtual_address == (uint32_t)acceptable_depth_pushA) {
+        return true;
+    }
+    void* acceptable_depth_push = (void*)((char*)esp - PUSH_BYTE_DEPTH);
+    if ((uint32_t)user_virtual_address == (uint32_t)acceptable_depth_push) {
+        return true;
+    }
+    return false;
 }
 
 /*
