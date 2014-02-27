@@ -190,6 +190,11 @@ page_fault (struct intr_frame *f)
                 return;
             }
         }
+        thread_current()->vital_info->exit_status = -1;
+        if (thread_current()->is_running_user_program) {
+            printf("%s: exit(%d)\n", thread_name(), -1);
+        }
+        thread_exit ();
     }
 
   //END LP Poject 3 code
