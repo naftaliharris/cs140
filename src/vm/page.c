@@ -19,6 +19,18 @@ static void evict_file_page(struct spte* spte);
 static void evict_mmaped_page(struct spte* spte);
 
 
+static void
+assert_spte_consistency(struct spte* spte)
+{
+    ASSERT (spte != NULL);
+    ASSERT (spte->location != FILE_PAGE ||
+            spte->read_bytes + spte->zero_bytes == PGSIZE);
+
+    ASSERT (spte->frame == NULL ||
+            spte->frame->physical_mem_frame_base >= PHYS_BASE);
+
+}
+
 
 /*
  --------------------------------------------------------------------
@@ -26,6 +38,7 @@ static void evict_mmaped_page(struct spte* spte);
  --------------------------------------------------------------------
  */
 struct spte* create_spte_and_add_to_table(page_location location, void* page_id, bool is_writeable, bool is_loaded, struct file* file_ptr, off_t offset, uint32_t read_bytes, uint32_t zero_bytes) {
+
     struct spte* spte = malloc(sizeof(struct spte));
     if (spte == NULL) {
         PANIC("Could not allocate spte");
@@ -42,10 +55,12 @@ struct spte* create_spte_and_add_to_table(page_location location, void* page_id,
     spte->zero_bytes = zero_bytes;
     spte->swap_index = 0; //IS THIS CORRECT???
     struct hash* target_table = &thread_current()->spte_table;
-    struct spte* outcome = hash_insert(target_table, &spte->elem);
+    struct spte* outcome = hash_entry(hash_insert(target_table, &spte->elem), struct spte, elem);
     if (outcome != NULL) {
         PANIC("Trying to add two spte's for the same page");
     }
+
+    assert_spte_consistency(spte);
     return spte;
 }
 
@@ -55,6 +70,7 @@ struct spte* create_spte_and_add_to_table(page_location location, void* page_id,
  --------------------------------------------------------------------
  */
 void free_spte(struct spte* spte) {
+    assert_spte_consistency(spte);
     //HAVE TO REMOVE FROM DATA STRUCTURE
     free(spte);
 }
@@ -65,7 +81,9 @@ void free_spte(struct spte* spte) {
  --------------------------------------------------------------------
  */
 static void load_swap_page(struct spte* spte) {
+    assert_spte_consistency(spte);
     read_from_swap(spte->frame->physical_mem_frame_base, spte->swap_index);
+    assert_spte_consistency(spte);
 }
 
 /*
@@ -76,17 +94,22 @@ static void load_swap_page(struct spte* spte) {
  --------------------------------------------------------------------
  */
 static void load_file_page(struct spte* spte) {
+    assert_spte_consistency(spte);
+
     if (spte->zero_bytes == PGSIZE) {
         memset(spte->frame->physical_mem_frame_base, 0, PGSIZE);
         return;
     }
-    uint32_t bytes_read = file_read (spte->file_ptr, spte->frame->physical_mem_frame_base, spte->read_bytes);
+    uint32_t bytes_read = file_read_at (spte->file_ptr, spte->frame->physical_mem_frame_base, spte->read_bytes, spte->offset_in_file);
     if (bytes_read != spte->read_bytes) {
+        PANIC ("Didn't read as many bytes from the file as we wanted!");
         //HERE WE NEED TO HANDLE THIS ERROR CONDITION!!
     }
     if (spte->read_bytes != PGSIZE) {
         memset (spte->frame->physical_mem_frame_base + spte->read_bytes, 0, spte->zero_bytes);
     }
+
+    assert_spte_consistency(spte);
 }
 
 /*
@@ -106,7 +129,8 @@ static void load_mmaped_page(struct spte* spte) {
  --------------------------------------------------------------------
  */
 bool load_page_into_physical_memory(struct spte* spte, bool is_fresh_stack_page) {
-    ASSERT(spte != NULL);
+    assert_spte_consistency(spte);
+
     if (is_fresh_stack_page == false) {
         switch (spte->location) {
             case SWAP_PAGE:
@@ -119,10 +143,13 @@ bool load_page_into_physical_memory(struct spte* spte, bool is_fresh_stack_page)
                 load_mmaped_page(spte);
                 break;
             default:
+                PANIC("Unrecognized SPTE location!");
                 break;
         }
     }
-    return install_page(spte->page_id, spte->frame->physical_mem_frame_base, spte->is_writeable);
+    bool success = install_page(spte->page_id, spte->frame->physical_mem_frame_base, spte->is_writeable);
+    assert_spte_consistency(spte);
+    return success;
 }
 
 /*
@@ -132,8 +159,10 @@ bool load_page_into_physical_memory(struct spte* spte, bool is_fresh_stack_page)
  --------------------------------------------------------------------
  */
 static void evict_swap_page(struct spte* spte) {
+    assert_spte_consistency(spte);
     uint32_t swap_index = write_to_swap(spte->frame->physical_mem_frame_base);
     spte->swap_index = swap_index;
+    assert_spte_consistency(spte);
 }
 
 /*
@@ -143,12 +172,14 @@ static void evict_swap_page(struct spte* spte) {
  --------------------------------------------------------------------
  */
 static void evict_file_page(struct spte* spte) {
+    assert_spte_consistency(spte);
     uint32_t* pagedir = spte->owner_thread->pagedir;
     bool dirty = pagedir_is_dirty(pagedir, spte->page_id);
     if (dirty) {
         spte->location = SWAP_PAGE;
         evict_swap_page(spte);
     }
+    assert_spte_consistency(spte);
 }
 
 /*
@@ -169,7 +200,7 @@ static void evict_mmaped_page(struct spte* spte) {
  --------------------------------------------------------------------
  */
 bool evict_page_from_physical_memory(struct spte* spte) {
-    ASSERT(spte != NULL);
+    assert_spte_consistency(spte);
     switch (spte->location) {
         case SWAP_PAGE:
             evict_swap_page(spte);
@@ -184,6 +215,7 @@ bool evict_page_from_physical_memory(struct spte* spte) {
             break;
     }
     clear_page(spte->page_id, spte->owner_thread);
+    assert_spte_consistency(spte);
     return true;
 }
 
