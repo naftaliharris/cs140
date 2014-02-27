@@ -100,7 +100,7 @@ static void load_file_page(struct spte* spte) {
         memset(spte->frame->physical_mem_frame_base, 0, PGSIZE);
         return;
     }
-    uint32_t bytes_read = file_read (spte->file_ptr, spte->frame->physical_mem_frame_base, spte->read_bytes);
+    uint32_t bytes_read = file_read_at (spte->file_ptr, spte->frame->physical_mem_frame_base, spte->read_bytes, spte->offset_in_file);
     if (bytes_read != spte->read_bytes) {
         PANIC ("Didn't read as many bytes from the file as we wanted!");
         //HERE WE NEED TO HANDLE THIS ERROR CONDITION!!
