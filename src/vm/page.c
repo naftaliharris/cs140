@@ -174,7 +174,7 @@ static void evict_swap_page(struct spte* spte) {
 static void evict_file_page(struct spte* spte) {
     assert_spte_consistency(spte);
     uint32_t* pagedir = spte->owner_thread->pagedir;
-    bool dirty = pagedir_is_dirty(pagedir, spte->frame->physical_mem_frame_base);
+    bool dirty = pagedir_is_dirty(pagedir, spte->frame->resident_page->page_id);
     if (dirty) {
         spte->location = SWAP_PAGE;
         evict_swap_page(spte);

@@ -45,6 +45,10 @@ static unsigned LP_tell (int fd);
 static void LP_close (int fd);
 // END   LP DEFINED SYSTEM CALL HANDLERS //
 
+//BEGIN LP Project 3 additions
+static void pinning_for_system_call(const void* begin, unsigned length, bool should_pin);
+//END LP Project 3 additions
+
 
 /*
  --------------------------------------------------------------------
@@ -318,6 +322,7 @@ static int LP_filesize (int fd) {
  */
 static int LP_read (int fd, void *buffer, unsigned length) {
     check_usr_buffer(buffer, length);
+    pinning_for_system_call(buffer, length, true);
     
     if (fd == STDIN_FILENO) {
         char* char_buff = (char*)buffer;
@@ -325,6 +330,7 @@ static int LP_read (int fd, void *buffer, unsigned length) {
         for (i = 0; i < length; i++) {
             char_buff[i] = input_getc();
         }
+        pinning_for_system_call(buffer, length, false);
         return length;
     }
     
@@ -332,9 +338,11 @@ static int LP_read (int fd, void *buffer, unsigned length) {
     struct file_package* package = get_file_package_from_open_list(fd);
     if (package == NULL) {
         lock_release(&file_system_lock);
+        pinning_for_system_call(buffer, length, false);
         return -1;
     }
     int num_bytes_read = file_read_at(package->fp, buffer, length, package->position);
+    pinning_for_system_call(buffer, length, false);
     package->position += num_bytes_read;
     lock_release(&file_system_lock);
     return num_bytes_read;
@@ -349,9 +357,11 @@ static int LP_read (int fd, void *buffer, unsigned length) {
  */
 static int LP_write (int fd, const void *buffer, unsigned length) {
     check_usr_buffer(buffer, length);
+    pinning_for_system_call(buffer, length, true);
     
     if (fd == STDOUT_FILENO) {
         putbuf(buffer, length);
+        pinning_for_system_call(buffer, length, false);
         return length;
     }
     
@@ -359,9 +369,11 @@ static int LP_write (int fd, const void *buffer, unsigned length) {
     struct file_package* package = get_file_package_from_open_list(fd);
     if (package == NULL) {
         lock_release(&file_system_lock);
+        pinning_for_system_call(buffer, length, false);
         return -1;
     }
     int num_bytes_written = file_write_at(package->fp, buffer, length, package->position);
+    pinning_for_system_call(buffer, length, false);
     package->position += num_bytes_written;
     lock_release(&file_system_lock);
     return num_bytes_written;
@@ -544,6 +556,8 @@ static void check_usr_buffer(const void* buffer, unsigned length) {
  NOTE: If this function completes and returns, than we know the pointer
     is valid, and we continue operation in the kernel processing
     the system call.
+ NOTE: We need to replace the call to pagedir_get_page with a call
+    to get spte, as the page we are accessing might not be mapped.
  --------------------------------------------------------------------
  */
 static void check_usr_ptr(const void* ptr) {
@@ -553,7 +567,10 @@ static void check_usr_ptr(const void* ptr) {
     if (!is_user_vaddr(ptr)) {
         LP_exit(-1);
     } 
-    if (pagedir_get_page(thread_current()->pagedir, ptr) == NULL) {
+    /*if (pagedir_get_page(thread_current()->pagedir, ptr) == NULL) {
+        LP_exit(-1);
+    }*/
+    if (find_spte(ptr) == NULL) {
         LP_exit(-1);
     }
 }
@@ -589,5 +606,53 @@ static uint32_t read_frame(struct intr_frame* f, int byteOffset) {
     void* addr = f->esp + byteOffset;
     check_usr_ptr(addr);
     return *(uint32_t*)addr;
+}
+
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: This function pins all of the pages that make up the 
+    space from begin to length.
+ NOTE: length is given in bytes
+ NOTE: We assume that the validation of pointers has allready been
+    done, so that these addresses are all valid.
+ NOTE: We define pages by rounding down to the page boundary. If we 
+    call pg_dir_round_up + 1, we will be in the next page. The 
+    differnce between thus rounded up value + 1 and the current
+    address is the offset of the address in the page.
+ NOTE: if we ever encounter length being less than distance to 
+    next page, we have covered all of the necessary pages.
+ NOTE: if should_pin is true, we pin, otherwise, we un_pin
+ NOTE: must be called first with pin, then unpin!
+ --------------------------------------------------------------------
+ */
+static void pinning_for_system_call(const void* begin, unsigned length, bool should_pin) {
+    void* curr_addr = begin;
+    void* curr_page = pg_round_down(curr_addr);
+    if (should_pin) {
+        pin_page(curr_page);
+    } else {
+        un_pin_page(curr_page);
+    }
+    while (length > PGSIZE) {
+        //add page size to curr_address to get next page
+        //subtract page size from length
+        curr_addr = (void*)((char*)curr_addr + PGSIZE);
+        curr_page = pg_round_down(curr_addr);
+        if (should_pin) {
+            pin_page(curr_page);
+        } else {
+            un_pin_page(curr_page);
+        }
+        length -= PGSIZE;
+    }
+    curr_addr = (void*)((char*)curr_addr + length);
+    void* last_page = pg_round_down(curr_addr);
+    if ((uint32_t)last_page != (uint32_t)curr_page) {
+        if (should_pin) {
+            pin_page(last_page);
+        } else {
+            un_pin_page(last_page);
+        }
+    }
 }
 
