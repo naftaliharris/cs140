@@ -102,7 +102,9 @@ static void load_file_page(struct spte* spte) {
         memset(spte->frame->physical_mem_frame_base, 0, PGSIZE);
         return;
     }
+    lock_acquire(&file_system_lock);
     uint32_t bytes_read = file_read_at (spte->file_ptr, spte->frame->physical_mem_frame_base, spte->read_bytes, spte->offset_in_file);
+    lock_release(&file_system_lock);
     if (bytes_read != spte->read_bytes) {
         PANIC ("Didn't read as many bytes from the file as we wanted!");
         //HERE WE NEED TO HANDLE THIS ERROR CONDITION!!
@@ -198,8 +200,10 @@ static void evict_mmaped_page(struct spte* spte) {
     bool dirty = pagedir_is_dirty(pagedir, spte->frame->resident_page->page_id);
     if (dirty) {
         /* XXX Using the right user vs kernel pointer? */
+        lock_acquire(&file_system_lock);
         file_write_at (spte->file_ptr, spte->page_id, spte->read_bytes,
                        spte->offset_in_file);
+        lock_release(&file_system_lock);
     }
 
     assert_spte_consistency(spte);
@@ -210,7 +214,9 @@ void
 munmap_state(struct mmap_state *mmap_s)
 {
     void *page;
+    lock_acquire(&file_system_lock);
     int size = file_length(mmap_s->fp);
+    lock_release(&file_system_lock);
     struct thread *t = thread_current();
     
     /* Write back dirty pages, and free all pages in use */
@@ -222,6 +228,10 @@ munmap_state(struct mmap_state *mmap_s)
             evict_mmaped_page(entry);
         }
 
+        
+        lock_acquire(&file_system_lock);
+        file_close(mmap_s->fp);
+        lock_release(&file_system_lock);
         free_hash_entry(&entry->elem, NULL);
     }
 }
