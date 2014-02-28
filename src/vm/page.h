@@ -12,6 +12,8 @@
 //TO DO:
 //1. free frame resources in free_hash_entry
 
+typedef int32_t mapid_t;
+
 
 /* The different types of pages */
 typedef enum {
@@ -40,6 +42,7 @@ struct spte
     struct thread* owner_thread; /* needed to access pd */
     void* page_id;
     struct frame* frame; /* the physical frame of the page if it is memory */
+    mapid_t mapping;     /* The mapping if an mmapped page */
     
     bool is_writeable;   /*true if the page can be written to */
     bool is_loaded;      /*true if the page is currently loaded in memory */

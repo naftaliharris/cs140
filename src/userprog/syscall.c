@@ -43,6 +43,8 @@ static int LP_write (int fd, const void *buffer, unsigned length);
 static void LP_seek (int fd, unsigned position);
 static unsigned LP_tell (int fd);
 static void LP_close (int fd);
+static mapid_t mmap (int fd, void *addr);
+static void munmap (mapid_t mapping);
 // END   LP DEFINED SYSTEM CALL HANDLERS //
 
 //BEGIN LP Project 3 additions
@@ -135,6 +137,15 @@ syscall_handler (struct intr_frame *f )
         case SYS_CLOSE:
             arg1 = read_frame(f, 4);
             LP_close((int)arg1);
+            break;
+        case SYS_MMAP:
+            arg1 = read_frame(f, 4);
+            arg2 = read_frame(f, 8);
+            f->eax = (uint32_t)mmap((int)arg1, (void*)arg2);
+            break;
+        case SYS_MUNMAP:
+            arg1 = read_frame(f, 4);
+            munmap((mapid_t) arg1);
             break;
         default:
             LP_exit(-1); //should never get here. If we do, exit with -1.
@@ -442,6 +453,28 @@ static void LP_close (int fd) {
     list_remove(&package->elem);
     lock_release(&file_system_lock);
     free(package);
+}
+
+static mapid_t
+mmap(int fd, void *addr)
+{
+    /* Validate the user address */
+    if (((uint32_t)addr) % PGSIZE != 0)
+        return -1;
+    if (addr == NULL)
+        return -1;
+    if (!is_user_vaddr(addr))
+        return -1;
+
+    /* Check for overlapping */
+
+    return -1;
+}
+
+static void
+munmap(mapid_t mapping)
+{
+
 }
 
 /*
