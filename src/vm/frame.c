@@ -151,16 +151,14 @@ bool frame_handler_palloc(bool zeros, struct spte* spte, bool should_pin, bool i
     if (!success) {
         barrier();
         spte->frame = NULL;
-        spte->is_loaded = false;
         palloc_free_page(physical_memory_addr);
     } else {
         frame->resident_page = spte;
-        spte->is_loaded = true;
+        spte->frame = frame;
     }
     if (should_pin == false) {
         lock_release(&frame->frame_lock);
     }
-    return success;
 }
 
 /*

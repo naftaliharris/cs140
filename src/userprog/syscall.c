@@ -203,8 +203,6 @@ static void LP_exit (int status) {
  */
 static pid_t LP_exec (const char* command_line, void* esp) {
     check_usr_string(command_line, esp);
-    uint32_t length = strlen(command_line);
-    pinning_for_system_call(command_line, length)
     struct thread* curr_thread = thread_current();
     pid_t pid = process_execute(command_line);
     if (pid == TID_ERROR) {
