@@ -80,26 +80,32 @@ static void advance_clock_hand() {
 static struct frame* evict_frame(void) {
     ASSERT(lock_held_by_current_thread(&frame_evict_lock));
     advance_clock_hand();
-    struct frame* frame;
+    struct frame* frame = NULL;
     while (true) {
         frame = &(frame_table[clock_hand]);
         bool aquired = lock_try_acquire(&frame->frame_lock);
         if (aquired) {
             lock_release(&frame_evict_lock);
+            if (frame->resident_page == NULL) {
+                lock_acquire(&frame_evict_lock);
+                lock_release(&frame->frame_lock);
+                advance_clock_hand();
+                continue;
+            }
             uint32_t* pagedir = frame->resident_page->owner_thread->pagedir;
             bool accessed = pagedir_is_accessed(pagedir, frame->resident_page->page_id);
             if (accessed) {
                 pagedir_set_accessed(pagedir, frame->resident_page->page_id, false);
                 lock_release(&frame->frame_lock);
             } else {
-                break;
+                evict_page_from_physical_memory(frame->resident_page);
+                return frame;
             }
             lock_acquire(&frame_evict_lock);
         }
         advance_clock_hand();
     }
-    evict_page_from_physical_memory(frame->resident_page);
-    return frame;
+    return NULL;
 }
 
 /*
