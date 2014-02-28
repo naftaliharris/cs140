@@ -225,7 +225,6 @@ munmap_state(struct mmap_state *mmap_s, struct thread *t)
         if (pagedir_is_present(t->pagedir, page)) {
             evict_mmaped_page(entry);
         }
-
         
         lock_acquire(&file_system_lock);
         file_close(mmap_s->fp);
@@ -233,11 +232,9 @@ munmap_state(struct mmap_state *mmap_s, struct thread *t)
 
         hash_delete(&t->spte_table, &entry->elem);
         free(entry);
-        //free_hash_entry(&entry->elem, NULL);
     }
     
-    struct list_elem *next = &mmap_s->elem.next;
-    list_remove(&mmap_s->elem);
+    struct list_elem *next = list_remove(&mmap_s->elem);
     free(mmap_s);
     return next;
 }
