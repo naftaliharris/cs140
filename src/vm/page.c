@@ -148,6 +148,7 @@ bool load_page_into_physical_memory(struct spte* spte, bool is_fresh_stack_page)
         }
     }
     bool success = install_page(spte->page_id, spte->frame->physical_mem_frame_base, spte->is_writeable);
+    spte->is_loaded = true;
     assert_spte_consistency(spte);
     return success;
 }
@@ -215,6 +216,7 @@ bool evict_page_from_physical_memory(struct spte* spte) {
             break;
     }
     clear_page(spte->page_id, spte->owner_thread);
+    spte->is_loaded = false;
     assert_spte_consistency(spte);
     return true;
 }
@@ -386,7 +388,7 @@ bool grow_stack(void* page_id) {
  */
 void pin_page(void* virtual_address) {
     struct spte* spte = find_spte(virtual_address);
-    if (spte->is_loaded != true) {
+    if (spte->is_loaded == false) {
         frame_handler_palloc(false, spte, true, false);
     } else {
         while (true) {

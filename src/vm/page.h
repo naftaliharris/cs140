@@ -42,7 +42,7 @@ struct spte
     struct frame* frame; /* the physical frame of the page if it is memory */
     
     bool is_writeable;   /*true if the page can be written to */
-    bool is_loaded;      /*true if the page is currently loaded in memory */
+    //bool is_loaded;      /*true if the page is currently loaded in memory */
            
     struct file* file_ptr;
     off_t offset_in_file;

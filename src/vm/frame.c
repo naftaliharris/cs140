@@ -86,19 +86,22 @@ static struct frame* evict_frame(void) {
         bool aquired = lock_try_acquire(&frame->frame_lock);
         if (aquired) {
             lock_release(&frame_evict_lock);
+            if (frame->resident_page == NULL) {
+                return frame;
+            }
             uint32_t* pagedir = frame->resident_page->owner_thread->pagedir;
             bool accessed = pagedir_is_accessed(pagedir, frame->resident_page->page_id);
             if (accessed) {
                 pagedir_set_accessed(pagedir, frame->resident_page->page_id, false);
                 lock_release(&frame->frame_lock);
             } else {
-                break;
+                evict_page_from_physical_memory(frame->resident_page);
+                frame->resident_page = NULL;
             }
             lock_acquire(&frame_evict_lock);
         }
         advance_clock_hand();
     }
-    evict_page_from_physical_memory(frame->resident_page);
     return frame;
 }
 
