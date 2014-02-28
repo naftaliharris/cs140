@@ -196,6 +196,10 @@ page_fault (struct intr_frame *f)
         }
         thread_exit ();
     }
+    
+    if (!user) {
+        printf("fualt address = %i, esp = %i", (unsigned)fault_addr, (unsigned)f->esp);
+    }
 
   //END LP Poject 3 code
     

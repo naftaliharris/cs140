@@ -371,7 +371,9 @@ bool install_page(void *upage, void *kpage, bool writable) {
  --------------------------------------------------------------------
  */
 void clear_page(void* upage, struct thread* t) {
-    pagedir_clear_page(t->pagedir, upage);
+    if (t->pagedir != NULL) {
+         pagedir_clear_page(t->pagedir, upage);
+    }
 }
 
 #define PUSHA_BYTE_DEPTH 32
@@ -441,12 +443,13 @@ void pin_page(void* virtual_address) {
             bool success = aquire_frame_lock(spte->frame, spte);
             if (success) {
                 break;
-            } else if (spte->is_loaded != true) {
-                frame_handler_palloc(false, spte, true, false);
-                break;
+            } else {
+                if (spte->is_loaded != true) {
+                    frame_handler_palloc(false, spte, true, false);
+                    break;
+                }
             }
         }
-        
     }
 }
 

@@ -217,7 +217,12 @@ static void LP_exit (int status) {
 static pid_t LP_exec (const char* command_line, void* esp) {
     check_usr_string(command_line, esp);
     struct thread* curr_thread = thread_current();
+    
+    unsigned length = strlen(command_line);
+    pinning_for_system_call(command_line, length, true);
+    
     pid_t pid = process_execute(command_line);
+    pinning_for_system_call(command_line, length, false);
     if (pid == TID_ERROR) {
         return -1;
     }
@@ -255,7 +260,10 @@ static bool LP_create (const char *file, unsigned initial_size, void* esp) {
         return false;
     }
     lock_acquire(&file_system_lock);
+    unsigned length = strlen(file);
+    pinning_for_system_call(file, length, true);
     bool outcome = filesys_create(file, initial_size);
+    pinning_for_system_call(file, length, false);
     lock_release(&file_system_lock);
     
     return outcome;
@@ -278,7 +286,10 @@ static bool LP_remove (const char *file, void* esp) {
     }
     
     lock_acquire(&file_system_lock);
+    unsigned length = strlen(file);
+    pinning_for_system_call(file, length, true);
     bool outcome = filesys_remove(file);
+    pinning_for_system_call(file, length, false);
     lock_release(&file_system_lock);
     
     return outcome;
@@ -297,11 +308,15 @@ static int LP_open (const char *file, void* esp) {
         return -1;
     }
     lock_acquire(&file_system_lock);
+    unsigned length = strlen(file);
+    pinning_for_system_call(file, length, true);
     struct file* fp = filesys_open(file);
     if (fp == NULL) {
+        pinning_for_system_call(file, length, false);
         lock_release(&file_system_lock);
         return -1;
     }
+    pinning_for_system_call(file, length, false);
     int fd = add_to_open_file_list(fp);
     lock_release(&file_system_lock);
     return fd;
