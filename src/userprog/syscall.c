@@ -533,10 +533,18 @@ static bool check_file_name_length(const char* filename) {
 #define BYTES_PER_PAGE PGSIZE
 static void check_usr_buffer(const void* buffer, unsigned length, void* esp) {
     check_usr_ptr(buffer, esp);
+    struct spte* spte = find_spte(buffer);
+    if (spte->is_writeable == false) {
+        LP_exit(-1);
+    }
     unsigned curr_offset = BYTES_PER_PAGE;
     while (true) {
         if (curr_offset >= length) break;
         check_usr_ptr((const void*)((char*)buffer + curr_offset), esp);
+        struct spte* spte = find_spte((const void*)((char*)buffer + curr_offset));
+        if (spte->is_writeable == false) {
+            LP_exit(-1);
+        }
         curr_offset += BYTES_PER_PAGE;
     }
     check_usr_ptr((const void*)((char*)buffer + length), esp);
