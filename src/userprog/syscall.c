@@ -528,8 +528,11 @@ mmap(int fd, void *addr)
 static void
 munmap(mapid_t mapping)
 {
-
+    
 }
+
+/* TODO Don't forget to free mmap_state when the thread exits */
+
 
 /*
  --------------------------------------------------------------------

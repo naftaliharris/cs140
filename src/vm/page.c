@@ -23,7 +23,7 @@ static void
 assert_spte_consistency(struct spte* spte)
 {
     ASSERT (spte != NULL);
-    ASSERT (spte->location != FILE_PAGE ||
+    ASSERT (spte->location == SWAP_PAGE ||
             spte->read_bytes + spte->zero_bytes == PGSIZE);
 
     ASSERT (spte->frame == NULL ||
@@ -118,7 +118,8 @@ static void load_file_page(struct spte* spte) {
  --------------------------------------------------------------------
  */
 static void load_mmaped_page(struct spte* spte) {
-    return;
+    /* No difference between loading mmapped pages and file pages in */
+    return load_file_page(spte);
 }
 
 /*
@@ -189,7 +190,17 @@ static void evict_file_page(struct spte* spte) {
  --------------------------------------------------------------------
  */
 static void evict_mmaped_page(struct spte* spte) {
-    
+    assert_spte_consistency(spte);
+
+    uint32_t* pagedir = spte->owner_thread->pagedir;
+    bool dirty = pagedir_is_dirty(pagedir, spte->frame->resident_page->page_id);
+    if (dirty) {
+        /* XXX Using the right user vs kernel pointer? */
+        file_write_at (spte->file_ptr, spte->page_id, PGSIZE,
+                       spte->offset_in_file);
+    }
+
+    assert_spte_consistency(spte);
 }
 
 /*
