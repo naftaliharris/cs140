@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include "threads/fixed-point.h"
 #include "vm/page.h"
+#include "vm/mmap.h"
 #include <hash.h>
 
 /* States in a thread's life cycle. */
@@ -168,7 +169,13 @@ struct thread
     /* Supplementary Page Table */
     struct hash spte_table;
 
-    /* End Projecdt 3 Additions */
+    /* Next mapid_t to use */
+    mapid_t mapid_counter;
+
+    /* List of mmapped files */
+    struct list mmapped_files;
+
+    /* End Project 3 Additions */
 #endif
     
     /* Owned by thread.c. */

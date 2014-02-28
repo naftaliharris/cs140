@@ -128,7 +128,10 @@ static void
 start_process (void *arg_page_)
 {
 #ifdef VM
-    init_spte_table(&thread_current()->spte_table);
+    struct thread *t = thread_current();
+    init_spte_table(&t->spte_table);
+    t->mapid_counter = 0;
+    list_init(&t->mmapped_files);
 #endif
     char *arg_page = arg_page_;
     char *file_name = arg_page_ + sizeof(int) + sizeof(int);

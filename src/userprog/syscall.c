@@ -14,6 +14,7 @@
 #include "lib/string.h"
 #include "threads/vaddr.h"
 #include "userprog/pagedir.h"
+#include "vm/mmap.h"
 
 
 static void syscall_handler (struct intr_frame *);
@@ -458,17 +459,70 @@ static void LP_close (int fd) {
 static mapid_t
 mmap(int fd, void *addr)
 {
-    /* Validate the user address */
+    /* Validate the parameters */
     if (((uint32_t)addr) % PGSIZE != 0)
         return -1;
-    if (addr == NULL)
-        return -1;
-    if (!is_user_vaddr(addr))
+    if (fd == 0 || fd == 1)
         return -1;
 
-    /* Check for overlapping */
+    /* Ensure the fd has been assigned to the user */
+    lock_acquire(&file_system_lock);
+    struct file* fp = get_file_from_open_list(fd);
+    if (fp == NULL)
+        lock_release(&file_system_lock);
+        return -1;
+    off_t size = file_length(fp);
+    lock_release(&file_system_lock);
 
-    return -1;
+    /* Ensure that the requested VM region wouldn't contain invalid addresses
+     * or overlap other user memory */
+    void *page;
+    for (page = addr; page < addr + size; page++)
+    {
+        if (page == NULL)
+            return -1;
+        if (!is_user_vaddr(page))
+            return -1;
+        if (find_spte(page) != NULL)
+            return -1;
+    }
+
+    /* Fill in the mmap state data */
+    struct mmap_state *mmap_s = malloc(sizeof(struct mmap_state));
+    if (mmap_s == NULL)
+        PANIC ("Couldn't allocated mmapped state struct!");
+
+    lock_acquire(&file_system_lock);
+    mmap_s->fp = file_reopen(fp);
+    if (mmap_s->fp == NULL)
+    {
+        lock_release(&file_system_lock);
+        return -1;
+    }
+    lock_release(&file_system_lock);
+
+    mmap_s->vaddr = addr;
+    struct thread *t = thread_current();
+    mmap_s->mapping = t->mapid_counter;
+    list_push_back(&t->mmapped_files, &mmap_s->elem);
+
+    /* Finally, create the necessary SPTEs */
+    for (page = addr; page < addr + size; page++)
+    {
+        uint32_t read_bytes = page + PGSIZE < addr + size ? PGSIZE
+                                                          : addr + size - page;
+        uint32_t zero_bytes = PGSIZE - read_bytes;
+        create_spte_and_add_to_table(MMAPED_PAGE,             /* Location */
+                                     page,                    /* Address */
+                                     true,                    /* Writeable */
+                                     false,                   /* Loaded */
+                                     mmap_s->fp,              /* File */
+                                     page - addr,             /* File offset */
+                                     read_bytes,
+                                     zero_bytes);
+    }
+
+    return t->mapid_counter++;
 }
 
 static void
