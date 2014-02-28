@@ -181,12 +181,12 @@ page_fault (struct intr_frame *f)
     if (not_present && user) {
         struct spte* spte = find_spte(fault_addr);
         if (spte != NULL) {
-            frame_handler_palloc(false, spte, false, false);
+            bool unused = frame_handler_palloc(false, spte, false, false);
             return;
         } else {
             if (is_valid_stack_access(f->esp, fault_addr)) {
                 void* next_stack_page = (void*)pg_round_down(fault_addr);
-                grow_stack(next_stack_page);
+                bool unused = grow_stack(next_stack_page);
                 return;
             }
         }

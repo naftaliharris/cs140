@@ -37,7 +37,7 @@ assert_spte_consistency(struct spte* spte)
  IMPLIMENTATION NOTES:
  --------------------------------------------------------------------
  */
-struct spte* create_spte_and_add_to_table(page_location location, void* page_id, bool is_writeable, struct file* file_ptr, off_t offset, uint32_t read_bytes, uint32_t zero_bytes) {
+struct spte* create_spte_and_add_to_table(page_location location, void* page_id, bool is_writeable, bool is_loaded, struct file* file_ptr, off_t offset, uint32_t read_bytes, uint32_t zero_bytes) {
 
     struct spte* spte = malloc(sizeof(struct spte));
     if (spte == NULL) {
@@ -47,6 +47,7 @@ struct spte* create_spte_and_add_to_table(page_location location, void* page_id,
     spte->owner_thread = thread_current();
     spte->page_id = page_id;
     spte->is_writeable = is_writeable;
+    spte->is_loaded = is_loaded;
     spte->frame = NULL;
     spte->file_ptr = file_ptr;
     spte->offset_in_file = offset;
@@ -58,6 +59,7 @@ struct spte* create_spte_and_add_to_table(page_location location, void* page_id,
     if (outcome != NULL) {
         PANIC("Trying to add two spte's for the same page");
     }
+
     assert_spte_consistency(spte);
     return spte;
 }
@@ -272,7 +274,7 @@ static bool less_func(const struct hash_elem *a, const struct hash_elem *b, void
  */
 static void free_hash_entry(struct hash_elem* e, void* aux UNUSED) {
     struct spte* spte = hash_entry(e, struct spte, elem);
-    if (spte->frame) {
+    if (spte->is_loaded) {
         frame_handler_palloc_free(spte);
     }
     free_spte(spte);
@@ -364,7 +366,7 @@ bool is_valid_stack_access(void* esp, void* user_virtual_address) {
  --------------------------------------------------------------------
  */
 bool grow_stack(void* page_id) {
-    struct spte* spte = create_spte_and_add_to_table(SWAP_PAGE, page_id, true, NULL, 0, 0, 0);
+    struct spte* spte = create_spte_and_add_to_table(SWAP_PAGE, page_id, true, true, NULL, 0, 0, 0);
     bool outcome = frame_handler_palloc(true, spte, false, true);
     return outcome;
 }
@@ -384,14 +386,14 @@ bool grow_stack(void* page_id) {
  */
 void pin_page(void* virtual_address) {
     struct spte* spte = find_spte(virtual_address);
-    if (spte->frame == NULL) {
+    if (spte->is_loaded != true) {
         frame_handler_palloc(false, spte, true, false);
     } else {
         while (true) {
             bool success = aquire_frame_lock(spte->frame, spte);
             if (success) {
                 break;
-            } else if (spte->frame == NULL) {
+            } else if (spte->is_loaded != true) {
                 frame_handler_palloc(false, spte, true, false);
                 break;
             }

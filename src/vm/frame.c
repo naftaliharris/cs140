@@ -80,29 +80,25 @@ static void advance_clock_hand() {
 static struct frame* evict_frame(void) {
     ASSERT(lock_held_by_current_thread(&frame_evict_lock));
     advance_clock_hand();
-    struct frame* frame = NULL;
+    struct frame* frame;
     while (true) {
         frame = &(frame_table[clock_hand]);
         bool aquired = lock_try_acquire(&frame->frame_lock);
         if (aquired) {
             lock_release(&frame_evict_lock);
-            if (frame->resident_page == NULL) {
-                return frame;
-            }
             uint32_t* pagedir = frame->resident_page->owner_thread->pagedir;
             bool accessed = pagedir_is_accessed(pagedir, frame->resident_page->page_id);
             if (accessed) {
                 pagedir_set_accessed(pagedir, frame->resident_page->page_id, false);
                 lock_release(&frame->frame_lock);
             } else {
-                evict_page_from_physical_memory(frame->resident_page);
-                frame->resident_page = NULL;
-                return frame;
+                break;
             }
             lock_acquire(&frame_evict_lock);
         }
         advance_clock_hand();
     }
+    evict_page_from_physical_memory(frame->resident_page);
     return frame;
 }
 
@@ -145,15 +141,18 @@ bool frame_handler_palloc(bool zeros, struct spte* spte, bool should_pin, bool i
     }
     
     if (zeros) memset(frame->physical_mem_frame_base, 0, PGSIZE);
+    spte->frame = frame;
+    
     bool success = load_page_into_physical_memory(spte, is_fresh_stack_page);
     
     if (!success) {
         barrier();
         spte->frame = NULL;
+        spte->is_loaded = false;
         palloc_free_page(physical_memory_addr);
     } else {
         frame->resident_page = spte;
-        spte->frame = frame;
+        spte->is_loaded = true;
     }
     if (should_pin == false) {
         lock_release(&frame->frame_lock);
