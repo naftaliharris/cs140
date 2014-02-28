@@ -39,15 +39,16 @@ pagedir_destroy (uint32_t *pd)
     if (*pde & PTE_P) 
       {
         uint32_t *pt = pde_get_pt (*pde);
-        //uint32_t *pte;
+        uint32_t *pte;
         
-        /*for (pte = pt; pte < pt + PGSIZE / sizeof *pte; pte++)
-          free_page (find_spte(*pte));*/
+        for (pte = pt; pte < pt + PGSIZE / sizeof *pte; pte++)
+          if (!(*pte & PTE_U) && *pte & PTE_P) 
+            palloc_free_page (pte_get_page (*pte));
         palloc_free_page (pt);
       }
     //LP ADDition, project 3, frees all pages we currently
     //own in physical memory.
-    free_spte_table(&thread_current()->spte_table);
+  free_spte_table(&thread_current()->spte_table);
   palloc_free_page (pd);
 }
 
