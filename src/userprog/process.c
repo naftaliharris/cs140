@@ -403,6 +403,16 @@ void release_all_locks(struct thread* t) {
     }
 }
 
+void munmap_all(struct thread *t)
+{
+    struct list_elem *e = list_head(&t->mmapped_files);
+    while ((e = list_next (e)) != list_end (&t->mmapped_files)) 
+    {
+        struct mmap_state *mmap_s = list_entry(e, struct mmap_state, elem);
+        munmap_state(mmap_s);
+    }
+}
+
 /*
  ----------------------------------------------------------------
  Description: disables interrupts, checks all locks are released,
@@ -415,6 +425,7 @@ void release_all_locks(struct thread* t) {
 void release_resources(struct thread* t) {
     enum intr_level old_level = intr_disable();
     
+    munmap_all(t);
     close_open_files(t);
     release_all_locks(t);
     

@@ -1,6 +1,7 @@
 #include "userprog/syscall.h"
 #include <stdio.h>
 #include <syscall-nr.h>
+#include <list.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/malloc.h"
@@ -528,7 +529,17 @@ mmap(int fd, void *addr)
 static void
 munmap(mapid_t mapping)
 {
-    
+    /* Find the mmap_state */
+    struct thread *t = thread_current();
+    struct list_elem *e = list_head(&t->mmapped_files);
+    while ((e = list_next (e)) != list_end (&t->mmapped_files)) 
+    {
+        struct mmap_state *mmap_s = list_entry(e, struct mmap_state, elem);
+        if (mmap_s->mapping == mapping) {
+            munmap_state(mmap_s);
+            return;
+        }
+    }
 }
 
 /* TODO Don't forget to free mmap_state when the thread exits */

@@ -14,4 +14,6 @@ struct mmap_state
     mapid_t mapping;
 };
 
+void munmap_state(struct mmap_state *mmap_s);
+
 #endif

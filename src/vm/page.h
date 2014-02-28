@@ -207,5 +207,6 @@ void pin_page(void* virtual_address);
  */
 void un_pin_page(void* virtual_address);
 
+void munmap_state(struct mmap_state *mmap_s);
 
 #endif /* vm/page.h */

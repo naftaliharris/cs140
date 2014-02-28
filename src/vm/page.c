@@ -18,6 +18,8 @@ static void evict_swap_page(struct spte* spte);
 static void evict_file_page(struct spte* spte);
 static void evict_mmaped_page(struct spte* spte);
 
+static void free_hash_entry(struct hash_elem* e, void* aux UNUSED);
+
 
 static void
 assert_spte_consistency(struct spte* spte)
@@ -196,11 +198,31 @@ static void evict_mmaped_page(struct spte* spte) {
     bool dirty = pagedir_is_dirty(pagedir, spte->frame->resident_page->page_id);
     if (dirty) {
         /* XXX Using the right user vs kernel pointer? */
-        file_write_at (spte->file_ptr, spte->page_id, PGSIZE,
+        file_write_at (spte->file_ptr, spte->page_id, spte->read_bytes,
                        spte->offset_in_file);
     }
 
     assert_spte_consistency(spte);
+}
+
+/* Note: Must be called by thread that owns the mmap state! */
+void
+munmap_state(struct mmap_state *mmap_s)
+{
+    void *page;
+    int size = file_length(mmap_s->fp);
+    struct thread *t = thread_current();
+    
+    /* Write back dirty pages, and free all pages in use */
+    for (page = mmap_s->vaddr; page < page + size; page += PGSIZE)
+    {
+        struct spte *entry = find_spte(page);
+        if (pagedir_is_present(t->pagedir, page)) {
+            evict_mmaped_page(entry);
+        }
+
+        free_hash_entry(&entry->elem, NULL);
+    }
 }
 
 /*
