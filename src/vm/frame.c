@@ -80,7 +80,7 @@ static void advance_clock_hand() {
 static struct frame* evict_frame(void) {
     ASSERT(lock_held_by_current_thread(&frame_evict_lock));
     advance_clock_hand();
-    struct frame* frame;
+    struct frame* frame = NULL;
     while (true) {
         frame = &(frame_table[clock_hand]);
         bool aquired = lock_try_acquire(&frame->frame_lock);
@@ -97,6 +97,7 @@ static struct frame* evict_frame(void) {
             } else {
                 evict_page_from_physical_memory(frame->resident_page);
                 frame->resident_page = NULL;
+                return frame;
             }
             lock_acquire(&frame_evict_lock);
         }
@@ -144,8 +145,6 @@ bool frame_handler_palloc(bool zeros, struct spte* spte, bool should_pin, bool i
     }
     
     if (zeros) memset(frame->physical_mem_frame_base, 0, PGSIZE);
-    spte->frame = frame;
-    
     bool success = load_page_into_physical_memory(spte, is_fresh_stack_page);
     
     if (!success) {
@@ -159,6 +158,7 @@ bool frame_handler_palloc(bool zeros, struct spte* spte, bool should_pin, bool i
     if (should_pin == false) {
         lock_release(&frame->frame_lock);
     }
+    return success;
 }
 
 /*
