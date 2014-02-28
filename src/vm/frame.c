@@ -175,6 +175,8 @@ bool frame_handler_palloc_free(struct spte* spte) {
     }
     //If we are not the current owner, than some other thread swooped in and is using
     //the page, so we do not want to free it, thus do nothing.
+    frame->resident_page = NULL;
+    lock_release(&frame->frame_lock);
     return true;
 }
 
