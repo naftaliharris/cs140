@@ -86,7 +86,7 @@ static struct frame* evict_frame(void) {
         bool aquired = lock_try_acquire(&frame->frame_lock);
         if (aquired) {
             lock_release(&frame_evict_lock);
-            if (frame->resident_page == NULL) {
+            if (frame->resident_page == NULL || frame->resident_page->owner_thread->pagedir == NULL) {
                 lock_acquire(&frame_evict_lock);
                 lock_release(&frame->frame_lock);
                 advance_clock_hand();
@@ -178,10 +178,10 @@ bool frame_handler_palloc_free(struct spte* spte) {
     if (frame->resident_page == spte) {
         //in this case, we are still the owner of the frame, so we can free the page
         palloc_free_page(frame->physical_mem_frame_base);
+        frame->resident_page = NULL;
     }
     //If we are not the current owner, than some other thread swooped in and is using
     //the page, so we do not want to free it, thus do nothing.
-    frame->resident_page = NULL;
     lock_release(&frame->frame_lock);
     return true;
 }

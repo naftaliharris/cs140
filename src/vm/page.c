@@ -394,12 +394,13 @@ void pin_page(void* virtual_address) {
             bool success = aquire_frame_lock(spte->frame, spte);
             if (success) {
                 break;
-            } else if (spte->is_loaded != true) {
-                frame_handler_palloc(false, spte, true, false);
-                break;
+            } else {
+                if (spte->is_loaded != true) {
+                    frame_handler_palloc(false, spte, true, false);
+                    break;
+                }
             }
         }
-        
     }
 }
 
