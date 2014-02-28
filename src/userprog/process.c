@@ -427,12 +427,11 @@ void munmap_all(struct thread *t)
  ----------------------------------------------------------------
  */
 void release_resources(struct thread* t) {
-    enum intr_level old_level = intr_disable();
-    
     munmap_all(t);
-    release_all_locks(t);
+
+    enum intr_level old_level = intr_disable();
     close_open_files(t);
-    
+    release_all_locks(t);
     intr_set_level(old_level);
 }
 

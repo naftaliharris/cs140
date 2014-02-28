@@ -190,8 +190,7 @@ pagedir_is_present (uint32_t *pd, void *upage)
   ASSERT (is_user_vaddr (upage));
 
   pte = lookup_page (pd, upage, false);
-  ASSERT (pte != NULL);
-  return ((*pte & PTE_P) != 0);
+  return pte != NULL && (*pte & PTE_P) != 0;
 }
 
 /* Returns true if the PTE for virtual page VPAGE in PD is dirty,

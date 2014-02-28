@@ -226,13 +226,13 @@ munmap_state(struct mmap_state *mmap_s, struct thread *t)
             evict_mmaped_page(entry);
         }
         
-        lock_acquire(&file_system_lock);
-        file_close(mmap_s->fp);
-        lock_release(&file_system_lock);
-
         hash_delete(&t->spte_table, &entry->elem);
         free(entry);
     }
+
+    lock_acquire(&file_system_lock);
+    file_close(mmap_s->fp);
+    lock_release(&file_system_lock);
     
     struct list_elem *next = list_remove(&mmap_s->elem);
     free(mmap_s);
