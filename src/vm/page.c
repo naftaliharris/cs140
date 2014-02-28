@@ -209,20 +209,18 @@ static void evict_mmaped_page(struct spte* spte) {
     assert_spte_consistency(spte);
 }
 
-/* Note: Must be called by thread that owns the mmap state! */
-void
-munmap_state(struct mmap_state *mmap_s)
+struct list_elem *
+munmap_state(struct mmap_state *mmap_s, struct thread *t)
 {
     void *page;
     lock_acquire(&file_system_lock);
     int size = file_length(mmap_s->fp);
     lock_release(&file_system_lock);
-    struct thread *t = thread_current();
     
     /* Write back dirty pages, and free all pages in use */
-    for (page = mmap_s->vaddr; page < page + size; page += PGSIZE)
+    for (page = mmap_s->vaddr; page < mmap_s->vaddr + size; page += PGSIZE)
     {
-        struct spte *entry = find_spte(page);
+        struct spte *entry = find_spte(page, t);
         ASSERT (entry != NULL);
         if (pagedir_is_present(t->pagedir, page)) {
             evict_mmaped_page(entry);
@@ -234,6 +232,11 @@ munmap_state(struct mmap_state *mmap_s)
         lock_release(&file_system_lock);
         free_hash_entry(&entry->elem, NULL);
     }
+    
+    struct list_elem *next = &mmap_s->elem.next;
+    list_remove(&mmap_s->elem);
+    free(mmap_s);
+    return next;
 }
 
 /*
@@ -270,12 +273,12 @@ bool evict_page_from_physical_memory(struct spte* spte) {
  NOTE: Returns null if no element could be found. 
  --------------------------------------------------------------------
  */
-struct spte* find_spte(void* virtual_address) {
+struct spte* find_spte(void* virtual_address, struct thread *t) {
     void* spte_id = (void*)pg_round_down(virtual_address);
     struct spte dummy;
     dummy.page_id = spte_id;
     
-    struct hash* table = &thread_current()->spte_table;
+    struct hash* table = &t->spte_table;
     struct hash_elem* match = hash_find(table, &dummy.elem);
     if (match) {
         return hash_entry(match, struct spte, elem);
@@ -428,7 +431,7 @@ bool grow_stack(void* page_id) {
  --------------------------------------------------------------------
  */
 void pin_page(void* virtual_address) {
-    struct spte* spte = find_spte(virtual_address);
+    struct spte* spte = find_spte(virtual_address, thread_current());
     if (spte->is_loaded != true) {
         frame_handler_palloc(false, spte, true, false);
     } else {
@@ -451,7 +454,7 @@ void pin_page(void* virtual_address) {
  --------------------------------------------------------------------
  */
 void un_pin_page(void* virtual_address) {
-    struct spte* spte = find_spte(virtual_address);
+    struct spte* spte = find_spte(virtual_address, thread_current());
     ASSERT(lock_held_by_current_thread(&spte->frame->frame_lock));
     lock_release(&spte->frame->frame_lock);
 }

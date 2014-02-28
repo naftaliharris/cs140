@@ -179,7 +179,7 @@ page_fault (struct intr_frame *f)
 
   //LP Project 3 code
     if (not_present && user) {
-        struct spte* spte = find_spte(fault_addr);
+        struct spte* spte = find_spte(fault_addr, thread_current());
         if (spte != NULL) {
             bool unused = frame_handler_palloc(false, spte, false, false);
             return;

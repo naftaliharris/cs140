@@ -143,7 +143,7 @@ syscall_handler (struct intr_frame *f )
         case SYS_MMAP:
             arg1 = read_frame(f, 4);
             arg2 = read_frame(f, 8);
-            f->eax = (uint32_t)mmap((int)arg1, (void*)arg2);
+            f->eax = mmap((int)arg1, (void*)arg2);
             break;
         case SYS_MUNMAP:
             arg1 = read_frame(f, 4);
@@ -461,37 +461,45 @@ static mapid_t
 mmap(int fd, void *addr)
 {
     /* Validate the parameters */
-    if (((uint32_t)addr) % PGSIZE != 0)
+    if (((uint32_t)addr) % PGSIZE != 0) {
         return -1;
-    if (fd == 0 || fd == 1)
+    }
+    if (fd == 0 || fd == 1) {
         return -1;
+    }
 
     /* Ensure the fd has been assigned to the user */
     lock_acquire(&file_system_lock);
     struct file* fp = get_file_from_open_list(fd);
-    if (fp == NULL)
+    if (fp == NULL) {
         lock_release(&file_system_lock);
         return -1;
+    }
     off_t size = file_length(fp);
     lock_release(&file_system_lock);
 
     /* Ensure that the requested VM region wouldn't contain invalid addresses
      * or overlap other user memory */
+    struct thread *t = thread_current();
     void *page;
     for (page = addr; page < addr + size; page++)
     {
-        if (page == NULL)
+        if (page == NULL) {
             return -1;
-        if (!is_user_vaddr(page))
+        }
+        if (!is_user_vaddr(page)) {
             return -1;
-        if (find_spte(page) != NULL)
+        }
+        if (find_spte(page, t) != NULL) {
             return -1;
+        }
     }
 
     /* Fill in the mmap state data */
     struct mmap_state *mmap_s = malloc(sizeof(struct mmap_state));
-    if (mmap_s == NULL)
+    if (mmap_s == NULL) {
         PANIC ("Couldn't allocated mmapped state struct!");
+    }
 
     lock_acquire(&file_system_lock);
     mmap_s->fp = file_reopen(fp);
@@ -503,7 +511,6 @@ mmap(int fd, void *addr)
     lock_release(&file_system_lock);
 
     mmap_s->vaddr = addr;
-    struct thread *t = thread_current();
     mmap_s->mapping = t->mapid_counter;
     list_push_back(&t->mmapped_files, &mmap_s->elem);
 
@@ -536,7 +543,7 @@ munmap(mapid_t mapping)
     {
         struct mmap_state *mmap_s = list_entry(e, struct mmap_state, elem);
         if (mmap_s->mapping == mapping) {
-            munmap_state(mmap_s);
+            munmap_state(mmap_s, t);
             return;
         }
     }
@@ -634,7 +641,7 @@ static bool check_file_name_length(const char* filename) {
 #define BYTES_PER_PAGE PGSIZE
 static void check_usr_buffer(const void* buffer, unsigned length, void* esp) {
     check_usr_ptr(buffer, esp);
-    struct spte* spte = find_spte(buffer);
+    struct spte* spte = find_spte(buffer, thread_current());
     if (spte->is_writeable == false) {
         LP_exit(-1);
     }
@@ -642,7 +649,7 @@ static void check_usr_buffer(const void* buffer, unsigned length, void* esp) {
     while (true) {
         if (curr_offset >= length) break;
         check_usr_ptr((const void*)((char*)buffer + curr_offset), esp);
-        struct spte* spte = find_spte((const void*)((char*)buffer + curr_offset));
+        struct spte* spte = find_spte((const void*)((char*)buffer + curr_offset), thread_current());
         if (spte->is_writeable == false) {
             LP_exit(-1);
         }
@@ -679,7 +686,7 @@ static void check_usr_ptr(const void* ptr, void* esp) {
     /*if (pagedir_get_page(thread_current()->pagedir, ptr) == NULL) {
         LP_exit(-1);
     }*/
-    if (find_spte(ptr) == NULL) {
+    if (find_spte(ptr, thread_current()) == NULL) {
         if (is_valid_stack_access(esp, ptr)) {
             void* new_stack_page = pg_round_down(ptr);
             grow_stack(new_stack_page);

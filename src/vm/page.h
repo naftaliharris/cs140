@@ -119,7 +119,7 @@ bool evict_page_from_physical_memory(struct spte* spte);
     the settup of the virtual address. 
  --------------------------------------------------------------------
  */
-struct spte* find_spte(void* virtual_address);
+struct spte* find_spte(void* virtual_address, struct thread *t);
 
 /*
  --------------------------------------------------------------------
@@ -207,6 +207,6 @@ void pin_page(void* virtual_address);
  */
 void un_pin_page(void* virtual_address);
 
-void munmap_state(struct mmap_state *mmap_s);
+struct list_elem *munmap_state(struct mmap_state *mmap_s, struct thread *t);
 
 #endif /* vm/page.h */
