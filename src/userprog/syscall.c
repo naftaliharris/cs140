@@ -515,7 +515,7 @@ mmap(int fd, void *addr)
     list_push_back(&t->mmapped_files, &mmap_s->elem);
 
     /* Finally, create the necessary SPTEs */
-    for (page = addr; page < addr + size; page++)
+    for (page = addr; page < addr + size; page += PGSIZE)
     {
         uint32_t read_bytes = page + PGSIZE < addr + size ? PGSIZE
                                                           : addr + size - page;
@@ -548,9 +548,6 @@ munmap(mapid_t mapping)
         }
     }
 }
-
-/* TODO Don't forget to free mmap_state when the thread exits */
-
 
 /*
  --------------------------------------------------------------------

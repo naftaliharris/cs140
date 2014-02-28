@@ -230,7 +230,10 @@ munmap_state(struct mmap_state *mmap_s, struct thread *t)
         lock_acquire(&file_system_lock);
         file_close(mmap_s->fp);
         lock_release(&file_system_lock);
-        free_hash_entry(&entry->elem, NULL);
+
+        hash_delete(&t->spte_table, &entry->elem);
+        free(entry);
+        //free_hash_entry(&entry->elem, NULL);
     }
     
     struct list_elem *next = &mmap_s->elem.next;
@@ -325,7 +328,6 @@ static void free_hash_entry(struct hash_elem* e, void* aux UNUSED) {
         frame_handler_palloc_free(spte);
     }
     free_spte(spte);
-    
 }
 
 /*
