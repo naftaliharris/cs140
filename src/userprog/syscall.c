@@ -23,7 +23,7 @@ static void syscall_handler (struct intr_frame *);
 // BEGIN LP DEFINED HELPER FUNCTIONS//
 static void check_usr_ptr(const void* u_ptr, void* esp);
 static void check_usr_string(const char* str, void* esp);
-static void check_usr_buffer(const void* buffer, unsigned length, void* esp);
+static void check_usr_buffer(const void* buffer, unsigned length, void* esp, bool check_writable);
 static bool check_file_name_length(const char* filename);
 static uint32_t read_frame(struct intr_frame* f, int byteOffset);
 static int add_to_open_file_list(struct file* fp);
@@ -349,7 +349,7 @@ static int LP_filesize (int fd) {
  --------------------------------------------------------------------
  */
 static int LP_read (int fd, void *buffer, unsigned length, void* esp) {
-    check_usr_buffer(buffer, length, esp);
+    check_usr_buffer(buffer, length, esp, true);
     pinning_for_system_call(buffer, length, true);
     
     if (fd == STDIN_FILENO) {
@@ -384,7 +384,7 @@ static int LP_read (int fd, void *buffer, unsigned length, void* esp) {
  --------------------------------------------------------------------
  */
 static int LP_write (int fd, const void *buffer, unsigned length, void* esp) {
-    check_usr_buffer(buffer, length, esp);
+    check_usr_buffer(buffer, length, esp, false);
     pinning_for_system_call(buffer, length, true);
     
     if (fd == STDOUT_FILENO) {
@@ -651,10 +651,10 @@ static bool check_file_name_length(const char* filename) {
  --------------------------------------------------------------------
  */
 #define BYTES_PER_PAGE PGSIZE
-static void check_usr_buffer(const void* buffer, unsigned length, void* esp) {
+static void check_usr_buffer(const void* buffer, unsigned length, void* esp, bool check_writable) {
     check_usr_ptr(buffer, esp);
     struct spte* spte = find_spte(buffer, thread_current());
-    if (spte->is_writeable == false) {
+    if (check_writable && spte->is_writeable == false) {
         LP_exit(-1);
     }
     unsigned curr_offset = BYTES_PER_PAGE;
