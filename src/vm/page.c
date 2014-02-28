@@ -366,7 +366,6 @@ bool install_page(void *upage, void *kpage, bool writable) {
  --------------------------------------------------------------------
  */
 void clear_page(void* upage, struct thread* t) {
-    ASSERT(thread_current() == t);
     pagedir_clear_page(t->pagedir, upage);
 }
 
