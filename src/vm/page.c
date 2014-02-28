@@ -217,6 +217,7 @@ munmap_state(struct mmap_state *mmap_s)
     for (page = mmap_s->vaddr; page < page + size; page += PGSIZE)
     {
         struct spte *entry = find_spte(page);
+        ASSERT (entry != NULL);
         if (pagedir_is_present(t->pagedir, page)) {
             evict_mmaped_page(entry);
         }
