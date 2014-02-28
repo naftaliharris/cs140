@@ -405,6 +405,8 @@ void release_all_locks(struct thread* t) {
 
 void munmap_all(struct thread *t)
 {
+    enum intr_level old_level = intr_enable();
+
     struct list_elem *e;
     struct list *mmapped_files = &t->mmapped_files;
     e = list_begin(mmapped_files);
@@ -415,6 +417,8 @@ void munmap_all(struct thread *t)
         struct mmap_state *mmap_s = list_entry(e, struct mmap_state, elem);
         e = munmap_state(mmap_s, t);
     }
+
+    intr_set_level(old_level);
 }
 
 /*
@@ -427,11 +431,12 @@ void munmap_all(struct thread *t)
  ----------------------------------------------------------------
  */
 void release_resources(struct thread* t) {
-    munmap_all(t);
-
     enum intr_level old_level = intr_disable();
+
+    munmap_all(t);
     close_open_files(t);
     release_all_locks(t);
+
     intr_set_level(old_level);
 }
 
@@ -467,7 +472,6 @@ process_exit (void)
     }
     notify_children_parent_is_finished();
     release_resources(cur);
-    
     
     uint32_t *pd;
     

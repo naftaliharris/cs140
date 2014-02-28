@@ -197,11 +197,11 @@ static void evict_mmaped_page(struct spte* spte) {
     assert_spte_consistency(spte);
 
     uint32_t* pagedir = spte->owner_thread->pagedir;
-    bool dirty = pagedir_is_dirty(pagedir, spte->frame->resident_page->page_id);
+    void *page_id = spte->frame->resident_page->page_id;
+    bool dirty = pagedir_is_dirty(pagedir, page_id);
     if (dirty) {
-        /* XXX Using the right user vs kernel pointer? */
         lock_acquire(&file_system_lock);
-        file_write_at (spte->file_ptr, spte->page_id, spte->read_bytes,
+        file_write_at (spte->file_ptr, page_id, spte->read_bytes,
                        spte->offset_in_file);
         lock_release(&file_system_lock);
     }
