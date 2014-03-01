@@ -36,22 +36,21 @@ typedef enum {
  */
 struct spte
 {
-    struct hash_elem elem; /* For the per-process list                   */
-    page_location location;
+    struct hash_elem elem;  /* For the per-process list */
+    page_location location; /* Type of spte */
     struct thread* owner_thread; /* needed to access pd */
-    void* page_id;
-    struct frame* frame; /* the physical frame of the page if it is memory */
+    void* page_id;          /* The virtual address */
+    struct frame* frame;    /* the physical frame of the page if it is memory */
     
-    bool is_writeable;   /*true if the page can be written to */
-    bool is_loaded;      /*true if the page is currently loaded in memory */
+    bool is_writeable;      /* true if the page can be written to */
+    bool is_loaded;         /* true if the page is currently loaded in memory */
            
-    struct file* file_ptr;
-    off_t offset_in_file;
-    uint32_t read_bytes;
-    uint32_t zero_bytes;
+    struct file* file_ptr;  /* File this page is backed by, (if relevant) */
+    off_t offset_in_file;   /* Position in file this page comes from */
+    uint32_t read_bytes;    /* Bytes to read from this file */
+    uint32_t zero_bytes;    /* Bytes to zero from this file */
     
-    uint32_t swap_index; /* index into the swap sector */
-    
+    uint32_t swap_index;    /* index into the swap sector */
     
 };
 

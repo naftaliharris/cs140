@@ -30,6 +30,26 @@ Connor Woodson <cwoodson@stanford.edu>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+struct spte
+{
+    struct hash_elem elem;  /* For the per-process list */
+    page_location location; /* Type of spte */
+    struct thread* owner_thread; /* needed to access pd */
+    void* page_id;          /* The virtual address */
+    struct frame* frame;    /* the physical frame of the page if it is memory */
+    
+    bool is_writeable;      /* true if the page can be written to */
+    bool is_loaded;         /* true if the page is currently loaded in memory */
+           
+    struct file* file_ptr;  /* File this page is backed by, (if relevant) */
+    off_t offset_in_file;   /* Position in file this page comes from */
+    uint32_t read_bytes;    /* Bytes to read from this file */
+    uint32_t zero_bytes;    /* Bytes to zero from this file */
+    
+    uint32_t swap_index;    /* index into the swap sector */
+    
+};
+
 ---- ALGORITHMS ----
 
 >> A2: In a few paragraphs, describe your code for locating the frame,
@@ -112,14 +132,63 @@ Connor Woodson <cwoodson@stanford.edu>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+/* Define the mapid_t type */
+typedef int32_t mapid_t;
+
+/* State keeping track of each mmapped file.
+ * Note that multiple calls to mmap generate new mmap_states, even if the same
+ * file was mmapped. */
+struct mmap_state
+{
+    struct list_elem elem;  /* For the per-process list of mmapped files */
+    struct file *fp;        /* The mmapped's owned reference to the file */
+    void *vaddr;            /* Virtual address where the mmapped file begins */
+    mapid_t mapping;        /* The per-process mapping id */
+};
+
+struct thread
+{
+    ...
+
+    /* Next mapid_t to use */
+    mapid_t mapid_counter;
+
+    /* List of mmapped files */
+    struct list mmapped_files;
+
+    ...
+}
+
+Also relevant is the struct spte, (the supplementary page table entry), which
+you can find in section A1.
+
 ---- ALGORITHMS ----
 
 >> C2: Describe how memory mapped files integrate into your virtual
 >> memory subsystem.  Explain how the page fault and eviction
 >> processes differ between swap pages and other pages.
 
+In our supplementary page table, one of the types of spte we have is the
+MMAPPED_PAGE type. This allows us to distinguish mmapped pages from other kinds
+of pages, like swap pages and read-only file pages. When there is a page fault
+attempting to read or write an mmapped page, we simply read the page in from
+its location in the file, as determined by the spte that governs the particular
+page. To evict an mmapped page, we simply check if it is dirty, and if so,
+write it back to its location in the file as determined by the spte. Of course,
+we are careful to keep track of the number of bytes that need to be read and
+the number of bytes that must be zeroed, which we do in the spte.
+
 >> C3: Explain how you determine whether a new file mapping overlaps
 >> any existing segment.
+
+Each virtual page owned by a user process is associated with an spte, and for
+each process, we keep track of all spte's in the per-thread spte_table. Thus,
+to make sure that the new file mapping does not overlap with any existing
+segment, we check all of the page addresses that we'd need for the mmap to see
+ if they are in our spte table, (that is, already used by the process for some
+other reason). Since the spte table is a hash table, this takes time linear in
+the number of pages that the mmap would need. Only after this check do we
+complete the mmap by adding the new mmap spte's to the process's spte_table.
 
 ---- RATIONALE ----
 
@@ -129,6 +198,14 @@ Connor Woodson <cwoodson@stanford.edu>
 >> that much of their implementation can be shared.  Explain why your
 >> implementation either does or does not share much of the code for
 >> the two situations.
+
+We do share some of the same implementations. For loading an mmap page into
+physical memory, or for loading an executable page from memory, in both cases
+we simply need to take the page from its location in the particular file and
+then copy it into the memory buffer. So we use the same code for this. However,
+we do not write executable pages back to disk, or stack pages to disk, so we
+needed to write a new function for evicting mmapped pages, rather than sharing
+the implementation with some other type of page.
 
 			   SURVEY QUESTIONS
 			   ================
