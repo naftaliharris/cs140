@@ -276,6 +276,7 @@ static void free_hash_entry(struct hash_elem* e, void* aux UNUSED) {
     struct spte* spte = hash_entry(e, struct spte, elem);
     if (spte->is_loaded) {
         frame_handler_palloc_free(spte);
+        //here we need to remove the memory mapping
     }
     free_spte(spte);
     
@@ -324,6 +325,8 @@ bool install_page(void *upage, void *kpage, bool writable) {
 void clear_page(void* upage, struct thread* t) {
     if (t->pagedir != NULL) {
          pagedir_clear_page(t->pagedir, upage);
+    } else {
+        printf("pagedir is null");
     }
 }
 

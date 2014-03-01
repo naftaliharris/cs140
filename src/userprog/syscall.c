@@ -47,6 +47,7 @@ static void LP_close (int fd);
 
 //BEGIN LP Project 3 additions
 static void pinning_for_system_call(const void* begin, unsigned length, bool should_pin);
+static unsigned strlen_pin(const char* string);
 //END LP Project 3 additions
 
 
@@ -205,8 +206,7 @@ static pid_t LP_exec (const char* command_line, void* esp) {
     check_usr_string(command_line, esp);
     struct thread* curr_thread = thread_current();
     
-    unsigned length = strlen(command_line);
-    pinning_for_system_call(command_line, length, true);
+    unsigned length = strlen_pin(command_line);
     
     pid_t pid = process_execute(command_line);
     pinning_for_system_call(command_line, length, false);
@@ -248,7 +248,6 @@ static bool LP_create (const char *file, unsigned initial_size, void* esp) {
     }
     lock_acquire(&file_system_lock);
     unsigned length = strlen(file);
-    pinning_for_system_call(file, length, true);
     bool outcome = filesys_create(file, initial_size);
     pinning_for_system_call(file, length, false);
     lock_release(&file_system_lock);
@@ -274,7 +273,6 @@ static bool LP_remove (const char *file, void* esp) {
     
     lock_acquire(&file_system_lock);
     unsigned length = strlen(file);
-    pinning_for_system_call(file, length, true);
     bool outcome = filesys_remove(file);
     pinning_for_system_call(file, length, false);
     lock_release(&file_system_lock);
@@ -296,7 +294,6 @@ static int LP_open (const char *file, void* esp) {
     }
     lock_acquire(&file_system_lock);
     unsigned length = strlen(file);
-    pinning_for_system_call(file, length, true);
     struct file* fp = filesys_open(file);
     if (fp == NULL) {
         pinning_for_system_call(file, length, false);
@@ -524,6 +521,27 @@ static int add_to_open_file_list(struct file* fp) {
 }
 
 /*
+ */
+static unsigned strlen_pin(const char* string) {
+    void* last_page = NULL;
+    void* curr_page = NULL;
+    unsigned str_len = 0;
+    char* str = (char*)string;
+    while (true) {
+        const void* ptr = (const void*)str;
+        curr_page = pg_round_down(ptr);
+        if (curr_page != last_page) {
+            pinning_for_system_call(curr_page, 0, true);
+            last_page = curr_page;
+        }
+        if (*str == '\0') break;
+        str_len++;
+        str = (char*)str + 1;
+    }
+    return str_len;
+}
+
+/*
  --------------------------------------------------------------------
  Description: ensures that the length of the filename does not 
     exceed 14 characters. 
@@ -531,9 +549,43 @@ static int add_to_open_file_list(struct file* fp) {
  */
 #define MAX_FILENAME_LENGTH 14
 static bool check_file_name_length(const char* filename) {
-    size_t length = strlen(filename);
-    if (length > MAX_FILENAME_LENGTH) return false;
+    
+    void* last_page = NULL;
+    void* curr_page = NULL;
+    unsigned str_len = 0;
+    char* str = (char*)filename;
+    while (true) {
+        const void* ptr = (const void*)str;
+        curr_page = pg_round_down(ptr);
+        if (curr_page != last_page) {
+            pinning_for_system_call(curr_page, 0, true);
+            last_page = curr_page;
+        }
+        if (*str == '\0') break;
+        str_len++;
+        str = (char*)str + 1;
+    }
+    if (str_len > MAX_FILENAME_LENGTH) {
+        last_page = NULL;
+        curr_page = NULL;
+        str = (char*)filename;
+        while (true) {
+            const void* ptr = (const void*)str;
+            curr_page = pg_round_down(ptr);
+            if (curr_page != last_page) {
+                pinning_for_system_call(curr_page, 0, false);
+                last_page = curr_page;
+            }
+            if (*str == '\0') break;
+            str = (char*)str + 1;
+        }
+        return false;
+    }
     return true;
+    
+    /*size_t length = strlen(filename);
+    if (length > MAX_FILENAME_LENGTH) return false;
+    return true;*/
 }
 
 /*
