@@ -372,7 +372,7 @@ void clear_page(void* upage, struct thread* t) {
     if (t->pagedir != NULL) {
          pagedir_clear_page(t->pagedir, upage);
     } else {
-        printf("pagedir is null");
+        //printf("pagedir is null");
     }
 }
 
@@ -447,6 +447,12 @@ void pin_page(void* virtual_address) {
                 if (spte->is_loaded != true) {
                     frame_handler_palloc(false, spte, true, false);
                     break;
+                } else {
+                    if (spte->is_loaded == true) {
+                        frame_handler_palloc_free(spte);
+                        frame_handler_palloc(false, spte, true, false);
+                        break;
+                    }
                 }
             }
         }
