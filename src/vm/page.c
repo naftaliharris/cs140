@@ -43,7 +43,7 @@ struct spte* create_spte_and_add_to_table(page_location location, void* page_id,
 
     struct spte* spte = malloc(sizeof(struct spte));
     if (spte == NULL) {
-        PANIC("Could not allocate spte");
+        return NULL;
     }
     spte->location = location;
     spte->owner_thread = thread_current();
@@ -323,7 +323,7 @@ static void free_hash_entry(struct hash_elem* e, void* aux UNUSED) {
     struct spte* spte = hash_entry(e, struct spte, elem);
     if (spte->is_loaded) {
         frame_handler_palloc_free(spte);
-        //here we need to remove the memory mapping
+        clear_page(spte->page_id, spte->owner_thread);
     }
     free_spte(spte);
 }
@@ -365,14 +365,14 @@ bool install_page(void *upage, void *kpage, bool writable) {
 
 /*
  --------------------------------------------------------------------
- IMPLIMENTATION NOTES:
+ IMPLIMENTATION NOTES: note, pagedir may be null of the thread
+    is exiting and has set its pagedir to null. Thus, we 
+    must check for this case.
  --------------------------------------------------------------------
  */
 void clear_page(void* upage, struct thread* t) {
     if (t->pagedir != NULL) {
-         pagedir_clear_page(t->pagedir, upage);
-    } else {
-        //printf("pagedir is null");
+        pagedir_clear_page(t->pagedir, upage);
     }
 }
 
@@ -417,6 +417,9 @@ bool is_valid_stack_access(void* esp, void* user_virtual_address) {
  */
 bool grow_stack(void* page_id) {
     struct spte* spte = create_spte_and_add_to_table(SWAP_PAGE, page_id, true, true, NULL, 0, 0, 0);
+    if (spte == NULL) {
+        return false;
+    }
     bool outcome = frame_handler_palloc(true, spte, false, true);
     return outcome;
 }
@@ -428,10 +431,10 @@ bool grow_stack(void* page_id) {
     we simply call frame_handler_palloc(false, spte, true), as the
     last true field will pin frame. 
  NOTE: if the page is in memory, synchronization becomes an issue.
-    In this case we have to repeatedly try to acquire the 
-    lock for the page if it is in physical memory. If we find that
-    it isn't at any time during this process, we revert to the above
-    easy case.
+    In this case we have to try to acquire the 
+    lock for the page if it is in physical memory. If we aquire the 
+    lock, and the page is still in the frame, we are good, else,
+    we have to hunt down the now frame.
  --------------------------------------------------------------------
  */
 void pin_page(void* virtual_address) {

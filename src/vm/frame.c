@@ -106,6 +106,8 @@ static struct frame* evict_frame(void) {
                 lock_release(&frame->frame_lock);
             } else {
                 evict_page_from_physical_memory(frame->resident_page);
+                frame->resident_page->frame = NULL;
+                frame->resident_page = NULL;
                 return frame;
             }
             lock_acquire(&frame_evict_lock);
@@ -180,6 +182,9 @@ bool frame_handler_palloc(bool zeros, struct spte* spte, bool should_pin, bool i
  --------------------------------------------------------------------
  */
 bool frame_handler_palloc_free(struct spte* spte) {
+    if (spte->frame == NULL) {
+        return true;
+    }
     struct frame* frame = frame_table + get_frame_index(spte->frame->physical_mem_frame_base);
     lock_acquire(&frame->frame_lock);
     if (frame->resident_page == spte) {
