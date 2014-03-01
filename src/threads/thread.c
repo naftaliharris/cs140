@@ -1112,6 +1112,9 @@ void donate_priority(void) {
         if (currThread->priority > currLock->priority) {
             currLock->priority = currThread->priority;
         }
+        if (currThread == NULL || currLock == NULL) {
+            printf("cur thread null");
+        }
         if (currThread->priority > currLock->holder->priority) {
             currLock->holder->priority = currThread->priority;
         }
