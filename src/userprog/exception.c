@@ -180,28 +180,26 @@ page_fault (struct intr_frame *f)
   //LP Project 3 code
     if (not_present && user) {
         struct spte* spte = find_spte(fault_addr, thread_current());
+        bool success = false;
         if (spte != NULL) {
-            bool unused = frame_handler_palloc(false, spte, false, false);
-            return;
+             success = frame_handler_palloc(false, spte, false, false);
         } else {
             if (is_valid_stack_access(f->esp, fault_addr)) {
                 void* next_stack_page = (void*)pg_round_down(fault_addr);
-                bool unused = grow_stack(next_stack_page);
-                return;
+                success = grow_stack(next_stack_page);
             }
         }
-        thread_current()->vital_info->exit_status = -1;
-        if (thread_current()->is_running_user_program) {
-            printf("%s: exit(%d)\n", thread_name(), -1);
+        if (!success) {
+            thread_current()->vital_info->exit_status = -1;
+            if (thread_current()->is_running_user_program) {
+                printf("%s: exit(%d)\n", thread_name(), -1);
+            }
+            thread_exit ();
+        } else {
+            return;
         }
-        thread_exit ();
     }
-    
-    if (!user) {
-        printf("fualt address = %i, esp = %i", (unsigned)fault_addr, (unsigned)f->esp);
-    }
-
-  //END LP Poject 3 code
+    //END LP Poject 3 code
     
 
   /* User segfault */    

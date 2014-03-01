@@ -705,7 +705,7 @@ static bool check_file_name_length(const char* filename) {
 #define BYTES_PER_PAGE PGSIZE
 static void check_usr_buffer(const void* buffer, unsigned length, void* esp, bool check_writable) {
     check_usr_ptr(buffer, esp);
-    struct spte* spte = find_spte(buffer, thread_current());
+    struct spte* spte = find_spte((void*)buffer, thread_current());
     if (check_writable && spte->is_writeable == false) {
         LP_exit(-1);
     }
@@ -713,7 +713,7 @@ static void check_usr_buffer(const void* buffer, unsigned length, void* esp, boo
     while (true) {
         if (curr_offset >= length) break;
         check_usr_ptr((const void*)((char*)buffer + curr_offset), esp);
-        struct spte* spte = find_spte((const void*)((char*)buffer + curr_offset), thread_current());
+        struct spte* spte = find_spte((void*)((char*)buffer + curr_offset), thread_current());
         if (spte->is_writeable == false) {
             LP_exit(-1);
         }
@@ -750,8 +750,8 @@ static void check_usr_ptr(const void* ptr, void* esp) {
     /*if (pagedir_get_page(thread_current()->pagedir, ptr) == NULL) {
         LP_exit(-1);
     }*/
-    if (find_spte(ptr, thread_current()) == NULL) {
-        if (is_valid_stack_access(esp, ptr)) {
+    if (find_spte((void*)ptr, thread_current()) == NULL) {
+        if (is_valid_stack_access(esp, (void*)ptr)) {
             void* new_stack_page = pg_round_down(ptr);
             grow_stack(new_stack_page);
         } else {
@@ -811,7 +811,7 @@ static uint32_t read_frame(struct intr_frame* f, int byteOffset) {
  --------------------------------------------------------------------
  */
 static void pinning_for_system_call(const void* begin, unsigned length, bool should_pin) {
-    void* curr_addr = begin;
+    void* curr_addr = (void*)begin;
     void* curr_page = pg_round_down(curr_addr);
     if (should_pin) {
         pin_page(curr_page);

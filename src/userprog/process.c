@@ -30,6 +30,9 @@ void close_open_files(struct thread* t);
 void release_resources(struct thread* t);
 void release_all_locks(struct thread* t);
 
+/* Project 3 Function prototypes */
+void munmap_all(struct thread *t);
+
 /*
  ----------------------------------------------------------------
  Starts a new thread running a user program loaded from
@@ -403,6 +406,12 @@ void release_all_locks(struct thread* t) {
     }
 }
 
+/*
+ ----------------------------------------------------------------
+ DESCRIPTION: unmaps all mapped entries for the 
+    process that is exiting.
+ ----------------------------------------------------------------
+ */
 void munmap_all(struct thread *t)
 {
     enum intr_level old_level = intr_enable();
@@ -424,10 +433,10 @@ void munmap_all(struct thread *t)
 /*
  ----------------------------------------------------------------
  Description: disables interrupts, checks all locks are released,
- all malloc'd memory is freed, and any other resource is
- released.
+    all malloc'd memory is freed, and any other resource is
+    released.
  NOTE: we disable interrupts, as we have to check if this thead
- is holding any locks, and subsequently release them.
+    is holding any locks, and subsequently release them.
  ----------------------------------------------------------------
  */
 void release_resources(struct thread* t) {

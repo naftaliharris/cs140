@@ -66,10 +66,6 @@ static uint32_t *
 lookup_page (uint32_t *pd, const void *vaddr, bool create)
 {
   uint32_t *pt, *pde;
-    
-    if (pd == NULL) {
-        printf("null pd");
-    }
 
   ASSERT (pd != NULL);
 
