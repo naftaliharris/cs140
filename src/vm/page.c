@@ -57,7 +57,9 @@ struct spte* create_spte_and_add_to_table(page_location location, void* page_id,
     spte->zero_bytes = zero_bytes;
     spte->swap_index = 0; //IS THIS CORRECT???
     struct hash* target_table = &thread_current()->spte_table;
+    lock_acquire(&thread_current()->spte_table_lock);
     struct spte* outcome = hash_entry(hash_insert(target_table, &spte->elem), struct spte, elem);
+    lock_release(&thread_current()->spte_table_lock);
     if (outcome != NULL) {
         PANIC("Trying to add two spte's for the same page");
     }
@@ -178,8 +180,10 @@ static void evict_swap_page(struct spte* spte) {
  */
 static void evict_file_page(struct spte* spte) {
     assert_spte_consistency(spte);
+    lock_acquire(&spte->owner_thread->pagedir_lock);
     uint32_t* pagedir = spte->owner_thread->pagedir;
     bool dirty = pagedir_is_dirty(pagedir, spte->frame->resident_page->page_id);
+    lock_release(&spte->owner_thread->pagedir_lock);
     if (dirty) {
         spte->location = SWAP_PAGE;
         evict_swap_page(spte);
@@ -222,11 +226,15 @@ munmap_state(struct mmap_state *mmap_s, struct thread *t)
     {
         struct spte *entry = find_spte(page, t);
         ASSERT (entry != NULL);
+        lock_acquire(&t->pagedir_lock);
         if (pagedir_is_present(t->pagedir, page)) {
             evict_mmaped_page(entry);
         }
+        lock_release(&t->pagedir_lock);
         
+        lock_acquire(&t->spte_table_lock);
         hash_delete(&t->spte_table, &entry->elem);
+        lock_release(&t->spte_table_lock);
         free(entry);
     }
 
@@ -279,7 +287,9 @@ struct spte* find_spte(void* virtual_address, struct thread *t) {
     dummy.page_id = spte_id;
     
     struct hash* table = &t->spte_table;
+    lock_acquire(&t->spte_table_lock);
     struct hash_elem* match = hash_find(table, &dummy.elem);
+    lock_release(&t->spte_table_lock);
     if (match) {
         return hash_entry(match, struct spte, elem);
     }
@@ -359,8 +369,11 @@ void free_spte_table(struct hash* thread_hash_table) {
 bool install_page(void *upage, void *kpage, bool writable) {
     struct thread *t = thread_current ();
     
-    return (pagedir_get_page (t->pagedir, upage) == NULL
+    lock_acquire(&t->pagedir_lock);
+    bool result = (pagedir_get_page (t->pagedir, upage) == NULL
             && pagedir_set_page (t->pagedir, upage, kpage, writable));
+    lock_release(&t->pagedir_lock);
+    return result;
 }
 
 /*
@@ -371,9 +384,11 @@ bool install_page(void *upage, void *kpage, bool writable) {
  --------------------------------------------------------------------
  */
 void clear_page(void* upage, struct thread* t) {
+     lock_acquire(&t->pagedir_lock);
     if (t->pagedir != NULL) {
         pagedir_clear_page(t->pagedir, upage);
     }
+    lock_release(&t->pagedir_lock);
 }
 
 #define PUSHA_BYTE_DEPTH 32

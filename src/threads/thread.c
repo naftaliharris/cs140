@@ -862,6 +862,10 @@ static void init_thread (struct thread *t, const char *name, int priority)
     init_file_system_info(t);
     init_child_managment_info(t);
     
+    //project 3
+    lock_init(&t->spte_table_lock);
+    lock_init(&t->pagedir_lock);
+    
     old_level = intr_disable ();
     list_push_back (&all_list, &t->allelem);
     intr_set_level (old_level);

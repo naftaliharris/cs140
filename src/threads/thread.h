@@ -166,6 +166,10 @@ struct thread
 #ifdef VM
     /* Project 3 Additions */
 
+    /* pagedir lock */
+    struct lock pagedir_lock;
+    /* spte table lock */
+    struct lock spte_table_lock;
     /* Supplementary Page Table */
     struct hash spte_table;
 
