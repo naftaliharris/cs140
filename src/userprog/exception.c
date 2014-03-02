@@ -182,6 +182,7 @@ page_fault (struct intr_frame *f)
         struct spte* spte = find_spte(fault_addr, thread_current());
         bool success = false;
         if (spte != NULL) {
+            lock_acquire(&spte->page_lock);
              success = frame_handler_palloc(false, spte, false, false);
         } else {
             if (is_valid_stack_access(f->esp, fault_addr)) {

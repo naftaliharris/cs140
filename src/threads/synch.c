@@ -246,6 +246,9 @@ lock_acquire (struct lock *lock)
 {
     ASSERT (lock != NULL);
     ASSERT (!intr_context ());
+    if (lock_held_by_current_thread (lock) == true) {
+        printf("already have lock");
+    }
     ASSERT (!lock_held_by_current_thread (lock));
     
     enum intr_level old_level = intr_disable();
@@ -289,6 +292,10 @@ lock_try_acquire (struct lock *lock)
     bool success;
     
     ASSERT (lock != NULL);
+    
+    if (lock_held_by_current_thread (lock) == true) {
+        printf("already have lock");
+    }
     ASSERT (!lock_held_by_current_thread (lock));
     
     success = sema_try_down (&lock->semaphore);
@@ -324,6 +331,9 @@ void
 lock_release (struct lock *lock)
 {
     ASSERT (lock != NULL);
+    if (lock_held_by_current_thread (lock) == false) {
+        printf("dont have lock");
+    }
     ASSERT (lock_held_by_current_thread (lock));
     
     enum intr_level old_level = intr_disable();

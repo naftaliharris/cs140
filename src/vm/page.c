@@ -56,6 +56,7 @@ struct spte* create_spte_and_add_to_table(page_location location, void* page_id,
     spte->read_bytes = read_bytes;
     spte->zero_bytes = zero_bytes;
     spte->swap_index = 0; //IS THIS CORRECT???
+    lock_init(&spte->page_lock);
     struct hash* target_table = &thread_current()->spte_table;
     lock_acquire(&thread_current()->spte_table_lock);
     struct spte* outcome = hash_entry(hash_insert(target_table, &spte->elem), struct spte, elem);
@@ -108,8 +109,7 @@ static void load_file_page(struct spte* spte) {
     uint32_t bytes_read = file_read_at (spte->file_ptr, spte->frame->physical_mem_frame_base, spte->read_bytes, spte->offset_in_file);
     lock_release(&file_system_lock);
     if (bytes_read != spte->read_bytes) {
-        PANIC ("Didn't read as many bytes from the file as we wanted!");
-        //HERE WE NEED TO HANDLE THIS ERROR CONDITION!!
+        thread_exit();
     }
     if (spte->read_bytes != PGSIZE) {
         memset (spte->frame->physical_mem_frame_base + spte->read_bytes, 0, spte->zero_bytes);
@@ -226,10 +226,18 @@ munmap_state(struct mmap_state *mmap_s, struct thread *t)
     {
         struct spte *entry = find_spte(page, t);
         ASSERT (entry != NULL);
+        lock_acquire(&entry->page_lock);
         lock_acquire(&t->pagedir_lock);
-        if (pagedir_is_present(t->pagedir, page)) {
+        if (entry->is_loaded == true) {
             evict_mmaped_page(entry);
+            entry->is_loaded = false;
+            struct frame* old_frame = entry->frame;
+            lock_acquire(&old_frame->frame_lock);
+            entry->frame->resident_page = NULL;
+            lock_release(&old_frame->frame_lock);
+            entry->frame = NULL;
         }
+        lock_release(&entry->page_lock);
         lock_release(&t->pagedir_lock);
         
         lock_acquire(&t->spte_table_lock);
@@ -331,10 +339,13 @@ static bool less_func(const struct hash_elem *a, const struct hash_elem *b, void
  */
 static void free_hash_entry(struct hash_elem* e, void* aux UNUSED) {
     struct spte* spte = hash_entry(e, struct spte, elem);
+    lock_acquire(&spte->page_lock);
     if (spte->is_loaded) {
         frame_handler_palloc_free(spte);
         clear_page(spte->page_id, spte->owner_thread);
+        spte->is_loaded = false;
     }
+    lock_release(&spte->page_lock);
     free_spte(spte);
 }
 
@@ -435,6 +446,7 @@ bool grow_stack(void* page_id) {
     if (spte == NULL) {
         return false;
     }
+    lock_acquire(&spte->page_lock);
     bool outcome = frame_handler_palloc(true, spte, false, true);
     return outcome;
 }
@@ -454,12 +466,16 @@ bool grow_stack(void* page_id) {
  */
 void pin_page(void* virtual_address) {
     struct spte* spte = find_spte(virtual_address, thread_current());
+    lock_acquire(&spte->page_lock);
     if (spte->is_loaded != true) {
         frame_handler_palloc(false, spte, true, false);
     } else {
+        lock_release(&spte->page_lock);
         while (true) {
+            lock_acquire(&spte->page_lock);
             bool success = aquire_frame_lock(spte->frame, spte);
             if (success) {
+                lock_release(&spte->page_lock);
                 break;
             } else {
                 if (spte->is_loaded != true) {
@@ -484,8 +500,10 @@ void pin_page(void* virtual_address) {
  */
 void un_pin_page(void* virtual_address) {
     struct spte* spte = find_spte(virtual_address, thread_current());
+    lock_acquire(&spte->page_lock);
     ASSERT(lock_held_by_current_thread(&spte->frame->frame_lock));
     lock_release(&spte->frame->frame_lock);
+    lock_release(&spte->page_lock);
 }
 
 

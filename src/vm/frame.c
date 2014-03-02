@@ -83,7 +83,12 @@ static struct frame* evict_frame(void) {
     struct frame* frame = NULL;
     while (true) {
         frame = &(frame_table[clock_hand]);
-        bool aquired = lock_try_acquire(&frame->frame_lock);
+        bool aquired;
+        if (lock_held_by_current_thread(&frame->frame_lock)) {
+            aquired = true;
+        } else {
+            aquired = lock_try_acquire(&frame->frame_lock);
+        }
         if (aquired) {
             lock_release(&frame_evict_lock);
             if (frame->resident_page == NULL) {
@@ -155,7 +160,7 @@ bool frame_handler_palloc(bool zeros, struct spte* spte, bool should_pin, bool i
         lock_release(&frame_evict_lock);
         ASSERT(frame->resident_page == NULL)
     } else {
-        frame = evict_frame();
+        frame = evict_frame(); //aquires frame lock
     }
     
     if (zeros) memset(frame->physical_mem_frame_base, 0, PGSIZE);
@@ -166,15 +171,21 @@ bool frame_handler_palloc(bool zeros, struct spte* spte, bool should_pin, bool i
     if (!success) {
         barrier();
         spte->frame = NULL;
+        frame->resident_page = NULL;
         spte->is_loaded = false;
         palloc_free_page(physical_memory_addr);
+        lock_release(&frame->frame_lock);
+        lock_release(&spte->page_lock);
+        return false;
     } else {
         frame->resident_page = spte;
         spte->is_loaded = true;
+        spte->frame = frame;
     }
     if (should_pin == false) {
         lock_release(&frame->frame_lock);
     }
+    lock_release(&spte->page_lock);
     return success;
 }
 
@@ -193,6 +204,8 @@ bool frame_handler_palloc_free(struct spte* spte) {
     if (frame->resident_page == spte) {
         //in this case, we are still the owner of the frame, so we can free the page
         palloc_free_page(frame->physical_mem_frame_base);
+        spte->frame = NULL;
+        spte->is_loaded = false;
         frame->resident_page = NULL;
     }
     //If we are not the current owner, than some other thread swooped in and is using
@@ -207,7 +220,10 @@ bool frame_handler_palloc_free(struct spte* spte) {
  --------------------------------------------------------------------
  */
 bool aquire_frame_lock(struct frame* frame, struct spte* page_trying_to_pin) {
-    
+    if (frame == NULL) {
+        page_trying_to_pin->is_loaded = false;
+        return false;
+    }
     lock_acquire(&frame->frame_lock);
     if (frame->resident_page == page_trying_to_pin) {
         return true;

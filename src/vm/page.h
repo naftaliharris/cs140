@@ -37,6 +37,7 @@ typedef enum {
 struct spte
 {
     struct hash_elem elem; /* For the per-process list                   */
+    struct lock page_lock;
     page_location location;
     struct thread* owner_thread; /* needed to access pd */
     void* page_id;
