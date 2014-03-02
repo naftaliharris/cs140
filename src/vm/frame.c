@@ -20,6 +20,7 @@ struct lock frame_evict_lock;
 static uint32_t clock_hand = 0;
 
 static void advance_clock_hand(void);
+static int check_and_set_access(struct frame* frame);
 
 
 /*
@@ -64,6 +65,39 @@ static void advance_clock_hand() {
 
 /*
  --------------------------------------------------------------------
+ DESCRIPTION: checks the access on the frame, for eviction.
+    3 = continue
+    2 = accessed
+    1 = clean
+ --------------------------------------------------------------------
+ */
+static int check_and_set_access(struct frame* frame) {
+    if (frame->resident_page == NULL) {
+        lock_acquire(&frame_evict_lock);
+        lock_release(&frame->frame_lock);
+        return 3;
+    } else {
+        if (frame->resident_page->owner_thread->pagedir == NULL) {
+            lock_acquire(&frame_evict_lock);
+            lock_release(&frame->frame_lock);
+            return 3;
+        }
+    }
+    lock_acquire(&frame->resident_page->owner_thread->pagedir_lock);
+    uint32_t* pagedir = frame->resident_page->owner_thread->pagedir;
+    bool accessed = pagedir_is_accessed(pagedir, frame->resident_page->page_id);
+    if (accessed) {
+        pagedir_set_accessed(pagedir, frame->resident_page->page_id, false);
+        lock_release(&frame->resident_page->owner_thread->pagedir_lock);
+        lock_release(&frame->frame_lock);
+        return 2;
+    }
+    lock_release(&frame->resident_page->owner_thread->pagedir_lock);
+    return 1;
+}
+
+/*
+ --------------------------------------------------------------------
  DESCRIPTION: evict frame. This is a private function of the frame 
     file. In this function, we check the table of frames, and when
     we find one suitable for eviction, we write the contents of the
@@ -75,6 +109,8 @@ static void advance_clock_hand() {
     we move on from the prevous frame we evicted last. This will cause
     first sweep of eviction to begin at frame index 1, but that is
     ok, as subsequent frame sweeps will be in proper cycle.
+ NOTE: Aquires the frame lock for the frame returned, and also
+    release the frame_evict_lock. 
  --------------------------------------------------------------------
  */
 static struct frame* evict_frame(void) {
@@ -91,32 +127,17 @@ static struct frame* evict_frame(void) {
         }
         if (aquired) {
             lock_release(&frame_evict_lock);
-            if (frame->resident_page == NULL) {
-                lock_acquire(&frame_evict_lock);
-                lock_release(&frame->frame_lock);
+            int outcome = check_and_set_access(frame);
+            if (outcome == 3) {
                 advance_clock_hand();
                 continue;
             } else {
-                if (frame->resident_page->owner_thread->pagedir == NULL) {
-                    lock_acquire(&frame_evict_lock);
-                    lock_release(&frame->frame_lock);
-                    advance_clock_hand();
-                    continue;
-                } 
-            }
-            lock_acquire(&frame->resident_page->owner_thread->pagedir_lock);
-            uint32_t* pagedir = frame->resident_page->owner_thread->pagedir;
-            bool accessed = pagedir_is_accessed(pagedir, frame->resident_page->page_id);
-            if (accessed) {
-                pagedir_set_accessed(pagedir, frame->resident_page->page_id, false);
-                lock_release(&frame->resident_page->owner_thread->pagedir_lock);
-                lock_release(&frame->frame_lock);
-            } else {
-                lock_release(&frame->resident_page->owner_thread->pagedir_lock);
-                evict_page_from_physical_memory(frame->resident_page);
-                frame->resident_page->frame = NULL;
-                frame->resident_page = NULL;
-                return frame;
+                if (outcome == 1) {
+                    evict_page_from_physical_memory(frame->resident_page);
+                    frame->resident_page->frame = NULL;
+                    frame->resident_page = NULL;
+                    return frame;
+                }
             }
             lock_acquire(&frame_evict_lock);
         }
@@ -160,7 +181,7 @@ bool frame_handler_palloc(bool zeros, struct spte* spte, bool should_pin, bool i
         lock_release(&frame_evict_lock);
         ASSERT(frame->resident_page == NULL)
     } else {
-        frame = evict_frame(); //aquires frame lock
+        frame = evict_frame(); //aquires frame lock and releases frame_evict_lock
     }
     
     if (zeros) memset(frame->physical_mem_frame_base, 0, PGSIZE);

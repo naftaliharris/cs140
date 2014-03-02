@@ -30,24 +30,232 @@ Connor Woodson <cwoodson@stanford.edu>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+/* The different types of pages */
+typedef enum {
+    SWAP_PAGE,
+    FILE_PAGE,
+    MMAPED_PAGE,
+} page_location;
+
+Purpose: allows us to track where a page will be paged out to.
+
+====================================================================
+
+/* 
+ --------------------------------------------------------------------
+ DESCRIPTION: tracks the additional info we need to keep tabs on 
+    for a page.
+ NOTE: location indicates where to access page if not in physical
+    memory
+ NOTE: page_id is how we identify pages. It is the equivalent of 
+    calling round down on a virtual address.
+ NOTE: the pinned filed is used for page eviction. If a page
+    is pinned, it cannot be evicted. 
+ --------------------------------------------------------------------
+ */
+struct spte
+{
+    struct hash_elem elem; /* For the per-process list                   */
+    struct lock page_lock;
+    page_location location;
+    struct thread* owner_thread; /* needed to access pd */
+    void* page_id;
+    struct frame* frame; /* the physical frame of the page if it is memory */
+    
+    bool is_writeable;   /*true if the page can be written to */
+    bool is_loaded;      /*true if the page is currently loaded in memory */
+           
+    struct file* file_ptr;
+    off_t offset_in_file;
+    uint32_t read_bytes;
+    uint32_t zero_bytes;
+    
+    uint32_t swap_index; /* index into the swap sector */
+};
+
+Purpose: tracks additional info about a page. See comments.
+
+====================================================================
+
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: The struct containing information to manage
+    a frame of physical memory
+ NOTE: Resident_page is a pointer to the spte for the page
+    that currently occupies a frame.
+ NOTE: frame_base is the pointer that is returned by a call
+    to palloc. It is the base address for a page of physical
+    memory.
+ NOTE: frame_lock locks the given frame for sycnchronization 
+    purposes
+ --------------------------------------------------------------------
+ */
+struct frame {
+    struct spte* resident_page;
+    void* physical_mem_frame_base;
+    struct lock frame_lock;
+};
+
+Purpose: allows us to track usage information for a frame of 
+	physical memory
+
+====================================================================
+
+/* Globals */
+static struct frame* frame_table; //our frame table
+static size_t total_frames; //the total number of frames, set at pintos launch
+static void* first_frame; //head of our table, used for initialization
+struct lock frame_evict_lock; //see synchronization comments in design doc for purpose
+static uint32_t clock_hand = 0; //the index into frame table of next frame to to check 
+			for eviction.
+
+====================================================================
+Additions to the thread struct 
+/* Project 3 Additions */
+
+    /* pagedir lock */
+    struct lock pagedir_lock;
+
+    /* spte table lock */
+    struct lock spte_table_lock;
+
+    /* Supplementary Page Table */
+    struct hash spte_table;
+
+    /* Next mapid_t to use */
+    mapid_t mapid_counter;
+
+    /* List of mmapped files */
+    struct list mmapped_files;
+
+
+====================================================================
+
 ---- ALGORITHMS ----
 
 >> A2: In a few paragraphs, describe your code for locating the frame,
 >> if any, that contains the data of a given page.
 
+The site struct tracks additional information for a page of user memory. 
+In this struct, we utilize several fields to track the location
+of a page of memory. 
+
+First, the location filed indicates the location of the 
+page if it is not loaded into a frame of physical memory. 
+If we have a file page, we use the file*, and offset
+fields to know where the page resides on disk. If we have 
+a swap location, we use the swap index to track the location
+of the page in the swap space. 
+
+Finally, when the page is in physical memory, we also track
+it with the struct frame* field, which points to the 
+struct frame that manages the physical memory location for where
+that page resides. Thus, in order
+to find the location of the data for a page, we first 
+check if the page is loaded via the is_loaded field. If true, 
+we consult the struct* frame to determine the location 
+of the data. Else, we consult the location external to physical
+memory, as outlined above. 
+
 >> A3: How does your code coordinate accessed and dirty bits between
 >> kernel and user virtual addresses that alias a single frame, or
 >> alternatively how do you avoid the issue?
+
+As mentioned in the section and the project spec, there is always
+at least two memory mapping from virtual memory addresses to 
+physical memory, as the kernel and user virtual memory addresses
+reference physical memory. 
+
+When checking the accessed and dirty bits for a page, we therefore
+have to be aware of this aliasing issue. To avoid this problem, we always
+check the bits for the user virtual address, but using the page_id in the
+site struct, which is the page number (i.e. the rounded down version) of the
+user virtual address.
+
+Additionally, when implementing sharing further complicates this
+matter. To implement sharing, we updated the struct frame 
+resident page field to be a list of site structs. Now, when checking
+the accessed bits, we do so for each of the page_id fields in the 
+corresponding site structs, making sure to use the owner_thread
+pagedir for each respective spte. If we find at least one that is set
+we reset them all to 0, and move on. Else, if they are all 0, we update
+the struct info for each site, and then evict the frame. 
 
 ---- SYNCHRONIZATION ----
 
 >> A4: When two user processes both need a new frame at the same time,
 >> how are races avoided?
 
+There are several major cases to consider. The first is the case
+where the system is out of frames, and so we will need to evict
+two frames to handle the requests. The second case is where
+there is one frame remaining that is currently not being
+used. In this case, we simply return the free
+frame, and then evict an in use frame to handle the request. 
+The third case is where the system has two or more
+free frames. In this case, we simply return two unique frames to 
+handle the request. 
+
+In each of these cases, race conditions can occur, because the
+frames are global frames, and thus constitute a shared resource. 
+Thus, given multiple consumers of a shared resource, we have to ensure
+that at any given time, only one of the consumers can consume, 
+so that the state of the shared resource is consistent, and that
+if a consumer wants a shared resource and none are available
+it takes appropriate action. 
+
+To do this, we use two different locks. The first is a global lock
+called frame_evict_lock which acts as a protection mechanism around
+the frame table. We acquire this lock to coordinate access to the frame
+table. Specifically, during eviction, we can only have a single
+thread operate the clock hand at a time. To enforce this
+we acquire the frame_evict_lock before attempting eviction
+to ensure that a single pass over the frame table is made
+in each clock cycle. 
+
+The second lock, is actually many locks, but each serves the same
+function. Specifically, we place a lock within each frame, to serve
+as a synchronization mechanism on a frame struct that manages information
+about a given frame of physical memory. Thus, a thread must
+acquire the frame lock before writing or reading
+information about physical frame of memory. 
+
+Note, as stated in the assignment spec, we also ensured that
+our design allows for parallelism. Once a thread acquires the
+frame lock for the frame it is going to consult, said thread
+releases the frame_evict_lock, which allows other threads
+to consult the frame table as needed. 
+
 ---- RATIONALE ----
 
 >> A5: Why did you choose the data structure(s) that you did for
 >> representing virtual-to-physical mappings?
+
+We designed both the spte and frame structs with two specifications
+in mind. We wanted to ensure that we tracked all of the needed
+state information for a given page or physical frame. We also wanted
+to do it in as little space as possible, while ensuring proper
+synchronization and readability. 
+
+In order to provide fast storage and fast lookup, we opted
+to use a hash map to store the supplemental page
+table for each thread. We initially considered a list, but the 
+list only offers fast insertion, as it requires iteration to 
+do extraction. The hash map required more code to write (hash
+functions) but is better for performance. 
+
+We also opted to use an array of frame structs allocated in the kernel
+to track the physical memory frames. We indexed the array to correspond 
+to the frame values returned by palloc to ensure consistency. 
+The reason we chose this data structure is that it allows for
+ease during eviction. Using this array, the clock algorithm
+used in eviction simply sweeps over the array by tracking an idea value of the
+current frame to check. One potential criticism
+of this design is that it allocates the array, even if
+not all frames of physical memory are in use. We considered
+this a worthwhile tradeoff over a list of frames that can shrink and grow, 
+or any other variable size data structure, which would significantly
+complicate eviction.
 
 		       PAGING TO AND FROM DISK
 		       =======================
@@ -58,18 +266,101 @@ Connor Woodson <cwoodson@stanford.edu>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+==================================================================
+See above data structures, as they are used in paging as well. 
+==================================================================
+
 ---- ALGORITHMS ----
 
 >> B2: When a frame is required but none is free, some frame must be
 >> evicted.  Describe your code for choosing a frame to evict.
 
+Our eviction algorithm is based on the clock algorithm that 
+was covered in lecture. We manage a frame table, where each 
+index corresponds to a frame struct that manages info about
+the corresponding physical frame of data. 
+
+We first acquire a frame_evict_lock to ensure that only one 
+thread at a time can access the frame table and update clock hand. 
+
+We then try to acquire the lock on the frame that the clock hand 
+currently points to. If we are unable to acquire the lock, we simply
+move on, as this is more efficient for speed and prevents the system
+from waiting on a single i/o intensive thread (parallelism mentioned
+in the assignment). 
+
+If we acquire the frame lock, we check to make sure that the page
+directory is not null, as on process exit, we set the page directory 
+to null. We then acquire the frame pagedir lock, to ensure that
+we maintain consistent state across the read and writes of a threads
+pagedir. Then, we check the access bits of page. We use the 
+user virtual address to avoid the aliasing issue. If accessed
+we set to not accessed and move on. If not accessed, we
+evict the page to its out of physical memory location, and clear the frame
+site tracking relationships, and then return the clean frame.
+
+Note, by implementing parallelism, we can use a while true
+in the eviction so as to continually sweep until a frame frees
+up. As discussed in OH, it is acceptable to break the sweep
+process after a few passes, but this is a better solution because
+a process should not exit due to inability to acquire a physical memory 
+location. It should wait until one opens up.
+
 >> B3: When a process P obtains a frame that was previously used by a
 >> process Q, how do you adjust the page table (and any other data
 >> structures) to reflect the frame Q no longer has?
 
+We update the frame->resident page pointer to point to the spte 
+struct for the new page that occupies the physical memory slot.
+We update spte->frame to point to the struct frame for the 
+frame of physical memory in the spte of the page that was swapped in.
+We update spte->frame to be null for the spte of the page 
+that was just swapped out. We then set the is_loaded field
+to true and false in the swapped in and swapped out page
+respectively. 
+
+We then take care to ensure that virtual address
+translation is in tact. this constitutes clearing the
+previous translation for the old page in the old process
+and installing the new translation in the new process. 
+
+We do this by calling the functions clear_page and 
+install_page respectively. 
+
+In order to execute these translation updates, we need 
+to somehow determine what process a given page is associated with. 
+To do this, we store a pointer to the owner_thread in each spte. 
+This allows us update the address translations in the proper 
+process. 
+
+Finally, note that because the values in the spte and frame structs
+are shared across multiple processes (i.e. the frame is global, and 
+the frame stores a pointer to the spte), we use locks around each
+and only modify/read data after acquiring the necessary lock. 
+
+
 >> B4: Explain your heuristic for deciding whether a page fault for an
 >> invalid virtual address should cause the stack to be extended into
 >> the page that faulted.
+
+As stated in OH and in the assignment, the stack must be restricted in size.
+We are supposed to use a limit of 8 MB on stack size, which we check for.
+Any access of memory that is not already mapped and is below this max stack
+size is invalid.
+
+If the address passes that first check, we next if the address is too high, 
+i.e. above PHYS_BASE. Again, if it is, this is invalid. 
+
+If this check passes, there are three possible valid stack accesses.
+The first is a push instruction which will be 4 bytes below the stack pointer.
+We check this location. If true, we assume a valid stack access and grow stack
+as stated in assignment and OH.
+The second is a pushA instruction, which is 32 bytes below the stack pointer. 
+We check this location. If true, we assume a valid stack access and grow the stack
+as stated in assignment and OH. 
+The third is an access that is above the stack. In this case, the stack pointer
+has been decremented, so we expand the stack, as stated in assignment spec 
+FAQ's. 
 
 ---- SYNCHRONIZATION ----
 
