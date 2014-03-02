@@ -825,7 +825,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
         
         //LP Project 3 addition
         void* spte_id = (void*)pg_round_down(upage);
-        struct spte* spte = create_spte_and_add_to_table(FILE_PAGE, spte_id, writable, false, file, ofs, page_read_bytes, page_zero_bytes);
+        struct spte* spte = create_spte_and_add_to_table(FILE_PAGE, spte_id, writable, false, file, ofs, page_read_bytes, page_zero_bytes, true);
         if (spte == NULL) {
             return false;
         }

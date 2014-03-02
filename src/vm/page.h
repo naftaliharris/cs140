@@ -64,7 +64,7 @@ struct spte
     spte to the supplemental page table.
  --------------------------------------------------------------------
  */
-struct spte* create_spte_and_add_to_table(page_location location, void* page_id, bool is_writeable, bool is_loaded, struct file* file_ptr, off_t offset, uint32_t read_bytes, uint32_t zero_bytes);
+struct spte* create_spte_and_add_to_table(page_location location, void* page_id, bool is_writeable, bool is_loaded, struct file* file_ptr, off_t offset, uint32_t read_bytes, uint32_t zero_bytes, bool shareable);
 
 /*
  --------------------------------------------------------------------
@@ -209,5 +209,8 @@ void pin_page(void* virtual_address);
 void un_pin_page(void* virtual_address);
 
 struct list_elem *munmap_state(struct mmap_state *mmap_s, struct thread *t);
+
+bool is_page_accessed(struct spte* spte);
+void set_page_accessed(struct spte* spte, bool val);
 
 #endif /* vm/page.h */

@@ -9,6 +9,7 @@
 #include <stddef.h>
 #include "filesys/file.h"
 #include <string.h>
+#include <list.h>
 
 
 static void load_swap_page(struct spte* spte);
@@ -19,6 +20,28 @@ static void evict_file_page(struct spte* spte);
 static void evict_mmaped_page(struct spte* spte);
 
 static void free_hash_entry(struct hash_elem* e, void* aux UNUSED);
+
+static struct shared_page* find_shared_page_file(struct file* file_ptr, off_t offset);
+static struct shared_page* find_shared_page_spte(struct spte*);
+static struct shared_page* create_shared_page(struct spte*);
+static void add_thread_to_shared_page(struct page_owner* po, struct shared_page* shp);
+static void remove_thread_from_shared_page(struct thread* t, struct shared_page* shp);
+static void evict_shared_page(struct shared_page* shp);
+
+struct shared_page {
+  struct list_elem elem;
+  struct spte* spte;
+  struct list owners;
+};
+
+struct page_owner {
+  struct list_elem elem;
+  struct thread* thread;
+};
+
+struct list shared_page_list;
+
+struct lock shared_page_lock;
 
 
 static void
@@ -39,7 +62,28 @@ assert_spte_consistency(struct spte* spte)
  IMPLIMENTATION NOTES:
  --------------------------------------------------------------------
  */
-struct spte* create_spte_and_add_to_table(page_location location, void* page_id, bool is_writeable, bool is_loaded, struct file* file_ptr, off_t offset, uint32_t read_bytes, uint32_t zero_bytes) {
+struct spte* create_spte_and_add_to_table(page_location location, void* page_id, bool is_writeable, bool is_loaded, struct file* file_ptr, off_t offset, uint32_t read_bytes, uint32_t zero_bytes, bool shareable) {
+
+    if(shareable)
+    {
+      lock_acquire(&shared_page_lock);
+      struct shared_page* shp = find_shareable_page_file(file_ptr, offset);
+      if(shp)
+      {
+        struct page_owner _po;
+        po.thread = thread_current();
+        struct page_owner* po = malloc(sizeof(page_owner));
+        if(!po)
+        {
+          return NULL;
+        }
+        memcpy(po, &_po, sizeof(page_owner));
+        add_thread_to_shared_page(po, shp);
+        lock_release(&shared_page_lock);
+        return shp->spte;
+      }
+      lock_release(&shared_page_lock);
+    }
 
     struct spte* spte = malloc(sizeof(struct spte));
     if (spte == NULL) {
@@ -64,6 +108,26 @@ struct spte* create_spte_and_add_to_table(page_location location, void* page_id,
     if (outcome != NULL) {
         PANIC("Trying to add two spte's for the same page");
     }
+    
+    if(shareable)
+    {
+      lock_acquire(&shared_page_lock);
+      struct shared_page* shp = create_shared_page(spte);
+      if(!shp)
+      {
+        return NULL;
+      }
+      struct page_owner _po;
+      po.thread = thread_current();
+      struct page_owner* po = malloc(sizeof(page_owner));
+      if(!po)
+      {
+        return NULL;
+      }
+      memcpy(po, &_po, sizeof(page_owner));
+      add_thread_to_shared_page(po, shp);
+      lock_release(&shared_page_lock);
+    }
 
     assert_spte_consistency(spte);
     return spte;
@@ -77,7 +141,17 @@ struct spte* create_spte_and_add_to_table(page_location location, void* page_id,
 void free_spte(struct spte* spte) {
     assert_spte_consistency(spte);
     //HAVE TO REMOVE FROM DATA STRUCTURE
-    free(spte);
+    lock_acquire(&shared_page_lock);
+    struct shared_page *shp = find_shared_page_spte(spte);
+    if(shp)
+    {
+      remove_thread_from_shared_page(thread_current(), spte);
+    }
+    else
+    {
+      free(spte);
+    }
+    lock_release(&shared_page_lock);
 }
 
 /*
@@ -264,6 +338,15 @@ munmap_state(struct mmap_state *mmap_s, struct thread *t)
  */
 bool evict_page_from_physical_memory(struct spte* spte) {
     assert_spte_consistency(spte);
+    lock_acquire(&shared_page_lock);
+    struct shared_page* sp = find_shared_page_spte(spte);
+    if(sp)
+    {
+      evict_shared_page(sp);
+      lock_release(&shared_page_lock);
+      return true;
+    }
+    lock_release(&shared_page_lock);
     switch (spte->location) {
         case SWAP_PAGE:
             evict_swap_page(spte);
@@ -359,6 +442,7 @@ void init_spte_table(struct hash* thread_hash_table) {
     if (!success) {
         PANIC("Could not initialize the spte_hash table");
     }
+    lock_init(&shared_page_list);
 }
 
 /*
@@ -507,3 +591,66 @@ void un_pin_page(void* virtual_address) {
 }
 
 
+static struct shared_page* find_shared_page_file(struct file* file_ptr, off_t offset)
+{
+  ASSERT(lock_held_by_current_thread(&shared_page_lock);
+  struct list_elem *e;
+
+  for (e = list_begin (&shared_page_list); e != list_end (&shared_page_list); e = list_next (e))
+  {
+    struct shared_page *shp = list_entry (e, struct shared_page, elem);
+    if(shp->spte->file_ptr == file_ptr && shp->spte->offset_in_file == offset)
+    {
+      return shp;
+    }
+  }
+  return NULL;
+}
+static struct shared_page* find_shared_page_spte(struct spte*)
+{
+  ASSERT(lock_held_by_current_thread(&shared_page_lock);
+  struct list_elem *e;
+
+  for (e = list_begin (&shared_page_list); e != list_end (&shared_page_list); e = list_next (e))
+  {
+    struct shared_page *shp = list_entry (e, struct shared_page, elem);
+    if(shp->spte == spte)
+    {
+      return shp;
+    }
+  }
+  return NULL;
+}
+static struct shared_page* create_shared_page(struct spte*)
+{
+  ASSERT(lock_held_by_current_thread(&shared_page_lock);
+  struct shared_page _shp;
+  _shp.spte = spte;
+  struct shard_page *shp = malloc(sizeof(shared_page));
+  if(shp == NULL)
+  {
+    return NULL;
+  }
+  memcpy(shp, &_shp);
+  list_init(&shp->owners);
+  return shp;
+}
+static void add_thread_to_shared_page(struct page_owner* po, struct shared_page* shp)
+{
+  ASSERT(lock_held_by_current_thread(&shared_page_lock);
+  list_push_back(shp->owners, po);
+}
+static void remove_thread_from_shared_page(struct thread* t, struct shared_page* shp)
+{
+  ASSERT(lock_held_by_current_thread(&shared_page_lock);
+}
+static void evict_shared_page(struct shared_page* shp)
+{
+  ASSERT(lock_held_by_current_thread(&shared_page_lock);
+}
+bool is_page_accessed(struct spte* spte)
+{
+}
+void set_page_accessed(struct spte* spte, bool val)
+{
+}
