@@ -494,7 +494,7 @@ mmap(int fd, void *addr)
      * or overlap other user memory */
     struct thread *t = thread_current();
     void *page;
-    for (page = addr; page < addr + size; page++)
+    for (page = addr; page < addr + size; page += PGSIZE)
     {
         if (page == NULL) {
             return -1;
