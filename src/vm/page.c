@@ -21,12 +21,6 @@ static void evict_mmaped_page(struct spte* spte);
 
 static void free_hash_entry(struct hash_elem* e, void* aux UNUSED);
 
-static struct shared_page* find_shared_page_file(struct file* file_ptr, off_t offset);
-static struct shared_page* find_shared_page_spte(struct spte*);
-static struct shared_page* create_shared_page(struct spte*);
-static void add_thread_to_shared_page(struct page_owner* po, struct shared_page* shp);
-static void remove_thread_from_shared_page(struct thread* t, struct shared_page* shp);
-static void evict_shared_page(struct shared_page* shp);
 
 struct shared_page {
   struct list_elem elem;
@@ -38,6 +32,14 @@ struct page_owner {
   struct list_elem elem;
   struct thread* thread;
 };
+
+static struct shared_page* find_shared_page_file(struct file* file_ptr, off_t offset);
+static struct shared_page* find_shared_page_spte(struct spte*);
+static struct shared_page* create_shared_page(struct spte*);
+static void add_thread_to_shared_page(struct page_owner* po, struct shared_page* shp);
+static void remove_thread_from_shared_page(struct thread* t, struct shared_page* shp);
+
+
 
 struct list shared_page_list;
 
@@ -67,17 +69,17 @@ struct spte* create_spte_and_add_to_table(page_location location, void* page_id,
     if(shareable)
     {
       lock_acquire(&shared_page_lock);
-      struct shared_page* shp = find_shareable_page_file(file_ptr, offset);
+      struct shared_page* shp = find_shared_page_file(file_ptr, offset);
       if(shp)
       {
         struct page_owner _po;
-        po.thread = thread_current();
-        struct page_owner* po = malloc(sizeof(page_owner));
+        _po.thread = thread_current();
+        struct page_owner* po = malloc(sizeof(struct page_owner));
         if(!po)
         {
           return NULL;
         }
-        memcpy(po, &_po, sizeof(page_owner));
+        memcpy(po, &_po, sizeof(struct page_owner));
         add_thread_to_shared_page(po, shp);
         lock_release(&shared_page_lock);
         return shp->spte;
@@ -118,13 +120,13 @@ struct spte* create_spte_and_add_to_table(page_location location, void* page_id,
         return NULL;
       }
       struct page_owner _po;
-      po.thread = thread_current();
-      struct page_owner* po = malloc(sizeof(page_owner));
+      _po.thread = thread_current();
+      struct page_owner* po = malloc(sizeof(struct page_owner));
       if(!po)
       {
         return NULL;
       }
-      memcpy(po, &_po, sizeof(page_owner));
+      memcpy(po, &_po, sizeof(struct page_owner));
       add_thread_to_shared_page(po, shp);
       lock_release(&shared_page_lock);
     }
@@ -145,7 +147,7 @@ void free_spte(struct spte* spte) {
     struct shared_page *shp = find_shared_page_spte(spte);
     if(shp)
     {
-      remove_thread_from_shared_page(thread_current(), spte);
+      remove_thread_from_shared_page(thread_current(), shp);
     }
     else
     {
@@ -338,15 +340,6 @@ munmap_state(struct mmap_state *mmap_s, struct thread *t)
  */
 bool evict_page_from_physical_memory(struct spte* spte) {
     assert_spte_consistency(spte);
-    lock_acquire(&shared_page_lock);
-    struct shared_page* sp = find_shared_page_spte(spte);
-    if(sp)
-    {
-      evict_shared_page(sp);
-      lock_release(&shared_page_lock);
-      return true;
-    }
-    lock_release(&shared_page_lock);
     switch (spte->location) {
         case SWAP_PAGE:
             evict_swap_page(spte);
@@ -442,7 +435,8 @@ void init_spte_table(struct hash* thread_hash_table) {
     if (!success) {
         PANIC("Could not initialize the spte_hash table");
     }
-    lock_init(&shared_page_list);
+    lock_init(&shared_page_lock);
+    list_init(&shared_page_list);
 }
 
 /*
@@ -526,7 +520,7 @@ bool is_valid_stack_access(void* esp, void* user_virtual_address) {
  --------------------------------------------------------------------
  */
 bool grow_stack(void* page_id) {
-    struct spte* spte = create_spte_and_add_to_table(SWAP_PAGE, page_id, true, true, NULL, 0, 0, 0);
+    struct spte* spte = create_spte_and_add_to_table(SWAP_PAGE, page_id, true, true, NULL, 0, 0, 0, false);
     if (spte == NULL) {
         return false;
     }
@@ -593,7 +587,7 @@ void un_pin_page(void* virtual_address) {
 
 static struct shared_page* find_shared_page_file(struct file* file_ptr, off_t offset)
 {
-  ASSERT(lock_held_by_current_thread(&shared_page_lock);
+  ASSERT(lock_held_by_current_thread(&shared_page_lock));
   struct list_elem *e;
 
   for (e = list_begin (&shared_page_list); e != list_end (&shared_page_list); e = list_next (e))
@@ -606,9 +600,9 @@ static struct shared_page* find_shared_page_file(struct file* file_ptr, off_t of
   }
   return NULL;
 }
-static struct shared_page* find_shared_page_spte(struct spte*)
+static struct shared_page* find_shared_page_spte(struct spte* spte)
 {
-  ASSERT(lock_held_by_current_thread(&shared_page_lock);
+  ASSERT(lock_held_by_current_thread(&shared_page_lock));
   struct list_elem *e;
 
   for (e = list_begin (&shared_page_list); e != list_end (&shared_page_list); e = list_next (e))
@@ -621,36 +615,105 @@ static struct shared_page* find_shared_page_spte(struct spte*)
   }
   return NULL;
 }
-static struct shared_page* create_shared_page(struct spte*)
+static struct shared_page* create_shared_page(struct spte* spte)
 {
-  ASSERT(lock_held_by_current_thread(&shared_page_lock);
+  ASSERT(lock_held_by_current_thread(&shared_page_lock));
   struct shared_page _shp;
   _shp.spte = spte;
-  struct shard_page *shp = malloc(sizeof(shared_page));
+  struct shared_page *shp = malloc(sizeof(struct shared_page));
   if(shp == NULL)
   {
     return NULL;
   }
-  memcpy(shp, &_shp);
+  memcpy(shp, &_shp, sizeof(struct shared_page));
   list_init(&shp->owners);
   return shp;
 }
 static void add_thread_to_shared_page(struct page_owner* po, struct shared_page* shp)
 {
-  ASSERT(lock_held_by_current_thread(&shared_page_lock);
-  list_push_back(shp->owners, po);
+  ASSERT(lock_held_by_current_thread(&shared_page_lock));
+  list_push_back(&shp->owners, &po->elem);
 }
 static void remove_thread_from_shared_page(struct thread* t, struct shared_page* shp)
 {
-  ASSERT(lock_held_by_current_thread(&shared_page_lock);
-}
-static void evict_shared_page(struct shared_page* shp)
-{
-  ASSERT(lock_held_by_current_thread(&shared_page_lock);
+  ASSERT(lock_held_by_current_thread(&shared_page_lock));
+  struct list_elem *e;
+  struct page_owner* po = NULL;
+  for (e = list_begin (&shp->owners); e != list_end (&shp->owners); e = list_next (e))
+  {
+    struct page_owner *_po = list_entry (e, struct page_owner, elem);
+    if(_po->thread == t)
+    {
+      po = _po;
+      break;
+    }
+  }
+  if(!po)
+  {
+    PANIC("Removing thread from shared page failed - thread wasn't in shared page");
+  }
+  list_remove(&po->elem);
+  free(po);
+  if(list_empty(&shp->owners))
+  {
+    free(shp->spte);
+    list_remove(&shp->elem);
+    free(shp);
+  }
 }
 bool is_page_accessed(struct spte* spte)
 {
+  bool accessed = false;
+  lock_acquire(&shared_page_lock);
+  struct shared_page* shp = find_shared_page_spte(spte);
+  if(shp)
+  {
+    struct list_elem *e;
+    for (e = list_begin (&shp->owners); e != list_end (&shp->owners); e = list_next (e))
+    {
+      struct page_owner *po = list_entry (e, struct page_owner, elem);
+      lock_acquire(&po->thread->pagedir_lock);
+      accessed = pagedir_is_accessed(po->thread->pagedir, spte->page_id) || pagedir_is_accessed(po->thread ->pagedir, spte->frame->physical_mem_frame_base);
+      if(accessed)
+      {
+        return true;
+      }
+      lock_release(&po->thread->pagedir_lock);
+    }
+    lock_release(&shared_page_lock);
+  }
+  else
+  {
+    lock_release(&shared_page_lock);
+    lock_acquire(&spte->owner_thread->pagedir_lock);
+    accessed = pagedir_is_accessed(spte->owner_thread->pagedir, spte->page_id) || pagedir_is_accessed(spte->owner_thread->pagedir, spte->frame->physical_mem_frame_base);
+    lock_release(&spte->owner_thread->pagedir_lock);
+  }
+  return accessed;
 }
 void set_page_accessed(struct spte* spte, bool val)
 {
+  lock_acquire(&shared_page_lock);
+  struct shared_page* shp = find_shared_page_spte(spte);
+  if(shp)
+  {
+    struct list_elem *e;
+    for (e = list_begin (&shp->owners); e != list_end (&shp->owners); e = list_next (e))
+    {
+      struct page_owner *po = list_entry (e, struct page_owner, elem);
+      lock_acquire(&po->thread->pagedir_lock);
+      pagedir_set_accessed(po->thread->pagedir, spte->page_id, val);
+      pagedir_set_accessed(po->thread->pagedir, spte->frame->physical_mem_frame_base, val);
+      lock_release(&po->thread->pagedir_lock);
+    }
+    lock_release(&shared_page_lock);
+  }
+  else
+  {
+    lock_release(&shared_page_lock);
+    lock_acquire(&spte->owner_thread->pagedir_lock);
+    pagedir_set_accessed(spte->owner_thread->pagedir, spte->page_id, val);
+    pagedir_set_accessed(spte->owner_thread->pagedir, spte->frame->physical_mem_frame_base, val);
+    lock_release(&spte->owner_thread->pagedir_lock);
+  }
 }

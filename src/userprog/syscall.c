@@ -539,7 +539,7 @@ mmap(int fd, void *addr)
                                      mmap_s->fp,              /* File */
                                      page - addr,             /* File offset */
                                      read_bytes,
-                                     zero_bytes);
+                                     zero_bytes, false);
     }
 
     return t->mapid_counter++;

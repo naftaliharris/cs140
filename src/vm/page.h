@@ -7,6 +7,7 @@
 #include "filesys/off_t.h"
 #include "frame.h"
 #include "vm/mmap.h"
+#include <list.h>
 
 
 /* The different types of pages */

@@ -83,16 +83,13 @@ static int check_and_set_access(struct frame* frame) {
             return 3;
         }
     }
-    lock_acquire(&frame->resident_page->owner_thread->pagedir_lock);
     uint32_t* pagedir = frame->resident_page->owner_thread->pagedir;
-    bool accessed = pagedir_is_accessed(pagedir, frame->resident_page->page_id);
+    bool accessed = is_page_accessed(frame->resident_page);
     if (accessed) {
-        pagedir_set_accessed(pagedir, frame->resident_page->page_id, false);
-        lock_release(&frame->resident_page->owner_thread->pagedir_lock);
+        set_page_accessed(frame->resident_page, false);
         lock_release(&frame->frame_lock);
         return 2;
     }
-    lock_release(&frame->resident_page->owner_thread->pagedir_lock);
     return 1;
 }
 
