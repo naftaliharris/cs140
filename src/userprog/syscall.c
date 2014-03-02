@@ -510,7 +510,11 @@ mmap(int fd, void *addr)
     /* Fill in the mmap state data */
     struct mmap_state *mmap_s = malloc(sizeof(struct mmap_state));
     if (mmap_s == NULL) {
-        PANIC ("Couldn't allocated mmapped state struct!");
+        thread_current()->vital_info->exit_status = -1;
+        if (thread_current()->is_running_user_program) {
+            printf("%s: exit(%d)\n", thread_name(), -1);
+        }
+        thread_exit();
     }
 
     lock_acquire(&file_system_lock);
@@ -687,10 +691,6 @@ static bool check_file_name_length(const char* filename) {
         return false;
     }
     return true;
-    
-    /*size_t length = strlen(filename);
-    if (length > MAX_FILENAME_LENGTH) return false;
-    return true;*/
 }
 
 /*
@@ -747,9 +747,6 @@ static void check_usr_ptr(const void* ptr, void* esp) {
     if (!is_user_vaddr(ptr)) {
         LP_exit(-1);
     } 
-    /*if (pagedir_get_page(thread_current()->pagedir, ptr) == NULL) {
-        LP_exit(-1);
-    }*/
     if (find_spte((void*)ptr, thread_current()) == NULL) {
         if (is_valid_stack_access(esp, (void*)ptr)) {
             void* new_stack_page = pg_round_down(ptr);

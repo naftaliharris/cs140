@@ -203,7 +203,7 @@ page_fault (struct intr_frame *f)
     //END LP Poject 3 code
     
 
-  /* User segfault */    
+  /* User segfault Code should never get here*/    
   printf ("Page fault at %p: %s error %s page in %s context.\n",
           fault_addr,
           not_present ? "not present" : "rights violation",

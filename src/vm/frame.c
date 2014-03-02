@@ -20,6 +20,9 @@ struct lock frame_evict_lock;
 static uint32_t clock_hand = 0;
 
 static void advance_clock_hand(void);
+static void pass_frame(struct frame* frame);
+static void prepare_frame_to_return(struct frame* frame);
+static bool check_frame_contents(struct frame* frame);
 
 
 /*
@@ -64,6 +67,51 @@ static void advance_clock_hand() {
 
 /*
  --------------------------------------------------------------------
+ DESCRIPTION: passes the frame and moves on
+ --------------------------------------------------------------------
+ */
+static void pass_frame(struct frame* frame) {
+    lock_acquire(&frame_evict_lock);
+    lock_release(&frame->frame_lock);
+    advance_clock_hand();
+}
+
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: prepares the current frame to return
+ --------------------------------------------------------------------
+ */
+static void prepare_frame_to_return(struct frame* frame) {
+    lock_release(&frame->resident_page->owner_thread->pagedir_lock);
+    lock_acquire(&frame->resident_page->page_lock);
+    evict_page_from_physical_memory(frame->resident_page);
+    frame->resident_page->frame = NULL;
+    frame->resident_page->is_loaded = false;
+    lock_release(&frame->resident_page->page_lock);
+    frame->resident_page = NULL;
+}
+
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: checks the frame contents for state confirmation
+    to handle thread exit.
+ --------------------------------------------------------------------
+ */
+static bool check_frame_contents(struct frame* frame) {
+    if (frame->resident_page == NULL) {
+        pass_frame(frame);
+        return true;
+    } else {
+        if (frame->resident_page->owner_thread->pagedir == NULL) {
+            pass_frame(frame);
+            return true;
+        }
+    }
+    return false;
+}
+
+/*
+ --------------------------------------------------------------------
  DESCRIPTION: evict frame. This is a private function of the frame 
     file. In this function, we check the table of frames, and when
     we find one suitable for eviction, we write the contents of the
@@ -93,18 +141,8 @@ static struct frame* evict_frame(void) {
         }
         if (aquired) {
             lock_release(&frame_evict_lock);
-            if (frame->resident_page == NULL) {
-                lock_acquire(&frame_evict_lock);
-                lock_release(&frame->frame_lock);
-                advance_clock_hand();
+            if (check_frame_contents(frame)) {
                 continue;
-            } else {
-                if (frame->resident_page->owner_thread->pagedir == NULL) {
-                    lock_acquire(&frame_evict_lock);
-                    lock_release(&frame->frame_lock);
-                    advance_clock_hand();
-                    continue;
-                } 
             }
             lock_acquire(&frame->resident_page->owner_thread->pagedir_lock);
             uint32_t* pagedir = frame->resident_page->owner_thread->pagedir;
@@ -114,13 +152,7 @@ static struct frame* evict_frame(void) {
                 lock_release(&frame->resident_page->owner_thread->pagedir_lock);
                 lock_release(&frame->frame_lock);
             } else {
-                lock_release(&frame->resident_page->owner_thread->pagedir_lock);
-                lock_acquire(&frame->resident_page->page_lock);
-                evict_page_from_physical_memory(frame->resident_page);
-                frame->resident_page->frame = NULL;
-                frame->resident_page->is_loaded = false;
-                lock_release(&frame->resident_page->page_lock);
-                frame->resident_page = NULL;
+                prepare_frame_to_return(frame);
                 return frame;
             }
             lock_acquire(&frame_evict_lock);

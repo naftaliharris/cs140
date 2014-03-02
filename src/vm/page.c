@@ -55,14 +55,18 @@ struct spte* create_spte_and_add_to_table(page_location location, void* page_id,
     spte->offset_in_file = offset;
     spte->read_bytes = read_bytes;
     spte->zero_bytes = zero_bytes;
-    spte->swap_index = 0; //IS THIS CORRECT???
+    spte->swap_index = 0; 
     lock_init(&spte->page_lock);
     struct hash* target_table = &thread_current()->spte_table;
     lock_acquire(&thread_current()->spte_table_lock);
     struct spte* outcome = hash_entry(hash_insert(target_table, &spte->elem), struct spte, elem);
     lock_release(&thread_current()->spte_table_lock);
     if (outcome != NULL) {
-        PANIC("Trying to add two spte's for the same page");
+        thread_current()->vital_info->exit_status = -1;
+        if (thread_current()->is_running_user_program) {
+            printf("%s: exit(%d)\n", thread_name(), -1);
+        }
+        thread_exit();
     }
 
     assert_spte_consistency(spte);
@@ -76,7 +80,6 @@ struct spte* create_spte_and_add_to_table(page_location location, void* page_id,
  */
 void free_spte(struct spte* spte) {
     assert_spte_consistency(spte);
-    //HAVE TO REMOVE FROM DATA STRUCTURE
     free(spte);
 }
 
@@ -150,7 +153,11 @@ bool load_page_into_physical_memory(struct spte* spte, bool is_fresh_stack_page)
                 load_mmaped_page(spte);
                 break;
             default:
-                PANIC("Unrecognized SPTE location!");
+                thread_current()->vital_info->exit_status = -1;
+                if (thread_current()->is_running_user_program) {
+                    printf("%s: exit(%d)\n", thread_name(), -1);
+                }
+                thread_exit();
                 break;
         }
     }
@@ -213,6 +220,12 @@ static void evict_mmaped_page(struct spte* spte) {
     assert_spte_consistency(spte);
 }
 
+
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: frees the resources aquired to mmap.
+ --------------------------------------------------------------------
+ */
 struct list_elem *
 munmap_state(struct mmap_state *mmap_s, struct thread *t)
 {
@@ -357,7 +370,11 @@ static void free_hash_entry(struct hash_elem* e, void* aux UNUSED) {
 void init_spte_table(struct hash* thread_hash_table) {
     bool success = hash_init(thread_hash_table, hash_func, less_func, NULL);
     if (!success) {
-        PANIC("Could not initialize the spte_hash table");
+        thread_current()->vital_info->exit_status = -1;
+        if (thread_current()->is_running_user_program) {
+            printf("%s: exit(%d)\n", thread_name(), -1);
+        }
+        thread_exit();
     }
 }
 
