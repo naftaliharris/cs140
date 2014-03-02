@@ -264,6 +264,7 @@ munmap_state(struct mmap_state *mmap_s, struct thread *t)
  */
 bool evict_page_from_physical_memory(struct spte* spte) {
     assert_spte_consistency(spte);
+    clear_page(spte->page_id, spte->owner_thread);
     switch (spte->location) {
         case SWAP_PAGE:
             evict_swap_page(spte);
@@ -277,7 +278,6 @@ bool evict_page_from_physical_memory(struct spte* spte) {
         default:
             break;
     }
-    clear_page(spte->page_id, spte->owner_thread);
     assert_spte_consistency(spte);
     return true;
 }

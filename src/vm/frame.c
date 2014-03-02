@@ -115,8 +115,11 @@ static struct frame* evict_frame(void) {
                 lock_release(&frame->frame_lock);
             } else {
                 lock_release(&frame->resident_page->owner_thread->pagedir_lock);
+                lock_acquire(&frame->resident_page->page_lock);
                 evict_page_from_physical_memory(frame->resident_page);
                 frame->resident_page->frame = NULL;
+                frame->resident_page->is_loaded = false;
+                lock_release(&frame->resident_page->page_lock);
                 frame->resident_page = NULL;
                 return frame;
             }
