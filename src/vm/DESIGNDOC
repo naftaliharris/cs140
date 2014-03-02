@@ -35,19 +35,126 @@ Connor Woodson <cwoodson@stanford.edu>
 >> A2: In a few paragraphs, describe your code for locating the frame,
 >> if any, that contains the data of a given page.
 
+The site struct tracks additional information for a page of user memory. 
+In this struct, we utilize several fields to track the location
+of a page of memory. 
+
+First, the location filed indicates the location of the 
+page if it is not loaded into a frame of physical memory. 
+If we have a file page, we use the file*, and offset
+fields to know where the page resides on disk. If we have 
+a swap location, we use the swap index to track the location
+of the page in the swap space. 
+
+Finally, when the page is in physical memory, we also track
+it with the struct frame* field, which points to the 
+struct frame that manages the physical memory location for where
+that page resides. Thus, in order
+to find the location of the data for a page, we first 
+check if the page is loaded via the is_loaded field. If true, 
+we consult the struct* frame to determine the location 
+of the data. Else, we consult the location external to physical
+memory, as outlined above. 
+
 >> A3: How does your code coordinate accessed and dirty bits between
 >> kernel and user virtual addresses that alias a single frame, or
 >> alternatively how do you avoid the issue?
+
+As mentioned in the section and the project spec, there is always
+at least two memory mapping from virtual memory addresses to 
+physical memory, as the kernel and user virtual memory addresses
+reference physical memory. 
+
+When checking the accessed and dirty bits for a page, we therefore
+have to be aware of this aliasing issue. To avoid this problem, we always
+check the bits for the user virtual address, but using the page_id in the
+site struct, which is the page number (i.e. the rounded down version) of the
+user virtual address.
+
+Additionally, when implementing sharing further complicates this
+matter. To implement sharing, we updated the struct frame 
+resident page field to be a list of site structs. Now, when checking
+the accessed bits, we do so for each of the page_id fields in the 
+corresponding site structs, making sure to use the owner_thread
+pagedir for each respective spte. If we find at least one that is set
+we reset them all to 0, and move on. Else, if they are all 0, we update
+the struct info for each site, and then evict the frame. 
 
 ---- SYNCHRONIZATION ----
 
 >> A4: When two user processes both need a new frame at the same time,
 >> how are races avoided?
 
+There are several major cases to consider. The first is the case
+where the system is out of frames, and so we will need to evict
+two frames to handle the requests. The second case is where
+there is one frame remaining that is currently not being
+used. In this case, we simply return the free
+frame, and then evict an in use frame to handle the request. 
+The third case is where the system has two or more
+free frames. In this case, we simply return two unique frames to 
+handle the request. 
+
+In each of these cases, race conditions can occur, because the
+frames are global frames, and thus constitute a shared resource. 
+Thus, given multiple consumers of a shared resource, we have to ensure
+that at any given time, only one of the consumers can consume, 
+so that the state of the shared resource is consistent, and that
+if a consumer wants a shared resource and none are available
+it takes appropriate action. 
+
+To do this, we use two different locks. The first is a global lock
+called frame_evict_lock which acts as a protection mechanism around
+the frame table. We acquire this lock to coordinate access to the frame
+table. Specifically, during eviction, we can only have a single
+thread operate the clock hand at a time. To enforce this
+we acquire the frame_evict_lock before attempting eviction
+to ensure that a single pass over the frame table is made
+in each clock cycle. 
+
+The second lock, is actually many locks, but each serves the same
+function. Specifically, we place a lock within each frame, to serve
+as a synchronization mechanism on a frame struct that manages information
+about a given frame of physical memory. Thus, a thread must
+acquire the frame lock before writing or reading
+information about physical frame of memory. 
+
+Note, as stated in the assignment spec, we also ensured that
+our design allows for parallelism. Once a thread acquires the
+frame lock for the frame it is going to consult, said thread
+releases the frame_evict_lock, which allows other threads
+to consult the frame table as needed. 
+
 ---- RATIONALE ----
 
 >> A5: Why did you choose the data structure(s) that you did for
 >> representing virtual-to-physical mappings?
+
+We designed both the spte and frame structs with two specifications
+in mind. We wanted to ensure that we tracked all of the needed
+state information for a given page or physical frame. We also wanted
+to do it in as little space as possible, while ensuring proper
+synchronization and readability. 
+
+In order to provide fast storage and fast lookup, we opted
+to use a hash map to store the supplemental page
+table for each thread. We initially considered a list, but the 
+list only offers fast insertion, as it requires iteration to 
+do extraction. The hash map required more code to write (hash
+functions) but is better for performance. 
+
+We also opted to use an array of frame structs allocated in the kernel
+to track the physical memory frames. We indexed the array to correspond 
+to the frame values returned by palloc to ensure consistency. 
+The reason we chose this data structure is that it allows for
+ease during eviction. Using this array, the clock algorithm
+used in eviction simply sweeps over the array by tracking an idea value of the
+current frame to check. One potential criticism
+of this design is that it allocates the array, even if
+not all frames of physical memory are in use. We considered
+this a worthwhile tradeoff over a list of frames that can shrink and grow, 
+or any other variable size data structure, which would significantly
+complicate eviction.
 
 		       PAGING TO AND FROM DISK
 		       =======================

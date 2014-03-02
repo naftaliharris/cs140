@@ -75,6 +75,8 @@ static void advance_clock_hand() {
     we move on from the prevous frame we evicted last. This will cause
     first sweep of eviction to begin at frame index 1, but that is
     ok, as subsequent frame sweeps will be in proper cycle.
+ NOTE: Aquires the frame lock for the frame returned, and also
+    release the frame_evict_lock. 
  --------------------------------------------------------------------
  */
 static struct frame* evict_frame(void) {
@@ -160,7 +162,7 @@ bool frame_handler_palloc(bool zeros, struct spte* spte, bool should_pin, bool i
         lock_release(&frame_evict_lock);
         ASSERT(frame->resident_page == NULL)
     } else {
-        frame = evict_frame(); //aquires frame lock
+        frame = evict_frame(); //aquires frame lock and releases frame_evict_lock
     }
     
     if (zeros) memset(frame->physical_mem_frame_base, 0, PGSIZE);
