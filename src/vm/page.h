@@ -9,11 +9,6 @@
 #include "vm/mmap.h"
 
 
-
-//TO DO:
-//1. free frame resources in free_hash_entry
-
-
 /* The different types of pages */
 typedef enum {
     SWAP_PAGE,
