@@ -829,6 +829,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
         if (spte == NULL) {
             return false;
         }
+        lock_release(&spte->page_lock);
         //End LP Project 3 addition
         
         

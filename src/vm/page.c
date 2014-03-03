@@ -57,6 +57,7 @@ struct spte* create_spte_and_add_to_table(page_location location, void* page_id,
     spte->zero_bytes = zero_bytes;
     spte->swap_index = 0; 
     lock_init(&spte->page_lock);
+    lock_acquire(&spte->page_lock);
     struct hash* target_table = &thread_current()->spte_table;
     lock_acquire(&thread_current()->spte_table_lock);
     struct spte* outcome = hash_entry(hash_insert(target_table, &spte->elem), struct spte, elem);
@@ -463,7 +464,7 @@ bool grow_stack(void* page_id) {
     if (spte == NULL) {
         return false;
     }
-    lock_acquire(&spte->page_lock);
+    //lock_acquire(&spte->page_lock);
     bool outcome = frame_handler_palloc(true, spte, false, true);
     return outcome;
 }

@@ -536,7 +536,7 @@ mmap(int fd, void *addr)
         uint32_t read_bytes = page + PGSIZE < addr + size ? PGSIZE
                                                           : addr + size - page;
         uint32_t zero_bytes = PGSIZE - read_bytes;
-        create_spte_and_add_to_table(MMAPED_PAGE,             /* Location */
+        struct spte* spte = create_spte_and_add_to_table(MMAPED_PAGE,             /* Location */
                                      page,                    /* Address */
                                      true,                    /* Writeable */
                                      false,                   /* Loaded */
@@ -544,6 +544,10 @@ mmap(int fd, void *addr)
                                      page - addr,             /* File offset */
                                      read_bytes,
                                      zero_bytes);
+        if (spte == NULL) {
+            PANIC("null spte");
+        }
+        lock_release(&spte->page_lock);
     }
 
     return t->mapid_counter++;
