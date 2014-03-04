@@ -490,6 +490,7 @@ mmap(int fd, void *addr)
     off_t size = file_length(fp);
     lock_release(&file_system_lock);
 
+    pinning_for_system_call(addr, size, true);
     /* Ensure that the requested VM region wouldn't contain invalid addresses
      * or overlap other user memory */
     struct thread *t = thread_current();
@@ -497,12 +498,15 @@ mmap(int fd, void *addr)
     for (page = addr; page < addr + size; page++)
     {
         if (page == NULL) {
+            pinning_for_system_call(addr, (unsigned)page - (unsigned)addr, false);
             return -1;
         }
         if (!is_user_vaddr(page)) {
+            pinning_for_system_call(addr, (unsigned)page - (unsigned)addr, false);
             return -1;
         }
         if (find_spte(page, t) != NULL) {
+            pinning_for_system_call(addr, (unsigned)page - (unsigned)addr, false);
             return -1;
         }
     }
@@ -510,6 +514,7 @@ mmap(int fd, void *addr)
     /* Fill in the mmap state data */
     struct mmap_state *mmap_s = malloc(sizeof(struct mmap_state));
     if (mmap_s == NULL) {
+        pinning_for_system_call(addr, size, false);
         thread_current()->vital_info->exit_status = -1;
         if (thread_current()->is_running_user_program) {
             printf("%s: exit(%d)\n", thread_name(), -1);
@@ -522,6 +527,7 @@ mmap(int fd, void *addr)
     if (mmap_s->fp == NULL)
     {
         lock_release(&file_system_lock);
+        pinning_for_system_call(addr, size, false);
         return -1;
     }
     lock_release(&file_system_lock);
@@ -545,11 +551,12 @@ mmap(int fd, void *addr)
                                      read_bytes,
                                      zero_bytes);
         if (spte == NULL) {
+            pinning_for_system_call(addr, size, false);
             PANIC("null spte");
         }
         lock_release(&spte->page_lock);
     }
-
+    pinning_for_system_call(addr, size, false);
     return t->mapid_counter++;
 }
 
@@ -563,7 +570,13 @@ munmap(mapid_t mapping)
     {
         struct mmap_state *mmap_s = list_entry(e, struct mmap_state, elem);
         if (mmap_s->mapping == mapping) {
+            lock_acquire(&file_system_lock);
+            unsigned size = file_length(mmap_s->fp);
+            lock_release(&file_system_lock);
+            pinning_for_system_call(mmap_s->vaddr, size, true);
+            void* addr = mmap_s->vaddr;
             munmap_state(mmap_s, t);
+            pinning_for_system_call(addr, size, false);
             return;
         }
     }

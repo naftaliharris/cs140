@@ -241,18 +241,17 @@ munmap_state(struct mmap_state *mmap_s, struct thread *t)
         struct spte *entry = find_spte(page, t);
         ASSERT (entry != NULL);
         lock_acquire(&entry->page_lock);
-        lock_acquire(&t->pagedir_lock);
+        //lock_acquire(&t->pagedir_lock);
         if (entry->is_loaded == true) {
+            clear_page(entry->page_id, entry->owner_thread);
             evict_mmaped_page(entry);
             entry->is_loaded = false;
-            struct frame* old_frame = entry->frame;
-            lock_acquire(&old_frame->frame_lock);
+            palloc_free_page(entry->frame->physical_mem_frame_base);
             entry->frame->resident_page = NULL;
-            lock_release(&old_frame->frame_lock);
             entry->frame = NULL;
         }
         lock_release(&entry->page_lock);
-        lock_release(&t->pagedir_lock);
+        //lock_release(&t->pagedir_lock);
         
         lock_acquire(&t->spte_table_lock);
         hash_delete(&t->spte_table, &entry->elem);
