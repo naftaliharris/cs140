@@ -135,7 +135,7 @@ static struct frame* evict_frame(void) {
         frame = &(frame_table[clock_hand]);
         bool aquired;
         if (lock_held_by_current_thread(&frame->frame_lock)) {
-            aquired = true;
+            aquired = false;
         } else {
             aquired = lock_try_acquire(&frame->frame_lock);
         }
@@ -260,6 +260,9 @@ bool aquire_frame_lock(struct frame* frame, struct spte* page_trying_to_pin) {
     if (frame == NULL) {
         page_trying_to_pin->is_loaded = false;
         return false;
+    }
+    if (lock_held_by_current_thread(&frame->frame_lock)) {
+        return true;
     }
     lock_acquire(&frame->frame_lock);
     if (frame->resident_page == page_trying_to_pin) {

@@ -566,9 +566,7 @@ munmap(mapid_t mapping)
             unsigned size = file_length(mmap_s->fp);
             lock_release(&file_system_lock);
             pinning_for_system_call(mmap_s->vaddr, size, true);
-            void* addr = mmap_s->vaddr;
             munmap_state(mmap_s, t);
-            //pinning_for_system_call(addr, size, false);
             return;
         }
     }

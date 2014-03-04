@@ -478,12 +478,7 @@ gcc -m32 -c ../../tests/vm/child-qsort-mm.c -o tests/vm/child-qsort-mm.o -g -mso
 gcc -m32  -Wl,--build-id=none -nostdlib -static -Wl,-T,../../lib/user/user.lds tests/vm/child-qsort-mm.o tests/vm/qsort.o tests/lib.o lib/user/entry.o libc.a -o tests/vm/child-qsort-mm
 pintos -v -k -T 60 --qemu  --filesys-size=2 -p tests/vm/page-merge-mm -a page-merge-mm -p tests/vm/child-qsort-mm -a child-qsort-mm --swap-size=4 -- -q  -f run page-merge-mm < /dev/null 2> tests/vm/page-merge-mm.errors > tests/vm/page-merge-mm.output
 perl -I../.. ../../tests/vm/page-merge-mm.ck tests/vm/page-merge-mm tests/vm/page-merge-mm.result
-FAIL tests/vm/page-merge-mm
-Kernel panic in run: PANIC at ../../userprog/exception.c:116 in kill(): Kernel bug - unexpected interrupt in kernel
-Call stack: 0xc002904e 0xc00259d5
-Translation of call stack:
-0xc002904e: debug_panic (.../../lib/kernel/debug.c:38)
-0xc00259d5: insw (...ild/../../threads/io.h:42)
+pass tests/vm/page-merge-mm
 gcc -m32 -c ../../tests/vm/page-shuffle.c -o tests/vm/page-shuffle.o -g -msoft-float -O -fno-stack-protector -nostdinc -I../.. -I../../lib -I../../lib/user -I. -Wall -W -Wstrict-prototypes -Wmissing-prototypes -Wsystem-headers  -MMD -MF tests/vm/page-shuffle.d
 gcc -m32  -Wl,--build-id=none -nostdlib -static -Wl,-T,../../lib/user/user.lds tests/vm/page-shuffle.o tests/arc4.o tests/cksum.o tests/lib.o tests/main.o lib/user/entry.o libc.a -o tests/vm/page-shuffle
 pintos -v -k -T 600 --qemu  --filesys-size=2 -p tests/vm/page-shuffle -a page-shuffle --swap-size=4 -- -q  -f run page-shuffle < /dev/null 2> tests/vm/page-shuffle.errors > tests/vm/page-shuffle.output
@@ -655,7 +650,8 @@ pintos -v -k -T 60 --qemu  --filesys-size=2 -p tests/filesys/base/syn-write -a s
 perl -I../.. ../../tests/filesys/base/syn-write.ck tests/filesys/base/syn-write tests/filesys/base/syn-write.result
 pass tests/filesys/base/syn-write
 ../../tests/make-grade ../.. results ../../tests/vm/Grading | tee grade
-TOTAL TESTING SCORE: 96.4%
+TOTAL TESTING SCORE: 100.0%
+ALL TESTED PASSED -- PERFECT SCORE
 
 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
 
@@ -663,13 +659,13 @@ SUMMARY BY TEST SET
 
 Test Set                                      Pts Max  % Ttl  % Max
 --------------------------------------------- --- --- ------ ------
-tests/vm/Rubric.functionality                  51/ 55  46.4%/ 50.0%
+tests/vm/Rubric.functionality                  55/ 55  50.0%/ 50.0%
 tests/vm/Rubric.robustness                     28/ 28  15.0%/ 15.0%
 tests/userprog/Rubric.functionality           108/108  10.0%/ 10.0%
 tests/userprog/Rubric.robustness               88/ 88   5.0%/  5.0%
 tests/filesys/base/Rubric                      30/ 30  20.0%/ 20.0%
 --------------------------------------------- --- --- ------ ------
-Total                                                  96.4%/100.0%
+Total                                                 100.0%/100.0%
 
 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
 
@@ -688,7 +684,7 @@ Functionality of virtual memory subsystem (tests/vm/Rubric.functionality):
 	     3/ 3 tests/vm/page-shuffle
 	     4/ 4 tests/vm/page-merge-seq
 	     4/ 4 tests/vm/page-merge-par
-	  ** 0/ 4 tests/vm/page-merge-mm
+	     4/ 4 tests/vm/page-merge-mm
 	     4/ 4 tests/vm/page-merge-stk
 
 	- Test "mmap" system call.
@@ -707,8 +703,8 @@ Functionality of virtual memory subsystem (tests/vm/Rubric.functionality):
 	     2/ 2 tests/vm/mmap-remove
 
 	- Section summary.
-	     19/ 20 tests passed
-	     51/ 55 points subtotal
+	     20/ 20 tests passed
+	     55/ 55 points subtotal
 
 Robustness of virtual memory subsystem (tests/vm/Rubric.robustness):
 	- Test robustness of page table support.
@@ -870,88 +866,4 @@ Functionality of base file system (tests/filesys/base/Rubric):
 	     13/ 13 tests passed
 	     30/ 30 points subtotal
 
-
-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
-
-DETAILS OF tests/vm/page-merge-mm FAILURE:
-
-Kernel panic in run: PANIC at ../../userprog/exception.c:116 in kill(): Kernel bug - unexpected interrupt in kernel
-Call stack: 0xc002904e 0xc00259d5
-Translation of call stack:
-0xc002904e: debug_panic (.../../lib/kernel/debug.c:38)
-0xc00259d5: insw (...ild/../../threads/io.h:42)
-
-OUTPUT FROM tests/vm/page-merge-mm:
-
-Copying tests/vm/page-merge-mm to scratch partition...
-Copying tests/vm/child-qsort-mm to scratch partition...
-qemu-system-i386 -device isa-debug-exit -hda /tmp/WaMzrH35y9.dsk -m 4 -net none -nographic -monitor null
-PiLo hda1
-Loading............
-Kernel command line: -q -f extract run page-merge-mm
-Pintos booting with 4,088 kB RAM...
-382 pages available in kernel pool.
-382 pages available in user pool.
-Calibrating timer...  209,510,400 loops/s.
-hda: 13,104 sectors (6 MB), model "QM00001", serial "QEMU HARDDISK"
-hda1: 202 sectors (101 kB), Pintos OS kernel (20)
-hda2: 4,096 sectors (2 MB), Pintos file system (21)
-hda3: 237 sectors (118 kB), Pintos scratch (22)
-hda4: 8,192 sectors (4 MB), Pintos swap (23)
-filesys: using hda2
-scratch: using hda3
-swap: using hda4
-Formatting file system...done.
-Boot complete.
-Extracting ustar archive from scratch device into file system...
-Putting 'page-merge-mm' into the file system...
-Putting 'child-qsort-mm' into the file system...
-Erasing ustar archive...
-Executing 'page-merge-mm':
-(page-merge-mm) begin
-(page-merge-mm) init
-(page-merge-mm) sort chunk 0
-(page-merge-mm) sort chunk 1
-(page-merge-mm) sort chunk 2
-(page-merge-mm) sort chunk 3
-(page-merge-mm) sort chunk 4
-(page-merge-mm) sort chunk 5
-(page-merge-mm) sort chunk 6
-(page-merge-mm) sort chunk 7
-(page-merge-mm) wait for child 0
-child-qsort-mm: exit(80)
-(page-merge-mm) wait for child 1
-child-qsort-mm: exit(80)
-(page-merge-mm) wait for child 2
-child-qsort-mm: exit(80)
-(page-merge-mm) wait for child 3
-child-qsort-mm: exit(80)
-(page-merge-mm) wait for child 4
-child-qsort-mm: exit(80)
-child-qsort-mm: exit(80)
-(page-merge-mm) wait for child 5
-child-qsort-mm: exit(80)
-Page fault at 0x8100000: not present error writing page in kernel context.
-Interrupt 0x0e (#PF Page-Fault Exception) at eip=0xc00259d5
- cr2=08100000 error=00000002
- eax=000001f0 ebx=c003ac40 ecx=000000c0 edx=000001f0
- esi=c003ac88 edi=08100000 esp=c003ac4c ebp=0000c800
- cs=0008 ds=0010 es=0010 ss=5f74
-Kernel PANIC at ../../userprog/exception.c:116 in kill(): Kernel bug - unexpected interrupt in kernel
-Call stack: 0xc002904e 0xc00259d5Page fault at 0xc800: not present error reading page in kernel context.
-Interrupt 0x0e (#PF Page-Fault Exception) at eip=0xc0026b37
- cr2=0000c800 error=00000000
- eax=0000000b ebx=0000c800 ecx=c0111ca8 edx=000003d4
- esi=00000074 edi=c003166b esp=c00332b8 ebp=c0111d40
- cs=0008 ds=0010 es=0010 ss=59d5
-Kernel PANIC recursion at ../../userprog/exception.c:116 in kill().
-Timer: 2536 ticks
-Thread: 31 idle ticks, 29 kernel ticks, 2476 user ticks
-hda2 (filesys): 4188 reads, 6400 writes
-hda3 (scratch): 236 reads, 2 writes
-hda4 (swap): 528 reads, 1656 writes
-Console: 2422 characters output
-Keyboard: 0 keys pressed
-Exception: 554 page faults
-Powering off...
 make[1]: Leaving directory `/afs/ir.stanford.edu/users/l/p/lpappas9/cs140/src/vm/build'

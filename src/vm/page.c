@@ -209,8 +209,9 @@ static void evict_mmaped_page(struct spte* spte) {
     assert_spte_consistency(spte);
 
     uint32_t* pagedir = spte->owner_thread->pagedir;
-    void *page_id = spte->frame->resident_page->page_id;
+    void *page_id = spte->page_id;
     bool dirty = pagedir_is_dirty(pagedir, page_id);
+    pagedir_set_dirty(pagedir, page_id, false);
     if (dirty) {
         lock_acquire(&file_system_lock);
         file_write_at (spte->file_ptr, page_id, spte->read_bytes,
@@ -243,8 +244,8 @@ munmap_state(struct mmap_state *mmap_s, struct thread *t)
         lock_acquire(&entry->page_lock);
         //lock_acquire(&t->pagedir_lock);
         if (entry->is_loaded == true) {
-            clear_page(entry->page_id, entry->owner_thread);
             evict_mmaped_page(entry);
+            clear_page(entry->page_id, entry->owner_thread);
             entry->is_loaded = false;
             palloc_free_page(entry->frame->physical_mem_frame_base);
             if (lock_held_by_current_thread(&entry->frame->frame_lock)) {
