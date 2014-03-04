@@ -247,6 +247,9 @@ munmap_state(struct mmap_state *mmap_s, struct thread *t)
             evict_mmaped_page(entry);
             entry->is_loaded = false;
             palloc_free_page(entry->frame->physical_mem_frame_base);
+            if (lock_held_by_current_thread(&entry->frame->frame_lock)) {
+                lock_release(&entry->frame->frame_lock);
+            }
             entry->frame->resident_page = NULL;
             entry->frame = NULL;
         }
