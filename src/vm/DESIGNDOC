@@ -104,6 +104,18 @@ to check
                         for eviction.
 
 ====================================================================
+/* Global variables for the swap table */
+struct block *swap_block; /* The swap device */
+
+/* The global swap table has precisely one job: It keeps track of which swap
+ * slots are open. It does so with a stack that contains all open swap slots.
+ */
+
+uint32_t *swap_table;  /* Array of open indices */
+uint32_t swap_slots;   /* Size of the array */
+int swap_top;          /* Index of the top open swap slot */
+struct lock swap_lock; /* Lock for the swap table */
+====================================================================
 Additions to the thread struct
 /* Project 3 Additions */
     /* pagedir lock */

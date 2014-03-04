@@ -469,6 +469,8 @@ static void LP_close (int fd) {
     free(package);
 }
 
+/* The mmap system call. fd is the user process's file descriptor to be mapped,
+ * and addr is the virtual address to map it to. */
 static mapid_t
 mmap(int fd, void *addr)
 {
@@ -552,6 +554,7 @@ mmap(int fd, void *addr)
     return t->mapid_counter++;
 }
 
+/* munmap system call. mapping is the identifier of the mapping to unmap */
 static void
 munmap(mapid_t mapping)
 {
