@@ -82,7 +82,6 @@ static void pass_frame(struct frame* frame) {
  --------------------------------------------------------------------
  */
 static void prepare_frame_to_return(struct frame* frame) {
-    lock_release(&frame->resident_page->owner_thread->pagedir_lock);
     lock_acquire(&frame->resident_page->page_lock);
     evict_page_from_physical_memory(frame->resident_page);
     frame->resident_page->frame = NULL;
@@ -147,9 +146,9 @@ static struct frame* evict_frame(void) {
             lock_acquire(&frame->resident_page->owner_thread->pagedir_lock);
             uint32_t* pagedir = frame->resident_page->owner_thread->pagedir;
             bool accessed = pagedir_is_accessed(pagedir, frame->resident_page->page_id);
+            pagedir_set_accessed(pagedir, frame->resident_page->page_id, false);
+            lock_release(&frame->resident_page->owner_thread->pagedir_lock);
             if (accessed) {
-                pagedir_set_accessed(pagedir, frame->resident_page->page_id, false);
-                lock_release(&frame->resident_page->owner_thread->pagedir_lock);
                 lock_release(&frame->frame_lock);
             } else {
                 prepare_frame_to_return(frame);
@@ -217,7 +216,6 @@ bool frame_handler_palloc(bool zeros, struct spte* spte, bool should_pin, bool i
     } else {
         frame->resident_page = spte;
         spte->is_loaded = true;
-        spte->frame = frame;
     }
     if (should_pin == false) {
         lock_release(&frame->frame_lock);
@@ -229,7 +227,6 @@ bool frame_handler_palloc(bool zeros, struct spte* spte, bool should_pin, bool i
 /*
  --------------------------------------------------------------------
  IMPLIMENTATION NOTES:
- NOTE: Not sure why we are returning a boolean here?
  --------------------------------------------------------------------
  */
 bool frame_handler_palloc_free(struct spte* spte) {
