@@ -498,3 +498,54 @@ cond_broadcast (struct condition *cond, struct lock *lock)
   while (!list_empty (&cond->waiters))
     cond_signal (cond, lock);
 }
+
+/* Read-Write Lock Procedures */
+/* Uses pseudocode from:
+ * http://en.wikipedia.org/wiki/Readers-writers_problem
+ */
+void
+rw_lock_init (struct rw_lock *rw_lock)
+{
+    sema_init(&rw_lock->no_waiting, 1);
+    sema_init(&rw_lock->no_accessing, 1);
+    sema_init(&rw_lock->no_accessing, 1);
+    rw_lock->readers = 0;
+}
+
+void
+writer_acquire (struct rw_lock *rw_lock)
+{
+    sema_down(&rw_lock->no_waiting);
+    sema_down(&rw_lock->no_accessing);
+    sema_up(&rw_lock->no_waiting);
+}
+
+void
+writer_release (struct rw_lock *rw_lock)
+{
+    sema_up(&rw_lock->no_accessing);
+}
+
+void
+reader_acquire (struct rw_lock *rw_lock)
+{
+    sema_down(&rw_lock->no_waiting);
+    sema_down(&rw_lock->readers_lock);
+    int readers = rw_lock->readers++;
+    sema_up(&rw_lock->readers_lock);
+    if (readers == 0) {
+        sema_down(&rw_lock->no_accessing);
+    }
+    sema_up(&rw_lock->no_waiting);
+}
+
+void
+reader_release (struct rw_lock *rw_lock)
+{
+    sema_down(&rw_lock->readers_lock);
+    int readers = --rw_lock->readers;
+    sema_up(&rw_lock->readers_lock);
+    if (readers == 0) {
+        sema_up(&rw_lock->no_accessing);
+    }
+}

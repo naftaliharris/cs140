@@ -48,6 +48,24 @@ void cond_wait (struct condition *, struct lock *);
 void cond_signal (struct condition *, struct lock *);
 void cond_broadcast (struct condition *, struct lock *);
 
+/* Read-Write Lock */
+/* Uses pseudocode from:
+ * http://en.wikipedia.org/wiki/Readers-writers_problem
+ */
+struct rw_lock
+{
+    struct semaphore no_waiting;
+    struct semaphore no_accessing;
+    struct semaphore readers_lock;
+    int readers;
+};
+
+void rw_lock_init (struct rw_lock *);
+void writer_acquire (struct rw_lock *);
+void writer_release (struct rw_lock *);
+void reader_acquire (struct rw_lock *);
+void reader_release (struct rw_lock *);
+
 /* Optimization barrier.
 
    The compiler will not reorder operations across an
