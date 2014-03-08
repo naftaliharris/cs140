@@ -66,6 +66,8 @@ bool writer_try_acquire (struct rw_lock *);
 void writer_release (struct rw_lock *);
 void reader_acquire (struct rw_lock *);
 void reader_release (struct rw_lock *);
+void rw_acquire (struct rw_lock *rw_lock, bool write);
+void rw_release (struct rw_lock *rw_lock, bool write);
 
 /* Optimization barrier.
 

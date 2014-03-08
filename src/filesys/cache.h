@@ -46,5 +46,6 @@ void write_back(struct cached_block *cb);
 struct cached_block *get_free_block(void);
 struct cached_block *find_cached_sector(block_sector_t sector);
 void cached_read(block_sector_t sector, uint32_t from, uint32_t to, void *buffer);
+void cached_write(block_sector_t sector, uint32_t from, uint32_t to, void *buffer);
 void write_back_all(void);
 #endif

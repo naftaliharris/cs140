@@ -562,3 +562,23 @@ reader_release (struct rw_lock *rw_lock)
         sema_up(&rw_lock->no_accessing);
     }
 }
+
+void
+rw_acquire (struct rw_lock *rw_lock, bool write)
+{
+    if (write) {
+        writer_acquire(rw_lock);
+    } else {
+        reader_acquire(rw_lock);
+    }
+}
+
+void
+rw_release (struct rw_lock *rw_lock, bool write)
+{
+    if (write) {
+        writer_release(rw_lock);
+    } else {
+        reader_release(rw_lock);
+    }
+}

@@ -99,8 +99,9 @@ find_cached_sector(block_sector_t sector)
     return NULL;
 }
 
-void
-cached_read(block_sector_t sector, uint32_t from, uint32_t to, void *buffer)
+static void
+cached_read_write(block_sector_t sector, bool write,
+                  uint32_t from, uint32_t to, void *buffer)
 {
     ASSERT (from < to);
     ASSERT (to < BLOCK_SECTOR_SIZE);
@@ -111,20 +112,27 @@ cached_read(block_sector_t sector, uint32_t from, uint32_t to, void *buffer)
         cb = find_cached_sector(sector);
         if (cb != NULL) {
             reader_release(&sector_lock);
-            reader_acquire(&cb->rw_lock);
+            rw_acquire(&cb->rw_lock, write);
             if (cb->sector == sector) {
                 if (cb->state == CLEAN || cb->state == DIRTY) {
                     /* Typical case: Found the sector in cache, and it didn't
                      * change before we got a chance to see it. */
-                    memcpy(buffer, cb->data + from, (to - from));
+
+                    if (write) {
+                        memcpy(cb->data + from, buffer, (to - from));
+                    }
+                    else {
+                        memcpy(buffer, cb->data + from, (to - from));
+                    }
+
                     cb->accessed = true;  /* XXX synchronized? */
-                    reader_release(&cb->rw_lock);
+                    rw_release(&cb->rw_lock, write);
                     return;
                 }
             }
             /* Atypical case: We found the sector in cache, but it changed
              * before we got a chance to see it: Try again. */
-            reader_release(&cb->rw_lock);
+            rw_release(&cb->rw_lock, write);
         } else {
             cb = get_free_block();
             reader_release(&sector_lock);
@@ -138,7 +146,14 @@ cached_read(block_sector_t sector, uint32_t from, uint32_t to, void *buffer)
                 cb->state = IN_IO;
                 block_read(fs_device, cb->sector, cb->data);
                 cb->state = CLEAN;
-                memcpy(buffer, cb->data + from, (to - from));
+
+                if (write) {
+                    memcpy(cb->data + from, buffer, (to - from));
+                }
+                else {
+                    memcpy(buffer, cb->data + from, (to - from));
+                }
+
                 cb->accessed = true;
                 writer_release(&cb->rw_lock);
                 return;
@@ -146,19 +161,22 @@ cached_read(block_sector_t sector, uint32_t from, uint32_t to, void *buffer)
             /* Atypical case: We didn't find the sector in cache, but it
              * popped up before we could add it: Try again. */
             writer_release(&sector_lock);
+            writer_release(&cb->rw_lock);
         }
     }
 }
 
-//void
-//cached_write(block_sector_t sector, uint32_t from, uint32_t to, void *buffer)
-//{
-//    ASSERT (0 <= from);
-//    ASSERT (from < to);
-//    ASSERT (to < BLOCK_SECTOR_SIZE);
-//
-//}
-//
+void
+cached_write(block_sector_t sector, uint32_t from, uint32_t to, void *buffer)
+{
+    cached_read_write(sector, true, from, to, buffer);
+}
+
+void
+cached_read(block_sector_t sector, uint32_t from, uint32_t to, void *buffer)
+{
+    cached_read_write(sector, false, from, to, buffer);
+}
 
 void
 write_back_all(void)
