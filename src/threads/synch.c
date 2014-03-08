@@ -520,6 +520,19 @@ writer_acquire (struct rw_lock *rw_lock)
     sema_up(&rw_lock->no_waiting);
 }
 
+bool
+writer_try_acquire (struct rw_lock *rw_lock)
+{
+    if (sema_try_down(&rw_lock->no_waiting)) {
+        if (sema_try_down(&rw_lock->no_accessing)) {
+            sema_up(&rw_lock->no_waiting);
+            return true;
+        }
+        sema_up(&rw_lock->no_waiting);
+    }
+    return false;
+}
+
 void
 writer_release (struct rw_lock *rw_lock)
 {

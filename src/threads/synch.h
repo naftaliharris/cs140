@@ -62,6 +62,7 @@ struct rw_lock
 
 void rw_lock_init (struct rw_lock *);
 void writer_acquire (struct rw_lock *);
+bool writer_try_acquire (struct rw_lock *);
 void writer_release (struct rw_lock *);
 void reader_acquire (struct rw_lock *);
 void reader_release (struct rw_lock *);
