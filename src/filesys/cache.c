@@ -1,4 +1,4 @@
-#include <bitmap.h>
+#include <string.h>
 #include "filesys/cache.h"
 #include "threads/malloc.h"
 #include "filesys/filesys.h"
@@ -84,65 +84,71 @@ get_free_block(void)
 }
 
 
-/* Finds the cached_block, if present.
- * If the cached_block is present...
- *
- *
- */
+/* Finds the cached_block, if present. Does no locking. */
+struct cached_block *
+find_cached_sector(block_sector_t sector)
+{
+    int i;
+    for (i = 0; i < CACHE_BLOCKS; i++)
+    {
+        struct cached_block *cb = &fs_cache[i];
+        if (cb->sector == sector) {
+            return cb;
+        }
+    }
+    return NULL;
+}
 
-//struct cached_block *
-//find_cached_sector(block_sector_t sector)
-//{
-//    reader_lock_acquire(&sector_lock);
-//    int i;
-//    for (i = 0; i < CACHE_BLOCKS; i++)
-//    {
-//        struct cached_block *cb = &fs_cache[i];
-//        if (cb->sector == sector)
-//            return cb;
-//        }
-//    }
-//    return NULL;
-//}
+void
+cached_read(block_sector_t sector, uint32_t from, uint32_t to, void *buffer)
+{
+    ASSERT (from < to);
+    ASSERT (to < BLOCK_SECTOR_SIZE);
 
-//void
-//cached_read(block_sector_t sector, uint32_t from, uint32_t to, void *buffer)
-//{
-//    ASSERT (0 <= from);
-//    ASSERT (from < to);
-//    ASSERT (to < BLOCK_SECTOR_SIZE);
-//
-//    /* Outline:
-//     * 1) Find the cb, getting a new one if necessary, and acquire read lock
-//     * 2) Read
-//     * 3) Release read lock
-//     */
-//
-//    struct cached_block *cb = find_cached_sector(sector);
-//
-//    if (cb == NULL) {
-//        cb = get_free_block();
-//        cb->occupied = true;
-//        cb->accessed = true;
-//        cb->dirty = false;
-//        cb->being_loaded = true;
-//        lock_release(&cache_state_lock);
-//
-//        block_read(fs_device, sector, cb->data);
-//        lock_acquire(&cache_state_lock);
-//        cb->being_loaded = false;
-//        lock_release(&cache_state_lock);
-//
-//        // Lock or something
-//        // Read or something
-//    } else {
-//        cb->accessed = true;
-//        lock_release(&cache_state_lock);
-//
-//        // Lock or something
-//        // Read or something
-//    }
-//}
+    struct cached_block *cb;
+    while (true) {
+        reader_acquire(&sector_lock);
+        cb = find_cached_sector(sector);
+        if (cb != NULL) {
+            reader_release(&sector_lock);
+            reader_acquire(&cb->rw_lock);
+            if (cb->sector == sector) {
+                if (cb->state == CLEAN || cb->state == DIRTY) {
+                    /* Typical case: Found the sector in cache, and it didn't
+                     * change before we got a chance to see it. */
+                    memcpy(buffer, cb->data + from, (to - from));
+                    cb->accessed = true;  /* XXX synchronized? */
+                    reader_release(&cb->rw_lock);
+                    return;
+                }
+            }
+            /* Atypical case: We found the sector in cache, but it changed
+             * before we got a chance to see it: Try again. */
+            reader_release(&cb->rw_lock);
+        } else {
+            cb = get_free_block();
+            reader_release(&sector_lock);
+            writer_acquire(&sector_lock);
+            if (find_cached_sector(sector) == NULL) {
+                /* Typical case: We didn't find the sector in cache, and it
+                 * didn't pop up before we could add it */
+                cb->sector = sector;
+                writer_release(&sector_lock);
+
+                cb->state = IN_IO;
+                block_read(fs_device, cb->sector, cb->data);
+                cb->state = CLEAN;
+                memcpy(buffer, cb->data + from, (to - from));
+                cb->accessed = true;
+                writer_release(&cb->rw_lock);
+                return;
+            }
+            /* Atypical case: We didn't find the sector in cache, but it
+             * popped up before we could add it: Try again. */
+            writer_release(&sector_lock);
+        }
+    }
+}
 
 //void
 //cached_write(block_sector_t sector, uint32_t from, uint32_t to, void *buffer)
@@ -163,7 +169,7 @@ write_back_all(void)
     while (wrote_back != UINT64_MAX) {
         for (i = 0; i < 64; i++) {
             struct cached_block *cb = &fs_cache[i];
-            if (wrote_back & (1 << i) == 0) {
+            if ((wrote_back & (1 << i)) == 0) {
                 if (writer_try_acquire(&cb->rw_lock)) {
                     write_back(cb);
                     wrote_back |= (1 << i);
