@@ -37,6 +37,12 @@ assert_spte_consistency(struct spte* spte)
 /*
  --------------------------------------------------------------------
  IMPLIMENTATION NOTES:
+ NOTE: we aquire the lock here, to handle the case where we 
+    allocate a swap page, in which case we pass is_loaded
+    value of true. 
+ NOTE: On failure of malloc, we return null. 
+ NOTE: On failure to add the spte to the spte table, 
+    we exit the thread. 
  --------------------------------------------------------------------
  */
 struct spte* create_spte_and_add_to_table(page_location location, void* page_id, bool is_writeable, bool is_loaded, struct file* file_ptr, off_t offset, uint32_t read_bytes, uint32_t zero_bytes) {
@@ -59,9 +65,7 @@ struct spte* create_spte_and_add_to_table(page_location location, void* page_id,
     lock_init(&spte->page_lock);
     lock_acquire(&spte->page_lock);
     struct hash* target_table = &thread_current()->spte_table;
-    lock_acquire(&thread_current()->spte_table_lock);
     struct spte* outcome = hash_entry(hash_insert(target_table, &spte->elem), struct spte, elem);
-    lock_release(&thread_current()->spte_table_lock);
     if (outcome != NULL) {
         thread_current()->vital_info->exit_status = -1;
         if (thread_current()->is_running_user_program) {
@@ -113,6 +117,10 @@ static void load_file_page(struct spte* spte) {
     uint32_t bytes_read = file_read_at (spte->file_ptr, spte->frame->physical_mem_frame_base, spte->read_bytes, spte->offset_in_file);
     lock_release(&file_system_lock);
     if (bytes_read != spte->read_bytes) {
+        thread_current()->vital_info->exit_status = -1;
+        if (thread_current()->is_running_user_program) {
+            printf("%s: exit(%d)\n", thread_name(), -1);
+        }
         thread_exit();
     }
     if (spte->read_bytes != PGSIZE) {
@@ -135,13 +143,16 @@ static void load_mmaped_page(struct spte* spte) {
 /*
  --------------------------------------------------------------------
  IMPLIMENTATION NOTES:
- NOTE: Need to implement these functions. 
- NOTE: Need to add the mapping by calling page_dir_set_page
+ NOTE: we only add the mapping of virtual address to frame 
+    after the load has completed. 
+ NOTE: This function assumes that the caller has aquired the 
+    page lock, thus ensuring that eviction and loading
+    cannot be done at the same time. 
  --------------------------------------------------------------------
  */
 bool load_page_into_physical_memory(struct spte* spte, bool is_fresh_stack_page) {
     assert_spte_consistency(spte);
-
+    ASSERT(lock_held_by_current_thread(&spte->frame->frame_lock));
     if (is_fresh_stack_page == false) {
         switch (spte->location) {
             case SWAP_PAGE:
@@ -184,6 +195,8 @@ static void evict_swap_page(struct spte* spte) {
  --------------------------------------------------------------------
  DESCRIPTION: moves a page containing file data to a swap slot
     if the page is dirty. Else, we do nothing.
+ NOTE: Once the page is dirty once, as discussed in OH, we treat
+    it as always dirty, which means it will forever more be a swap. 
  --------------------------------------------------------------------
  */
 static void evict_file_page(struct spte* spte) {
@@ -203,20 +216,26 @@ static void evict_file_page(struct spte* spte) {
  --------------------------------------------------------------------
  DESCRIPTION: moves a mmapped page from physical memory to another
     location
+ NOTE: Reset's the dirty value if the page is currently dirty so
+    that subsequent checks will only write if dirty again. 
  --------------------------------------------------------------------
  */
 static void evict_mmaped_page(struct spte* spte) {
     assert_spte_consistency(spte);
 
     uint32_t* pagedir = spte->owner_thread->pagedir;
+    lock_acquire(&spte->owner_thread->pagedir_lock);
     void *page_id = spte->page_id;
     bool dirty = pagedir_is_dirty(pagedir, page_id);
-    pagedir_set_dirty(pagedir, page_id, false);
     if (dirty) {
+        pagedir_set_dirty(pagedir, page_id, false);
+        lock_release(&spte->owner_thread->pagedir_lock);
         lock_acquire(&file_system_lock);
-        file_write_at (spte->file_ptr, page_id, spte->read_bytes,
+        file_write_at (spte->file_ptr, spte->frame->physical_mem_frame_base, spte->read_bytes,
                        spte->offset_in_file);
         lock_release(&file_system_lock);
+    } else {
+        lock_release(&spte->owner_thread->pagedir_lock);
     }
 
     assert_spte_consistency(spte);
@@ -242,24 +261,20 @@ munmap_state(struct mmap_state *mmap_s, struct thread *t)
         struct spte *entry = find_spte(page, t);
         ASSERT (entry != NULL);
         lock_acquire(&entry->page_lock);
-        //lock_acquire(&t->pagedir_lock);
         if (entry->is_loaded == true) {
-            evict_mmaped_page(entry);
+            if (lock_held_by_current_thread(&entry->frame->frame_lock) == false) {
+                lock_acquire(&entry->frame->frame_lock);
+            }
             clear_page(entry->page_id, entry->owner_thread);
+            evict_mmaped_page(entry);
             entry->is_loaded = false;
             palloc_free_page(entry->frame->physical_mem_frame_base);
-            if (lock_held_by_current_thread(&entry->frame->frame_lock)) {
-                lock_release(&entry->frame->frame_lock);
-            }
+            lock_release(&entry->frame->frame_lock);
             entry->frame->resident_page = NULL;
             entry->frame = NULL;
         }
         lock_release(&entry->page_lock);
-        //lock_release(&t->pagedir_lock);
-        
-        lock_acquire(&t->spte_table_lock);
         hash_delete(&t->spte_table, &entry->elem);
-        lock_release(&t->spte_table_lock);
         free(entry);
     }
 
@@ -293,6 +308,11 @@ bool evict_page_from_physical_memory(struct spte* spte) {
             evict_mmaped_page(spte);
             break;
         default:
+            thread_current()->vital_info->exit_status = -1;
+            if (thread_current()->is_running_user_program) {
+                printf("%s: exit(%d)\n", thread_name(), -1);
+            }
+            thread_exit();
             break;
     }
     assert_spte_consistency(spte);
@@ -312,9 +332,7 @@ struct spte* find_spte(void* virtual_address, struct thread *t) {
     dummy.page_id = spte_id;
     
     struct hash* table = &t->spte_table;
-    lock_acquire(&t->spte_table_lock);
     struct hash_elem* match = hash_find(table, &dummy.elem);
-    lock_release(&t->spte_table_lock);
     if (match) {
         return hash_entry(match, struct spte, elem);
     }
@@ -358,8 +376,8 @@ static void free_hash_entry(struct hash_elem* e, void* aux UNUSED) {
     struct spte* spte = hash_entry(e, struct spte, elem);
     lock_acquire(&spte->page_lock);
     if (spte->is_loaded) {
-        frame_handler_palloc_free(spte);
         clear_page(spte->page_id, spte->owner_thread);
+        frame_handler_palloc_free(spte);
         spte->is_loaded = false;
     }
     lock_release(&spte->page_lock);
@@ -460,6 +478,9 @@ bool is_valid_stack_access(void* esp, void* user_virtual_address) {
  IMPLIMENTATION NOTES:
  NOTE: we take care of freeing the palloc'd page on error within 
     frame_handler_palloc
+ NOTE: Create_spte_and_add aquires the page lock for us, to handle
+    this race between creation and access to swap memory before 
+    frame gets allocated.
  --------------------------------------------------------------------
  */
 bool grow_stack(void* page_id) {
@@ -467,7 +488,6 @@ bool grow_stack(void* page_id) {
     if (spte == NULL) {
         return false;
     }
-    //lock_acquire(&spte->page_lock);
     bool outcome = frame_handler_palloc(true, spte, false, true);
     return outcome;
 }
@@ -482,7 +502,7 @@ bool grow_stack(void* page_id) {
     In this case we have to try to acquire the 
     lock for the page if it is in physical memory. If we aquire the 
     lock, and the page is still in the frame, we are good, else,
-    we have to hunt down the now frame.
+    we have to hunt down the new frame.
  --------------------------------------------------------------------
  */
 void pin_page(void* virtual_address) {
@@ -492,22 +512,20 @@ void pin_page(void* virtual_address) {
         frame_handler_palloc(false, spte, true, false);
     } else {
         lock_release(&spte->page_lock);
-        while (true) {
-            lock_acquire(&spte->page_lock);
-            bool success = aquire_frame_lock(spte->frame, spte);
-            if (success) {
-                lock_release(&spte->page_lock);
-                break;
+        lock_acquire(&spte->page_lock);
+        bool success = aquire_frame_lock(spte->frame, spte);
+        if (success) {
+            lock_release(&spte->page_lock);
+            return;
+        } else {
+            if (spte->is_loaded != true) {
+                frame_handler_palloc(false, spte, true, false);
+                return;
             } else {
-                if (spte->is_loaded != true) {
+                if (spte->is_loaded == true) {
+                    frame_handler_palloc_free(spte);
                     frame_handler_palloc(false, spte, true, false);
-                    break;
-                } else {
-                    if (spte->is_loaded == true) {
-                        frame_handler_palloc_free(spte);
-                        frame_handler_palloc(false, spte, true, false);
-                        break;
-                    }
+                    return;
                 }
             }
         }

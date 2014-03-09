@@ -174,13 +174,6 @@ bool is_valid_stack_access(void* esp, void* user_virtual_address);
 
 /*
  --------------------------------------------------------------------
- DESCRIPTION: handles the last case of a stack access in which the 
-    faulting address is above the stack pointer.
- --------------------------------------------------------------------
- */
-
-/*
- --------------------------------------------------------------------
  DESCRIPTION: grows the current processes stack by creating and adding
     an spte for the given page_id, and then calling frame_handler_palloc
     to load the page into physical memory.
