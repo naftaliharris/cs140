@@ -45,6 +45,13 @@ struct rw_lock sector_lock;
 struct lock fs_evict_lock;  /* Only one cached_block may be evicted at a time */
 int fs_cache_arm;           /* The clock arm for the eviction procedure */
 
+/* Globals for asynchronous block fetching */
+#define ASYNC_FETCH_SLOTS 32
+#define ASYNC_FETCH_EMPTY UINT32_MAX  /* Last sector is invalid */
+block_sector_t *async_fetch_list;
+int async_fetch_arm;
+struct lock async_fetch_lock;
+struct condition async_list_nonempty;
 
 /* Prototypes */
 void init_fs_cache(void);
@@ -53,5 +60,7 @@ struct cached_block *get_free_block(void);
 struct cached_block *find_cached_sector(block_sector_t sector);
 void cached_read(block_sector_t sector, uint32_t from, uint32_t to, void *buffer);
 void cached_write(block_sector_t sector, uint32_t from, uint32_t to, void *buffer);
-void write_back_all(void);
+void async_fetch(block_sector_t sector);
+void write_back_daemon(void *aux);
+void async_fetch_daemon(void *aux);
 #endif

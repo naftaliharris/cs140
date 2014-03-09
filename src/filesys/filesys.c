@@ -7,6 +7,7 @@
 #include "filesys/free-map.h"
 #include "filesys/inode.h"
 #include "filesys/directory.h"
+#include "threads/thread.h"
 
 /* Partition that contains the file system. */
 struct block *fs_device;
@@ -30,6 +31,15 @@ filesys_init (bool format)
     do_format ();
 
   free_map_open ();
+
+  /* Start the filesystem daemons.
+   *
+   * The write back daemon is given maximum priority, since we wish to
+   * guarantee that the in-memory cache is written back to disk periodically.
+   * The async fetch daemon is given minimum priority, since it's an
+   * optimization that shouldn't run unless there is no other work to do. */
+  thread_create("write_back_daemon", PRI_MAX, write_back_daemon, NULL);
+  thread_create("async_fetch_daemon", PRI_MIN, async_fetch_daemon, NULL);
 }
 
 /* Shuts down the file system module, writing any unwritten data

@@ -1,4 +1,5 @@
 #include <string.h>
+#include "devices/timer.h"
 #include "filesys/cache.h"
 #include "threads/malloc.h"
 #include "filesys/filesys.h"
@@ -20,7 +21,6 @@ void
 init_fs_cache(void)
 {
     rw_lock_init(&sector_lock);
-    lock_init(&fs_evict_lock);
 
     fs_cache = (struct cached_block*)malloc(CACHE_BLOCKS * sizeof(struct cached_block));
     if (fs_cache == NULL) {
@@ -40,7 +40,21 @@ init_fs_cache(void)
         }
     }
 
+    /* The eviction data structures */
+    lock_init(&fs_evict_lock);
     fs_cache_arm = 0;
+
+    /* The asynchronous fetching data structures */
+    async_fetch_list = malloc(ASYNC_FETCH_SLOTS * sizeof(block_sector_t));
+    if (async_fetch_list == NULL) {
+        PANIC("Couldn't allocate the asynchronous fetch list!");
+    }
+    for (i = 0; i < ASYNC_FETCH_SLOTS; i++) {
+        async_fetch_list[i] = ASYNC_FETCH_EMPTY;
+    }
+    async_fetch_arm = 0;
+    lock_init(&async_fetch_lock);
+    cond_init(&async_list_nonempty);
 }
 
 /* Writes the cached block back to disk if it's dirty.
@@ -199,8 +213,42 @@ cached_read(block_sector_t sector, uint32_t from, uint32_t to, void *buffer)
     cached_read_write(sector, false, from, to, buffer);
 }
 
-/* Write all of the cached blocks back to disk. */
+/* Request that the async fetch daemon to fetch this sector. Returns without 
+ * waiting for the IO to complete. Since there are only finitely many requests
+ * that can be made at once, the request is not guaranteed to be made. */
 void
+async_fetch(block_sector_t sector)
+{
+    /* Implementation note: We signal the nonempty condition very liberally,
+     * which isn't a big deal since signalling multiple times is just overly
+     * conservative. */
+
+    lock_acquire(&async_fetch_lock);
+    int i;
+    for (i = 0; i < ASYNC_FETCH_SLOTS; i++) {
+        int idx = (async_fetch_arm + i) % ASYNC_FETCH_SLOTS;
+        if (async_fetch_list[idx] == sector) {
+            /* Don't ask the daemon to fetch the same sector twice */
+            cond_signal(&async_list_nonempty, &async_fetch_lock);
+            lock_release(&async_fetch_lock);
+            return;
+        }
+        if (async_fetch_list[idx] == ASYNC_FETCH_EMPTY) {
+            async_fetch_list[idx] = sector;
+            cond_signal(&async_list_nonempty, &async_fetch_lock);
+            lock_release(&async_fetch_lock);
+            return;
+        }
+    }
+
+    /* The async fetch list is full; drop the request. */
+    cond_signal(&async_list_nonempty, &async_fetch_lock);
+    lock_release(&async_fetch_lock);
+    return;
+}
+
+/* Write all of the cached blocks back to disk. */
+static void
 write_back_all(void)
 {
     /* XXX: Hard-coded 64 cache blocks */
@@ -220,5 +268,51 @@ write_back_all(void)
     }
 }
 
-/* TODO: A daemon for writing all caches back to disk periodically, and a daemon
- * and shared data structures for asyncronously caching blocks */
+/* Daemon code for writing all caches back to disk periodically */
+void
+write_back_daemon (void *aux UNUSED)
+{
+    while (true) {
+        timer_msleep(1000);  /* Write back every second */
+        write_back_all();
+    }
+}
+
+/* Daemon code for asynchronously fetching sectors to disk */
+void
+async_fetch_daemon (void *aux UNUSED)
+{
+    lock_acquire(&async_fetch_lock);
+    while (true) {
+        if (async_fetch_list[async_fetch_arm] == ASYNC_FETCH_EMPTY) {
+            cond_wait(&async_list_nonempty, &async_fetch_lock);
+        }
+
+        block_sector_t sector = async_fetch_list[async_fetch_arm];
+        ASSERT (sector != ASYNC_FETCH_EMPTY);
+
+        async_fetch_list[async_fetch_arm++] = ASYNC_FETCH_EMPTY;
+        lock_release(&async_fetch_lock);
+
+        /* Try to fetch the sector */
+        writer_acquire(&sector_lock);
+        struct cached_block *cb = find_cached_sector(sector);
+        if (cb != NULL) {
+            /* Less typical case: the sector is already there */
+            writer_release(&sector_lock);
+        } else {
+            /* More typical case: the sector isn't there yet */
+            cb = get_free_block();
+            cb->sector = sector;
+            cb->state = IN_IO;
+            writer_release(&sector_lock);
+
+            block_read(fs_device, cb->sector, cb->data);
+            cb->accessed = false;
+            cb->state = CLEAN;
+            writer_release(&cb->rw_lock);
+        }
+        
+        lock_acquire(&async_fetch_lock);
+    }
+}
