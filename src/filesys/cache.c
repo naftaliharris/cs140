@@ -80,7 +80,7 @@ get_free_block(void)
                 return cb;
             }
             cb->accessed = false;
-            lock_release(&fs_evict_lock);
+            writer_release(&cb->rw_lock);
         }
     }
 }
