@@ -68,6 +68,7 @@ get_free_block(void)
         struct cached_block *cb = &fs_cache[fs_cache_arm];
         fs_cache_arm = (fs_cache_arm + 1) % CACHE_BLOCKS;
         if (writer_try_acquire(&cb->rw_lock)) {
+            ASSERT (cb->state != IN_IO);
             if (cb->state == UNOCCUPIED) {
                 lock_release(&fs_evict_lock);
                 return cb;
@@ -79,6 +80,7 @@ get_free_block(void)
                 return cb;
             }
             cb->accessed = false;
+            lock_release(&fs_evict_lock);
         }
     }
 }
@@ -114,22 +116,21 @@ cached_read_write(block_sector_t sector, bool write,
         if (cb != NULL) {
             reader_release(&sector_lock);
             rw_acquire(&cb->rw_lock, write);
-            if (cb->sector == sector) {
-                if (cb->state == CLEAN || cb->state == DIRTY) {
-                    /* Typical case: Found the sector in cache, and it didn't
-                     * change before we got a chance to see it. */
+            if (cb->sector == sector && (cb->state == CLEAN || cb->state == DIRTY)) {
+                /* Typical case: Found the sector in cache, and it didn't
+                 * change before we got a chance to see it. */
 
-                    if (write) {
-                        memcpy(cb->data + from, buffer, (to - from));
-                    }
-                    else {
-                        memcpy(buffer, cb->data + from, (to - from));
-                    }
-
-                    cb->accessed = true;  /* XXX synchronized? */
-                    rw_release(&cb->rw_lock, write);
-                    return;
+                if (write) {
+                    memcpy(cb->data + from, buffer, (to - from));
+                    cb->state = DIRTY;
                 }
+                else {
+                    memcpy(buffer, cb->data + from, (to - from));
+                }
+
+                cb->accessed = true;  /* XXX synchronized? */
+                rw_release(&cb->rw_lock, write);
+                return;
             }
             /* Atypical case: We found the sector in cache, but it changed
              * before we got a chance to see it: Try again. */
@@ -150,6 +151,7 @@ cached_read_write(block_sector_t sector, bool write,
 
                 if (write) {
                     memcpy(cb->data + from, buffer, (to - from));
+                    cb->state = DIRTY;
                 }
                 else {
                     memcpy(buffer, cb->data + from, (to - from));
