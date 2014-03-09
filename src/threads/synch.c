@@ -508,7 +508,7 @@ rw_lock_init (struct rw_lock *rw_lock)
 {
     sema_init(&rw_lock->no_waiting, 1);
     sema_init(&rw_lock->no_accessing, 1);
-    sema_init(&rw_lock->no_accessing, 1);
+    sema_init(&rw_lock->readers_lock, 1);
     rw_lock->readers = 0;
 }
 

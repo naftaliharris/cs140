@@ -92,7 +92,8 @@ find_cached_sector(block_sector_t sector)
     for (i = 0; i < CACHE_BLOCKS; i++)
     {
         struct cached_block *cb = &fs_cache[i];
-        if (cb->sector == sector) {
+        /* UNOCCUPIED cached blocks have arbitrary sector numbers */
+        if (cb->sector == sector && cb->state != UNOCCUPIED) {
             return cb;
         }
     }
@@ -104,7 +105,7 @@ cached_read_write(block_sector_t sector, bool write,
                   uint32_t from, uint32_t to, void *buffer)
 {
     ASSERT (from < to);
-    ASSERT (to < BLOCK_SECTOR_SIZE);
+    ASSERT (to <= BLOCK_SECTOR_SIZE);
 
     struct cached_block *cb;
     while (true) {
@@ -141,9 +142,9 @@ cached_read_write(block_sector_t sector, bool write,
                 /* Typical case: We didn't find the sector in cache, and it
                  * didn't pop up before we could add it */
                 cb->sector = sector;
+                cb->state = IN_IO;
                 writer_release(&sector_lock);
 
-                cb->state = IN_IO;
                 block_read(fs_device, cb->sector, cb->data);
                 cb->state = CLEAN;
 
