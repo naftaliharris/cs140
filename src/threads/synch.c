@@ -499,8 +499,13 @@ cond_broadcast (struct condition *cond, struct lock *lock)
     cond_signal (cond, lock);
 }
 
-/* Read-Write Lock Procedures */
-/* Uses pseudocode from:
+/* Read-Write Lock Procedures:
+ *
+ * The rw_lock permits arbitarily many readers to access the protected data,
+ * or one writer to access it. It guarantees that neither readers nor writers
+ * will starve.
+ *
+ * Uses pseudocode from:
  * http://en.wikipedia.org/wiki/Readers-writers_problem
  */
 void

@@ -10,13 +10,12 @@
  * 3) Cache writes occur eventually
  *      => 2 and 3 solved by rw_lock
  * 4) Cache periodically written back to disk
- *      => solved by daemon or in thread_tick
+ *      => solved by daemon: TODO
  * 5) Asyncronous loading of caches
- *      => solved by daemon
- * 6) Threads might suddenly die?
- *      => Not while they are running OS code!
+ *      => solved by daemon: TODO
  */
 
+/* Initialize the data structures for the file system cache */
 void
 init_fs_cache(void)
 {
@@ -44,7 +43,8 @@ init_fs_cache(void)
     fs_cache_arm = 0;
 }
 
-/* XXX: Must be called from a write-lock context! */
+/* Writes the cached block back to disk if it's dirty.
+ * Must be called from a write-lock context! */
 void
 write_back(struct cached_block *cb)
 {
@@ -102,6 +102,12 @@ find_cached_sector(block_sector_t sector)
     return NULL;
 }
 
+/* Reads from or writes to the given sector at bytes i such that from <= i < to,
+ * reading them to or writing them from buffer. buffer must have size at least
+ * from - to. 
+ *
+ * For internal use.
+ */
 static void
 cached_read_write(block_sector_t sector, bool write,
                   uint32_t from, uint32_t to, void *buffer)
@@ -169,18 +175,31 @@ cached_read_write(block_sector_t sector, bool write,
     }
 }
 
+/* Reads from the file system at the given sector at bytes between from and to,
+ * and stores them into buffer, which must have size at least to - from.
+ *
+ * First checks the file system cache to see if it can read from memory.
+ * All syncronization is done internally.
+ */
 void
 cached_write(block_sector_t sector, uint32_t from, uint32_t to, void *buffer)
 {
     cached_read_write(sector, true, from, to, buffer);
 }
 
+/* Writes to the file system at the given sector at bytes between from and to,
+ * using the data from buffer, which must have size at least to - from.
+ *
+ * First checks the file system cache to see if it can write into memory.
+ * All syncronization is done internally.
+ */
 void
 cached_read(block_sector_t sector, uint32_t from, uint32_t to, void *buffer)
 {
     cached_read_write(sector, false, from, to, buffer);
 }
 
+/* Write all of the cached blocks back to disk. */
 void
 write_back_all(void)
 {
@@ -200,3 +219,6 @@ write_back_all(void)
         }
     }
 }
+
+/* TODO: A daemon for writing all caches back to disk periodically, and a daemon
+ * and shared data structures for asyncronously caching blocks */

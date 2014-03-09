@@ -12,6 +12,7 @@
 #define CACHE_WRITING 0x8
 #define CACHE_PINNED 0x10
 
+/* States a cached block may be in */
 typedef enum cached_block_state
 {
     UNOCCUPIED,
@@ -20,25 +21,30 @@ typedef enum cached_block_state
     DIRTY
 } cb_state_t;
 
+/* The cached block data structure */
 struct cached_block
 {
-    struct rw_lock rw_lock;  /* Protects the state below */
+    struct rw_lock rw_lock; /* Protects the cached_block data and metadata */
 
-    block_sector_t sector;    /* Protected by both global sector lock and the per-cached_block rw_lock */
-    cb_state_t state;
-    bool accessed;
-    void *data;
+    block_sector_t sector;  /* The referenced sector on disk. To modify this,
+                             * you must have a write-lock for both this cached
+                             * block and also the global sector_lock. */
+
+    cb_state_t state;       /* The state of the cached block */
+    bool accessed;          /* Whether the cached block is accessed */
+    void *data;             /* The actual cached data, (512 bytes) */
 };
 
-/* The actual file-system cache */
+/* The actual file-system block cache */
 struct cached_block *fs_cache;
 
-/* Eviction data */
-struct lock fs_evict_lock; /* Only one cached_block may be evicted at a time */
-int fs_cache_arm;
+/* Lock for all sectors */
+struct rw_lock sector_lock;
 
-/* Block sector data */
-struct rw_lock sector_lock; /* Lock for all sectors */
+/* Globals for eviction */
+struct lock fs_evict_lock;  /* Only one cached_block may be evicted at a time */
+int fs_cache_arm;           /* The clock arm for the eviction procedure */
+
 
 /* Prototypes */
 void init_fs_cache(void);
