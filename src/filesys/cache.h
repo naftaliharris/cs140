@@ -73,6 +73,36 @@ void init_cache();
  */
 struct cache_entry* get_cache_entry_for_sector(unsigned sector_id, bool exclusive);
 
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: reads num_bytes starting from entry->bytes + offset
+    into buffer. 
+ NOTE: updates the accessed bit for the cache_entry.
+ NOTE: this function must be called with the cache_entry 
+    having been locked in shared context. This amounts
+    to calling get_cache_entry_for_sector with a value of   
+    false passed in. 
+ NOTE: offset must be a byte offset.
+ NOTE: does not release cache_entry lock. Requires caller to 
+    do so. 
+ -----------------------------------------------------------
+ */
+void read_from_cache(struct cache_entry* entry, void* buffer, off_t offset, unsigned num_bytes);
+
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: writes the buffer to the cache, writing 
+    num_bytes and offset in the cache. 
+ NOTE: Updates accessed and dirty bits to true.
+ NOTE: Caller must have already acquired the cache_entry 
+    lock in the exclusive context, prior to calling 
+    this function. 
+ NOTE: does not release cache_entry lock. That is the 
+    responsibility of the caller. 
+ -----------------------------------------------------------
+ */
+void write_to_cache(struct cache_entry* entry, void* buffer, off_t offset, unsigned num_bytes);
+
 
 
 /*

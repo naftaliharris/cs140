@@ -239,6 +239,43 @@ struct cache_entry* get_cache_entry_for_sector(unsigned sector_id, bool exclusiv
     }
 }
 
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: None
+ NOTE: the updating of the accessed field allows for a benign
+    race, as multiple readers will set this field to true. 
+    This is ok, because when checking for accessed in eviction, 
+    we lock the cache_entry exclusively beforehand. 
+ NOTE: does not release cache_entry lock. Requires caller to
+ do so.
+ -----------------------------------------------------------
+ */
+void read_from_cache(struct cache_entry* entry, void* buffer, off_t offset, unsigned num_bytes) {
+    void* copy_from_address = entry->bytes + offset;
+    memcpy(buffer, copy_from_address, (size_t)num_bytes);
+    entry->accessed = true;
+}
+
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: writes the buffer to the cache, writing
+ num_bytes and offset in the cache.
+ NOTE: Updates accessed and dirty bits to true.
+ NOTE: Caller must have already acquired the cache_entry
+    lock in the exclusive context, prior to calling
+    this function.
+ NOTE: does not release cache_entry lock. That is the
+    responsibility of the caller.
+ NOTE: Offset must be in bytes.
+ -----------------------------------------------------------
+ */
+void write_to_cache(struct cache_entry* entry, void* buffer, off_t offset, unsigned num_bytes) {
+    void* copy_to_address = entry->bytes + offset;
+    memcpy(copy_to_address, buffer, num_bytes);
+    entry->accessed = true;
+    entry->dirty = true;
+}
+
 
 
 
