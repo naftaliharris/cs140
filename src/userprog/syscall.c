@@ -11,6 +11,7 @@
 #include "devices/input.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
+#include "filesys/inode.h"
 #include "userprog/process.h"
 #include "lib/string.h"
 #include "threads/vaddr.h"
@@ -639,11 +640,16 @@ isdir(int fd)
 }
 
 /* Returns the inode number of the inode associated with fd, which may represent
- * an ordinary file or a directory. */
+ * an ordinary file or a directory. Returns -1 on error. */
 static int
 inumber(int fd)
 {
-    return -1;
+    struct file *fp = get_file_from_open_list(fd);
+    if (fp == NULL) {
+        return -1;
+    } else {
+        return fp->inode->sector;
+    }
 }
 
 /*
@@ -674,18 +680,8 @@ static struct file_package* get_file_package_from_open_list(int fd) {
  --------------------------------------------------------------------
  */
 static struct file* get_file_from_open_list(int fd) {
-    struct thread* curr_thread = thread_current();
-    struct list_elem* curr = list_head(&curr_thread->open_files);
-    struct list_elem* tail = list_tail(&curr_thread->open_files);
-    while (true) {
-        curr = list_next(curr);
-        if (curr == tail) break;
-        struct file_package* package = list_entry(curr, struct file_package, elem);
-        if (package->fd == fd) {
-            return package->fp;
-        }
-    }
-    return NULL;
+    struct file_package *package = get_file_package_from_open_list(fd);
+    return package == NULL ? NULL : package->fp;
 }
 
 /*
