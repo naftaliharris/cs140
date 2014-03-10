@@ -11,9 +11,11 @@
 
 /*
  -----------------------------------------------------------
- DESCRIPTTION: lock used during eviction of a cache entry.
- Eviction must be mutually exclusive, thus the use of
- the lock
+ DESCRIPTTION: lock used when accessing the cache. Because
+    the cache is global, when modifing the cache, we 
+    have to lock it. The only time we use this lock is during
+    eviction however, as each cache entry has its own lock, 
+    and the cache itself is a static array.
  -----------------------------------------------------------
  */
 static struct lock eviction_lock;
@@ -44,6 +46,9 @@ struct cache_entry cache[NUM_CACHE_ENTRIES];
 //==============================================================\\
 //LP defined helper functions
 void init_cache_lock(struct cache_lock* lock);
+struct cache_entry* search_for_existing_entry(unsigned sector_id, bool exclusive);
+struct cache_entry* check_for_unused_entry();
+struct cache_entry* evict();
 
 /*
  -----------------------------------------------------------
@@ -75,7 +80,109 @@ void init_cache() {
     lock_init(&eviction_lock);
 }
 
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: searches the list of cache entries for one
+    that matches sector_id. Returns the cache entry, with  
+    the lock aquired according to exclusive if found,
+    returns NULL if non found.
+ NOTE: we aquire the lock initially in the shared sense as 
+    all we want to do is read the sector_id field. If 
+    we find a match, and want the lock in exclusive mode
+    we have to release shared and reaquire the lock in 
+    write context. However, there is a chance that we get
+    swapped out in between these two calls. If that happens
+    if the sector_id still matches, we are fine, otherwise we 
+    have to restart the process. 
+ -----------------------------------------------------------
+ */
+struct cache_entry* search_for_existing_entry(unsigned sector_id, bool exclusive) {
+    int i;
+    for (i = 0; i < NUM_CACHE_ENTRIES; i++) {
+        acquire_cache_lock_for_read(&cache[i].lock);
+        if (cache[i].sector_id == sector_id) {
+            if (exclusive) {
+                release_cache_lock_for_read(&cache[i].lock);
+                acquire_cache_lock_for_write(&cache[i].lock);
+                if (cache[i].sector_id == sector_id) {
+                    return &cache[i];
+                } else {
+                    release_cache_lock_for_write(cache[i].lock);
+                    i = 0;
+                }
+            } else {
+                return &cache[i];
+            }
+        }
+        release_cache_lock_for_read(&cache[i].lock);
+    }
+    return NULL;
+}
 
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: checks the cache for an unused entry.
+ NOTE: initialy checks a cache entry by acquiring the lock
+    in shared mode. If the entry is not used, then 
+    aquires the releases lock from shared mode, and tries
+    to reaquire in exclusive mode. If the cache_entry is 
+    no longer unused after this, then moves on, else, 
+    returns the cache entry that is currently unused with the 
+    cache_lock acquired in the exclusive context. If no
+    unused cache entries exist, returns null.
+ NOTE: this is exactly the same code as the search for existing entry
+    with sector_id of unused and exclusive = true passed in. Thus
+    we wrap this function here.
+ -----------------------------------------------------------
+ */
+struct cache_entry* check_for_unused_entry() {
+    struct cache_entry* entry = search_for_existing_entry(UNUSED_ENTRY_INDICATOR, true);
+    return entry;
+}
+
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: finds an entry to evict by checking the 
+    accessed bits.
+ NOTE: this is the clock algorithm described in lecture
+ -----------------------------------------------------------
+ */
+struct cache_entry* evict() {
+    while (true) {
+        lock_acquire(&eviction_lock);
+        struct cache_entry* curr = &cache[clock_hand];
+        acquire_cache_lock_for_write(&curr->lock);
+        if (curr->accessed == false) {
+            <#statements#>
+        }
+    }
+}
+
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: returns the cache_entry for a given
+    sector_id with the data of that sector loaded
+    into the cache entry.
+ NOTE: in the case where we do not find an existing entry
+    we will be responsible for loading data into the 
+    the cache. To do this, we have to acquire the cache_lock
+    in the exclusive context. Thus, both check_for_unused_entry
+    and evict return a non_null cache entry with the cache_lock
+    aquired in the exclusive context.
+ -----------------------------------------------------------
+ */
+struct cache_entry* get_cache_entry_for_sector(unsigned sector_id, bool exclusive) {
+    struct cache_entry* entry = search_for_existing_entry(sector_id, exclusive);
+    if (entry != NULL) {
+        return entry;
+    }
+    entry = check_for_unused_entry();
+    if (entry == NULL) {
+        entry = evict();
+    }
+    //now we will load the sector into the cache entry here
+    //then check exclusive field.
+}
 
 
 

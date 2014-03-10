@@ -55,10 +55,23 @@ void init_cache();
 
 /*
  -----------------------------------------------------------
- DESCRIPTION: 
+ DESCRIPTION: looks up the cache_entry that corresponds to 
+    the given sector number. 
+ NOTE: returns the cache entry in the locked state, according
+    to value of exclusive
+ NOTE: if there is no entry in the cache for the given 
+    sector_id, then we do one of two things:
+    1. Check if there are any unsed cach entries. If so
+    take one of these and use it to store the requested
+    block data.
+    2. If no unused cache entries, then we have to evict. 
+    Find a cache entry to evict, and then return it. 
+ NOTE: the exclusive field indicates whether or not the
+    cache_entry should be returned exclusively locked for a 
+    write, or shared lock for a read
  -----------------------------------------------------------
  */
-struct cache_entry* get_cache_entry_for_sector(unsigned sector_id);
+struct cache_entry* get_cache_entry_for_sector(unsigned sector_id, bool exclusive);
 
 
 
