@@ -13,6 +13,7 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 #include "devices/timer.h"
+#include "filesys/cache.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #include "threads/malloc.h"
@@ -102,7 +103,7 @@ static void init_child_managment_info(struct thread* t);
 static void init_vital_info(struct thread* t);
 
 /* LP Project 4 additions */
-static void flush_cache_function();
+void flush_cache_function();
 
 
 /*
@@ -1198,7 +1199,7 @@ struct thread* get_highest_priority_thread(struct list* list,
  --------------------------------------------------------------------
  */
 #define NUM_TICKS_TO_SLEEP 25
-static void flush_cache_function() {
+void flush_cache_function() {
     while (true) {
         if (can_flush) {
             flush_cache();

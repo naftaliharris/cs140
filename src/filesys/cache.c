@@ -47,9 +47,9 @@ struct cache_entry cache[NUM_CACHE_ENTRIES];
 //LP defined helper functions
 void init_cache_lock(struct cache_lock* lock);
 struct cache_entry* search_for_existing_entry(unsigned sector_id, bool exclusive);
-struct cache_entry* check_for_unused_entry();
-struct cache_entry* evict();
-void advance_clock_hand();
+struct cache_entry* check_for_unused_entry(void);
+struct cache_entry* evict(void);
+void advance_clock_hand(void);
 void clear_cache_entry(struct cache_entry* entry);
 
 /*
@@ -58,7 +58,7 @@ void clear_cache_entry(struct cache_entry* entry);
     holding the eviction_lock
  -----------------------------------------------------------
  */
-void advance_clock_hand() {
+void advance_clock_hand(void) {
     clock_hand++;
     if (clock_hand >= NUM_CACHE_ENTRIES) {
         clock_hand = 0;
@@ -76,7 +76,7 @@ void advance_clock_hand() {
     8 kernel pages.
  -----------------------------------------------------------
  */
-void init_cache() {
+void init_cache(void) {
     int i;
     int j;
     void* page;
@@ -104,7 +104,7 @@ void init_cache() {
     fields within the cache_entry's will be invalid.
  -----------------------------------------------------------
  */
-void cache_free() {
+void cache_free(void) {
     int i;
     for (i = 0; i < NUM_CACHE_ENTRIES; i++) {
         int index = i * NUM_CACHE_ENTRIES_PER_PAGE;
@@ -197,7 +197,7 @@ void clear_cache_entry(struct cache_entry* entry) {
  NOTE: this is the clock algorithm described in lecture
  -----------------------------------------------------------
  */
-struct cache_entry* evict() {
+struct cache_entry* evict(void) {
     while (true) {
         lock_acquire(&eviction_lock);
         struct cache_entry* curr = &cache[clock_hand];
@@ -308,7 +308,7 @@ void write_to_cache(struct cache_entry* entry, void* buffer, off_t offset, unsig
     we can aquire the cache_entry lock in the shared context
  -----------------------------------------------------------
  */
-void flush_cache() {
+void flush_cache(void) {
     int i;
     for (i = 0; i < NUM_CACHE_ENTRIES; i++) {
         struct cache_entry* entry = cache[i];

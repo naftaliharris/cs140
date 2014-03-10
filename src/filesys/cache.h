@@ -9,6 +9,9 @@
 #ifndef _cache_h
 #define _cache_h
 
+#include "off_t.h"
+#include "threads/synch.h"
+
 //note for read ahead, just call get_cache_entry and then
 //release the lock when it is returned. 
 
@@ -74,7 +77,7 @@ bool can_flush;
     cache system.
  -----------------------------------------------------------
  */
-void init_cache();
+void init_cache(void);
 
 /*
  -----------------------------------------------------------
@@ -82,7 +85,7 @@ void init_cache();
  NOTE: Must be called after cache_flush.
  -----------------------------------------------------------
  */
-void cache_free();
+void cache_free(void);
 
 /*
  -----------------------------------------------------------
@@ -145,7 +148,7 @@ void write_to_cache(struct cache_entry* entry, void* buffer, off_t offset, unsig
     we can aquire the cache_entry lock in the shared context
  -----------------------------------------------------------
  */
-void flush_cache();
+void flush_cache(void);
 
 
 
