@@ -117,6 +117,7 @@ void cache_free(void) {
         void* page_to_free = entry->bytes;
         palloc_free_page(page_to_free);
     }
+    can_flush = false;
 }
 
 

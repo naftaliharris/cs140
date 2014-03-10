@@ -8,26 +8,84 @@
 #include "threads/malloc.h"
 #include "filesys/cache.h"
 
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: Max number of blocks in a file given that
+    max disk size is 8mb and we subtract metadata.
+    STEP 1: If we have a file, assume extreme case of 1 directory
+        and 1 file. That means we have 1 inode for the directory, 
+        and 1 inode for the file, which means our metadata
+        is 2*(BLOCK_SECTOR_SIZE) = 2*512 = 1024
+    STEP 2: Subtract 8 mb from 1024 bytes, to get max size of 
+        file in bytes. 8mb = 8389000 bytes - 1024 bytes = 
+        8387976 bytes which is max file size.
+    STEP 3: determine the max number of blocks that a file
+        can have given max file size in bytes is 8387976.
+        8387976 / BLOCK_SECTOR_SIZE = 8387976 / 512 = 
+        16382.7, round up to 16383 blocks. 
+    STEP 4: We are given that the inode can only by 512 bytes in 
+        size. Thusm we have to support indirect and doubly 
+        indirect blocks to track 16383 blocks.
+    NOTE: another edge case one could consider is the case
+        where the root directory is the only directory,
+        and it is populated with a bunch of 0 size files. 
+        In this case, the max size of the directory would be
+        (8Mb - 512 bytes)/512, rounded up. However, in this
+        case, the 0 sized files are unusable, and thus
+        this case is trivial, and we do not account for it.
+ -----------------------------------------------------------
+ */
+
 /* Identifies an inode. */
 #define INODE_MAGIC 0x494e4f44
+#define NUM_BLOCK_IDS_IN_INODE 126
 
 /* 
  -----------------------------------------------------------
  On-disk inode.
  Must be exactly BLOCK_SECTOR_SIZE bytes long.
+ NOTE: from the length of the file, we can determine the 
+    number of blocks in use, by taking length/512 and rounding
+    up.
+ NOTE: because we have 8 bytes between the length and magic
+    fields, that leaves 504 bytes, or an array of size 126
+    to contain block sector numbers for the blocks that 
+    contain file data. We will use 124 direct references, 
+    1 indirect reference, and 1 doubly indirect reference. This
+    will allow us to support files of size 8Mb, and likewise 
+    minimize the number of disk accesses, as we only go to 
+    indirect and doubly indirect for the last blocks of the
+    file.
+ NOTE: blocks index 0-123 contain block sector numbers of blocks
+    that contain actual file data.
+ NOTE: blocks index 124 contains the block sector number of 
+    the block that supports indirection. This block will
+    contain 128 block sector numbers of blocks that contain
+    actual file data.
+ NOTE: blocks index 125 contains the block sector number of 
+    the block that supports double indirection. This block
+    will contain 128 block sector numbers, each of which
+    will contain 128 block sector numbers, which correspond
+    to file data.
  -----------------------------------------------------------
  */
 struct inode_disk
-  {
-    block_sector_t start;               /* First data sector. */
+{
+    //block_sector_t start;               /* First data sector. */
     off_t length;                       /* File size in bytes. */
     unsigned magic;                     /* Magic number. */
-    uint32_t unused[125];               /* Not used. */
-  };
+    block_sector_t blocks[NUM_BLOCK_IDS_IN_INODE] /*array containing the sector 
+                                                   numbers of blocks that contain
+                                                   file data. Please see comment above
+                                                   for indication as to indexing and
+                                                   indirection, and double indirection. */
+    
+    //uint32_t unused[125];               /* Not used. */
+};
 
 
 
-/* 
+/*
  -----------------------------------------------------------
  Returns the number of sectors to allocate for an inode SIZE
    bytes long. 
