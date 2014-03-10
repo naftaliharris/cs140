@@ -227,6 +227,7 @@ struct cache_entry* get_cache_entry_for_sector(unsigned sector_id, bool exclusiv
             entry = evict();
         }
         block_read(fs_device, sector_id, entry->bytes);
+        entry->sector_id = sector_id;
         if (exclusive == false) {
             release_cache_lock_for_write(&entry->lock);
             acquire_cache_lock_for_read(&entry->lock);
@@ -259,7 +260,7 @@ void read_from_cache(struct cache_entry* entry, void* buffer, off_t offset, unsi
 /*
  -----------------------------------------------------------
  DESCRIPTION: writes the buffer to the cache, writing
- num_bytes and offset in the cache.
+    num_bytes and offset in the cache.
  NOTE: Updates accessed and dirty bits to true.
  NOTE: Caller must have already acquired the cache_entry
     lock in the exclusive context, prior to calling
@@ -276,7 +277,28 @@ void write_to_cache(struct cache_entry* entry, void* buffer, off_t offset, unsig
     entry->dirty = true;
 }
 
-
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: Flushes the cache to disk. We do this
+    periodically to account for power failures.
+ NOTE: Launch a thread in to do this for us. Thus
+    the thread will periodically call this function.
+ NOTE: Only flush if the cache_entry is in use
+ NOTE: Because we are not writing to the cache_entry
+    we can aquire the cache_entry lock in the shared context
+ -----------------------------------------------------------
+ */
+void flush_cache() {
+    int i;
+    for (i = 0; i < NUM_CACHE_ENTRIES; i++) {
+        struct cache_entry* entry = cache[i];
+        acquire_cache_lock_for_read(&entry->lock);
+        if (entry->sector_id != UNUSED_ENTRY_INDICATOR) {
+            block_write(fs_device, (block_sector_t)entry->sector_id, entry->bytes);
+        }
+        release_cache_lock_for_read(&entry->lock);
+    }
+}
 
 
 //================SHARED LOCK CODE============================\\

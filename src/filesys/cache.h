@@ -9,6 +9,9 @@
 #ifndef _cache_h
 #define _cache_h
 
+//note for read ahead, just call get_cache_entry and then
+//release the lock when it is returned. 
+
 /*
  -----------------------------------------------------------
  DESCRIPTION: a lock that allows multiple readers, but
@@ -102,6 +105,19 @@ void read_from_cache(struct cache_entry* entry, void* buffer, off_t offset, unsi
  -----------------------------------------------------------
  */
 void write_to_cache(struct cache_entry* entry, void* buffer, off_t offset, unsigned num_bytes);
+
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: Flushes the cache to disk. We do this 
+    periodically to account for power failures. 
+ NOTE: Launch a thread in to do this for us. Thus
+    the thread will periodically call this function. 
+ NOTE: Only flush if the cache_entry is in use
+ NOTE: Because we are not writing to the cache_entry
+    we can aquire the cache_entry lock in the shared context
+ -----------------------------------------------------------
+ */
+void flush_cache();
 
 
 
