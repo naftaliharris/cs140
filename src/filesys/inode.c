@@ -110,20 +110,21 @@ bytes_to_sectors (off_t size)
 
 /* In-memory inode. */
 /* This is in kernel memory I think */
-struct inode 
-  {
+struct inode
+{
     struct list_elem elem;              /* Element in inode list. */
     block_sector_t sector;              /* Sector number of disk location. */
     int open_cnt;                       /* Number of openers. */
     bool removed;                       /* True if deleted, false otherwise. */
     int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
-    struct inode_disk data;             /* Inode content. */
-  };
+    struct lock data_lock;        /* lock protecting internal inode data */
+    //struct inode_disk data;             /* Inode content. */
+};
 
 
 
 
-/* 
+/*
  -----------------------------------------------------------
  Returns the block device sector that contains byte offset POS
    within INODE.
@@ -220,7 +221,7 @@ inode_create (block_sector_t sector, off_t length)
         num_sectors_needed--;
         if (num_sectors_needed == 0) break;
     }
-    
+
     
     /* here we do indirect allocation */
     if (num_sectors_needed > 0) {
@@ -335,41 +336,42 @@ inode_create (block_sector_t sector, off_t length)
 struct inode *
 inode_open (block_sector_t sector)
 {
-  struct list_elem *e;
-  struct inode *inode;
-
-  /* Check whether this inode is already open. */
+    struct list_elem *e;
+    struct inode *inode;
+    
+    /* Check whether this inode is already open. */
     lock_acquire(&open_inodes_lock);
-  for (e = list_begin (&open_inodes); e != list_end (&open_inodes);
-       e = list_next (e)) 
+    for (e = list_begin (&open_inodes); e != list_end (&open_inodes);
+         e = list_next (e))
     {
-      inode = list_entry (e, struct inode, elem);
-      if (inode->sector == sector) 
+        inode = list_entry (e, struct inode, elem);
+        if (inode->sector == sector)
         {
-          inode_reopen (inode);
+            inode_reopen (inode);
             lock_release(&open_inodes_lock);
-          return inode; 
+            return inode;
         }
     }
     
-
-  /* Allocate memory. */
-  inode = malloc (sizeof *inode);
-  if (inode == NULL)
-    return NULL;
-
-  /* Initialize. */
-  list_push_front (&open_inodes, &inode->elem);
+    
+    /* Allocate memory. */
+    inode = malloc (sizeof *inode);
+    if (inode == NULL)
+        return NULL;
+    
+    /* Initialize. */
+    inode->sector = sector;
+    inode->open_cnt = 1;
+    inode->deny_write_cnt = 0;
+    inode->removed = false;
+    lock_init(&inode->data_lock);
+    list_push_front (&open_inodes, &inode->elem);
     lock_release(&open_inodes_lock);
-  inode->sector = sector;
-  inode->open_cnt = 1;
-  inode->deny_write_cnt = 0;
-  inode->removed = false;
     struct cache_entry* entry = get_cache_entry_for_sector(inode->sector, false);
     read_from_cache(entry, &inode->data, 0, BLOCK_SECTOR_SIZE);
     release_cache_lock_for_read(&entry->lock);
-  //block_read (fs_device, inode->sector, &inode->data);
-  return inode;
+    //block_read (fs_device, inode->sector, &inode->data);
+    return inode;
 }
 
 
@@ -384,8 +386,11 @@ inode_open (block_sector_t sector)
 struct inode *
 inode_reopen (struct inode *inode)
 {
-  if (inode != NULL)
-    inode->open_cnt++;
+    if (inode != NULL) {
+        lock_acquire(&inode->data_lock);
+        inode->open_cnt++;
+        lock_release(&inode->data_lock);
+    }
   return inode;
 }
 
@@ -432,6 +437,36 @@ inode_close (struct inode *inode)
     if (inode == NULL) return;
     
     /* Release resources if this was the last opener. */
+    lock_acquire(&inode->data_lock);
+    inode->open_cnt--;
+    if (inode->open_cnt == 0) {
+        lock_acquire(&open_inodes_lock);
+        list_remove (&inode->elem);
+        lock_release(&open_inodes_lock);
+        
+        /* Deallocate blocks if removed. */
+        if (inode->removed) {
+            //here we need to release all blocks and clear cache entries
+            
+            
+            
+            
+            free_map_release (inode->sector, 1);
+            free_map_release (inode->data.start,
+                              bytes_to_sectors (inode->data.length));
+        }
+        lock_release(&inode->data_lock);
+        free (inode);
+    } else {
+        lock_release(&inode->data_lock);
+    }
+    
+    
+    
+    
+    
+    
+    
     if (--inode->open_cnt == 0) {
         /* Remove from inode list and release lock. */
         lock_acquire(&open_inodes_lock);

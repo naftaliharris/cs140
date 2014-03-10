@@ -327,6 +327,22 @@ void flush_cache(void) {
     }
 }
 
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: Clears the cache entry that pertains to the
+    given sector_id if it is contained in cache.
+ NOTE: we want to aquire the exlusive cache lock, as we will
+    be clearing data.
+ -----------------------------------------------------------
+ */
+void clear_cache_entry_if_present(int sector_id) {
+    struct cache_entry* entry = search_for_existing_entry(sector_id, true);
+    if (entry == NULL) return;
+    clear_cache_entry(entry);
+    release_cache_lock_for_write(&entry->lock);
+    
+}
+
 
 /* ================SHARED LOCK CODE============================ */
 

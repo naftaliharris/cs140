@@ -150,6 +150,14 @@ void write_to_cache(struct cache_entry* entry, const void* buffer, off_t offset,
  */
 void flush_cache(void);
 
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: Clears the cache entry that pertains to the 
+    given sector_id if it is contained in cache.
+ -----------------------------------------------------------
+ */
+void clear_cache_entry_if_present(int sector_id);
+
 
 
 /*
