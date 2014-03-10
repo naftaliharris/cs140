@@ -152,6 +152,7 @@ byte_to_sector (const struct inode *inode, off_t pos)
  -----------------------------------------------------------
  */
 static struct list open_inodes;
+static struct lock open_inodes_lock;
 
 /* Initializes the inode module. */
 void
@@ -179,6 +180,10 @@ inode_init (void)
     and freeing the disk_inode we allocated.
  NOTE: we do not allocate the inode's sector until all 
     of the inode data has been updated.
+ NOTE: using a local copy of a disk_sector, and then writing
+    that local copy to a cache entry at the very end allows
+    us to minimize the amount of time we hold the cache
+    lock. 
  -----------------------------------------------------------
  */
 bool
@@ -312,38 +317,8 @@ inode_create (block_sector_t sector, off_t length)
     write_to_cache(entry, disk_inode, 0, BLOCK_SECTOR_SIZE);
     release_cache_lock_for_write(&entry->lock);
     free(disk_inode);
+    
     return true;
-    
-    
-    
-    if (disk_inode != NULL)
-    {
-        size_t sectors = bytes_to_sectors (length);
-        disk_inode->length = length;
-        disk_inode->magic = INODE_MAGIC;
-        if (free_map_allocate (sectors, &disk_inode->start))
-        {
-            struct cache_entry* entry = get_cache_entry_for_sector(sector, true);
-            write_to_cache(entry, disk_inode, 0, BLOCK_SECTOR_SIZE);
-            release_cache_lock_for_write(&entry->lock);
-            //block_write (fs_device, sector, disk_inode);
-            if (sectors > 0)
-            {
-                static char zeros[BLOCK_SECTOR_SIZE];
-                size_t i;
-                
-                for (i = 0; i < sectors; i++) {
-                    struct cache_entry* curr = get_cache_entry_for_sector(disk_inode->start + i, true);
-                    write_to_cache(curr, zeros, 0, BLOCK_SECTOR_SIZE);
-                    release_cache_lock_for_write(&curr->lock);
-                    //block_write (fs_device, disk_inode->start + i, zeros);
-                }
-            }
-            success = true;
-        }
-        free (disk_inode);
-    }
-    return success;
 }
 
 
@@ -364,6 +339,7 @@ inode_open (block_sector_t sector)
   struct inode *inode;
 
   /* Check whether this inode is already open. */
+    lock_acquire(&open_inodes_lock);
   for (e = list_begin (&open_inodes); e != list_end (&open_inodes);
        e = list_next (e)) 
     {
@@ -371,9 +347,11 @@ inode_open (block_sector_t sector)
       if (inode->sector == sector) 
         {
           inode_reopen (inode);
+            lock_release(&open_inodes_lock);
           return inode; 
         }
     }
+    
 
   /* Allocate memory. */
   inode = malloc (sizeof *inode);
@@ -382,6 +360,7 @@ inode_open (block_sector_t sector)
 
   /* Initialize. */
   list_push_front (&open_inodes, &inode->elem);
+    lock_release(&open_inodes_lock);
   inode->sector = sector;
   inode->open_cnt = 1;
   inode->deny_write_cnt = 0;
@@ -433,30 +412,45 @@ inode_get_inumber (const struct inode *inode)
  Closes INODE and writes it to disk.
    If this was the last reference to INODE, frees its memory.
    If INODE was also a removed inode, frees its blocks. 
+ NOTE: if we are removing an inode, then we must release resources
+    inode used to track file data.
+ NOTE: freeing resources:
+    1. Release all blocks that the inode was previously using
+    To do this, first clear the cache entry that contains
+    a given block, if an entry exists. Then call free_map_release
+    on the block to give the block back.
+ NOTE: in the case where we are just closing the inode, but
+    not removing, the file data will be consistent, as if
+    it is in the cache, will be written back to block 
+    during eviction.
  -----------------------------------------------------------
  */
 void
-inode_close (struct inode *inode) 
+inode_close (struct inode *inode)
 {
-  /* Ignore null pointer. */
-  if (inode == NULL)
-    return;
-
-  /* Release resources if this was the last opener. */
-  if (--inode->open_cnt == 0)
-    {
-      /* Remove from inode list and release lock. */
-      list_remove (&inode->elem);
- 
-      /* Deallocate blocks if removed. */
-      if (inode->removed) 
-        {
-          free_map_release (inode->sector, 1);
-          free_map_release (inode->data.start,
-                            bytes_to_sectors (inode->data.length)); 
+    /* Ignore null pointer. */
+    if (inode == NULL) return;
+    
+    /* Release resources if this was the last opener. */
+    if (--inode->open_cnt == 0) {
+        /* Remove from inode list and release lock. */
+        lock_acquire(&open_inodes_lock);
+        list_remove (&inode->elem);
+        lock_release(&open_inodes_lock);
+        
+        /* Deallocate blocks if removed. */
+        if (inode->removed) {
+            //here we need to release all blocks and clear cache entries
+            
+            
+            
+            
+            free_map_release (inode->sector, 1);
+            free_map_release (inode->data.start,
+                              bytes_to_sectors (inode->data.length));
         }
-
-      free (inode); 
+        
+        free (inode);
     }
 }
 
