@@ -129,21 +129,65 @@ static void clear_direct_blocks(struct cache_entry* disk_inode_cache_entry, size
 static void clear_indirect_blocks(struct cache_entry* disk_inode_cache_entry, size_t* num_blocks_to_clear, block_sector_t indirect_block_number);
 static void clear_double_indirect_blocks(struct cache_entry* disk_inode_cache_entry, size_t* num_blocks_to_clear);
 static block_sector_t get_direct_block_sector_number(struct cache_entry* disk_inode_cache_entry, unsigned index);
-
-
+static block_sector_t get_indirect_block_sector_number(struct cache_entry* disk_inode_cache_entry, unsigned index);
+static block_sector_t get_double_indirect_block_sector_number(struct cache_entry* disk_inode_cache_entry, unsigned index);
 
 /*
  -----------------------------------------------------------
  DESCRIPTION: returns the sector number of the block that
     is at "index" position in the array
     of blocks contained in the inode.
+ NOTE: in this case, we are an direct block.
+ NOTE: Releases the cache lock for the inode!!
  -----------------------------------------------------------
  */
 static block_sector_t get_direct_block_sector_number(struct cache_entry* disk_inode_cache_entry, unsigned index) {
     block_sector_t block_number = 0;
     off_t offset = sizeof(off_t) + sizeof(unsigned) + (index * sizeof(block_sector_t));
     read_from_cache(disk_inode_cache_entry, &block_number, offset, sizeof(block_sector_t));
+    release_cache_lock_for_read(&disk_inode_cache_entry->lock);
+    return block_number;
 }
+
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: returns the sector number of the block that
+    is at "index" position in the array
+    of blocks contained in the inode.
+ NOTE: in this case, we are an indirect block.
+ NOTE: Releases the cache lock for the inode!!
+ -----------------------------------------------------------
+ */
+static block_sector_t get_indirect_block_sector_number(struct cache_entry* disk_inode_cache_entry, unsigned index) {
+    block_sector_t indirect_block_number = get_direct_block_sector_number(disk_inode_cache_entry, NUM_DIRECT_BLOCKS);
+    struct cache_entry* indirect_block_cache_entry = get_cache_entry_for_sector(indirect_block_number, false);
+    index = index - NUM_DIRECT_BLOCKS; //this gives us an index relative to indirect block
+    block_sector_t block_number = 0;
+    off_t offset = index * sizeof(block_sector_t);
+    read_from_cache(indirect_block_cache_entry, &block_number, offset, sizeof(block_sector_t));
+    release_cache_lock_for_read(&indirect_block_cache_entry->lock);
+    return block_number;
+}
+
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: returns the sector number of the block that
+    is at "index" position in the array
+    of blocks contained in the inode.
+ NOTE: in this case, we are a doubly indirect block.
+ NOTE: Releases the cache lock for the inode!!
+ -----------------------------------------------------------
+ */
+static block_sector_t get_double_indirect_block_sector_number(struct cache_entry* disk_inode_cache_entry, unsigned index) {
+    block_sector_t double_indirect_block_number = get_direct_block_sector_number(disk_inode_cache_entry, NUM_DIRECT_BLOCKS + NUM_INDIRECT_BLOCKS);
+    struct cache_entry* double_indirect_block_cache_entry = get_cache_entry_for_sector(double_indirect_block_number, false);
+    int index_in_double_indirect_block = 0;
+    while (true) {
+        
+    }
+}
+
+
 
 /*
  -----------------------------------------------------------
