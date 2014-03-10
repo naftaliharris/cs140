@@ -101,6 +101,9 @@ static void init_file_system_info(struct thread* t);
 static void init_child_managment_info(struct thread* t);
 static void init_vital_info(struct thread* t);
 
+/* LP Project 4 additions */
+static void flush_cache_function();
+
 
 /*
  --------------------------------------------------------------------
@@ -282,21 +285,24 @@ void thread_init (void)
  --------------------------------------------------------------------
    Starts preemptive thread scheduling by enabling interrupts.
    Also creates the idle thread. 
+ NOTE: LP added the flushing thread 
  --------------------------------------------------------------------
  */
-void thread_start (void) 
+void thread_start (void)
 {
-  /* Create the idle thread. */
-  struct semaphore idle_started;
-  sema_init (&idle_started, 0);
-  init_vital_info(initial_thread);
-  thread_create ("idle", PRI_MIN, idle, &idle_started);
-
-  /* Start preemptive thread scheduling. */
-  intr_enable ();
-
-  /* Wait for the idle thread to initialize idle_thread. */
-  sema_down (&idle_started);
+    /* Create the idle thread. */
+    struct semaphore idle_started;
+    sema_init (&idle_started, 0);
+    init_vital_info(initial_thread);
+    thread_create ("idle", PRI_MIN, idle, &idle_started);
+    
+    thread_create("flushing_thread", PRI_DEFAULT, flush_cache_function, NULL);
+    
+    /* Start preemptive thread scheduling. */
+    intr_enable ();
+    
+    /* Wait for the idle thread to initialize idle_thread. */
+    sema_down (&idle_started);
 }
 
 
@@ -1180,6 +1186,25 @@ struct thread* get_highest_priority_thread(struct list* list,
     if (currHighest != NULL && should_remove) list_remove(&(currHighest->elem));
     intr_set_level(old_level);
     return currHighest;
+}
+
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: Project 4 addition. Thread running this function will
+    periodically flush the cache to provide the filesystem with    
+    strength in the face of crashes. 
+ NOTE: we use the sleep function impliemented in project 1 to 
+    avoid busy waiting. 
+ --------------------------------------------------------------------
+ */
+#define NUM_TICKS_TO_SLEEP 25
+static void flush_cache_function() {
+    while (true) {
+        if (can_flush) {
+            flush_cache();
+        }
+        timer_sleep((uint64_t)NUM_TICKS_TO_SLEEP);
+    }
 }
 
 /* Offset of `stack' member within `struct thread'.

@@ -50,11 +50,39 @@ struct cache_entry {
 
 /*
  -----------------------------------------------------------
+ DESCRIPTION: global boolean indicates to the flush thread
+    in thread.c if the thread can flush or not. Thread
+    cannot begin flushing until the cache is initialized.
+ NOTE: can_flush set to true in cache_init
+ NOTE: we need this field because cache_init gets called
+    from filesys_init, which is called after the thread
+    init functions. Thus, it is possible that the flushing
+    thread begins flushing before the cache is initialized.
+    Thus, by using this boolean, we guard against that case.
+ NOTE: although this gobal is read and written in two different
+    places, we allow for the benign race, as the write of true
+    happens after the initialization is complete. Thus, we allow
+    the race, as there is no need to protect against it, and the
+    overhead of synchronization would be useless. 
+ -----------------------------------------------------------
+ */
+bool can_flush;
+
+/*
+ -----------------------------------------------------------
  DESCRITPION: performs all necessary initialization of the 
     cache system.
  -----------------------------------------------------------
  */
 void init_cache();
+
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: frees the kernel pages that the cache uses. 
+ NOTE: Must be called after cache_flush.
+ -----------------------------------------------------------
+ */
+void cache_free();
 
 /*
  -----------------------------------------------------------

@@ -15,19 +15,20 @@ static void do_format (void);
 /* Initializes the file system module.
    If FORMAT is true, reformats the file system. */
 void
-filesys_init (bool format) 
+filesys_init (bool format)
 {
-  fs_device = block_get_role (BLOCK_FILESYS);
-  if (fs_device == NULL)
-    PANIC ("No file system device found, can't initialize file system.");
-
-  inode_init ();
-  free_map_init ();
-
-  if (format) 
-    do_format ();
-
-  free_map_open ();
+    fs_device = block_get_role (BLOCK_FILESYS);
+    if (fs_device == NULL)
+        PANIC ("No file system device found, can't initialize file system.");
+    
+    inode_init ();
+    free_map_init ();
+    
+    if (format)
+        do_format ();
+    
+    free_map_open ();
+    init_cache();
 }
 
 /* Shuts down the file system module, writing any unwritten data
@@ -35,6 +36,8 @@ filesys_init (bool format)
 void
 filesys_done (void) 
 {
+    cache_flush();
+    cache_free();
   free_map_close ();
 }
 

@@ -93,7 +93,27 @@ void init_cache() {
     }
     clock_hand = 0;
     lock_init(&eviction_lock);
+    can_flush = true;
 }
+
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: frees the kernel pages that the cache uses.
+ NOTE: Must be called after cache_flush.
+ NOTE: after calling this function, all of the byte
+    fields within the cache_entry's will be invalid.
+ -----------------------------------------------------------
+ */
+void cache_free() {
+    int i;
+    for (i = 0; i < NUM_CACHE_ENTRIES; i++) {
+        int index = i * NUM_CACHE_ENTRIES_PER_PAGE;
+        struct cache_entry* entry = cache[i];
+        void* page_to_free = entry->bytes;
+        palloc_free_page(page_to_free);
+    }
+}
+
 
 /*
  -----------------------------------------------------------
@@ -295,6 +315,7 @@ void flush_cache() {
         acquire_cache_lock_for_read(&entry->lock);
         if (entry->sector_id != UNUSED_ENTRY_INDICATOR) {
             block_write(fs_device, (block_sector_t)entry->sector_id, entry->bytes);
+            entry->dirty = false;
         }
         release_cache_lock_for_read(&entry->lock);
     }

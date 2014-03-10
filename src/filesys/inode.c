@@ -6,12 +6,17 @@
 #include "filesys/filesys.h"
 #include "filesys/free-map.h"
 #include "threads/malloc.h"
+#include "cache.h"
 
 /* Identifies an inode. */
 #define INODE_MAGIC 0x494e4f44
 
-/* On-disk inode.
-   Must be exactly BLOCK_SECTOR_SIZE bytes long. */
+/* 
+ -----------------------------------------------------------
+ On-disk inode.
+ Must be exactly BLOCK_SECTOR_SIZE bytes long.
+ -----------------------------------------------------------
+ */
 struct inode_disk
   {
     block_sector_t start;               /* First data sector. */
@@ -20,15 +25,24 @@ struct inode_disk
     uint32_t unused[125];               /* Not used. */
   };
 
-/* Returns the number of sectors to allocate for an inode SIZE
-   bytes long. */
+
+
+/* 
+ -----------------------------------------------------------
+ Returns the number of sectors to allocate for an inode SIZE
+   bytes long. 
+ -----------------------------------------------------------
+ */
 static inline size_t
 bytes_to_sectors (off_t size)
 {
   return DIV_ROUND_UP (size, BLOCK_SECTOR_SIZE);
 }
 
+
+
 /* In-memory inode. */
+/* This is in kernel memory I think */
 struct inode 
   {
     struct list_elem elem;              /* Element in inode list. */
@@ -39,10 +53,17 @@ struct inode
     struct inode_disk data;             /* Inode content. */
   };
 
-/* Returns the block device sector that contains byte offset POS
+
+
+
+/* 
+ -----------------------------------------------------------
+ Returns the block device sector that contains byte offset POS
    within INODE.
    Returns -1 if INODE does not contain data for a byte at offset
-   POS. */
+   POS. 
+ -----------------------------------------------------------
+ */
 static block_sector_t
 byte_to_sector (const struct inode *inode, off_t pos) 
 {
@@ -53,8 +74,16 @@ byte_to_sector (const struct inode *inode, off_t pos)
     return -1;
 }
 
-/* List of open inodes, so that opening a single inode twice
-   returns the same `struct inode'. */
+
+
+
+
+/* 
+ -----------------------------------------------------------
+ List of open inodes, so that opening a single inode twice
+   returns the same `struct inode'. 
+ -----------------------------------------------------------
+ */
 static struct list open_inodes;
 
 /* Initializes the inode module. */
@@ -64,11 +93,18 @@ inode_init (void)
   list_init (&open_inodes);
 }
 
-/* Initializes an inode with LENGTH bytes of data and
+
+
+
+/* 
+ -----------------------------------------------------------
+ Initializes an inode with LENGTH bytes of data and
    writes the new inode to sector SECTOR on the file system
    device.
    Returns true if successful.
-   Returns false if memory or disk allocation fails. */
+   Returns false if memory or disk allocation fails. 
+ -----------------------------------------------------------
+ */
 bool
 inode_create (block_sector_t sector, off_t length)
 {
@@ -105,9 +141,17 @@ inode_create (block_sector_t sector, off_t length)
   return success;
 }
 
-/* Reads an inode from SECTOR
+
+
+
+
+/* 
+ -----------------------------------------------------------
+ Reads an inode from SECTOR
    and returns a `struct inode' that contains it.
-   Returns a null pointer if memory allocation fails. */
+   Returns a null pointer if memory allocation fails. 
+ -----------------------------------------------------------
+ */
 struct inode *
 inode_open (block_sector_t sector)
 {
@@ -141,7 +185,15 @@ inode_open (block_sector_t sector)
   return inode;
 }
 
-/* Reopens and returns INODE. */
+
+
+
+
+/* 
+ -----------------------------------------------------------
+ Reopens and returns INODE. 
+ -----------------------------------------------------------
+ */
 struct inode *
 inode_reopen (struct inode *inode)
 {
@@ -150,16 +202,31 @@ inode_reopen (struct inode *inode)
   return inode;
 }
 
-/* Returns INODE's inode number. */
+
+
+
+
+/* 
+ -----------------------------------------------------------
+ Returns INODE's inode number. 
+ -----------------------------------------------------------
+ */
 block_sector_t
 inode_get_inumber (const struct inode *inode)
 {
   return inode->sector;
 }
 
-/* Closes INODE and writes it to disk.
+
+
+
+/* 
+ -----------------------------------------------------------
+ Closes INODE and writes it to disk.
    If this was the last reference to INODE, frees its memory.
-   If INODE was also a removed inode, frees its blocks. */
+   If INODE was also a removed inode, frees its blocks. 
+ -----------------------------------------------------------
+ */
 void
 inode_close (struct inode *inode) 
 {
@@ -185,8 +252,15 @@ inode_close (struct inode *inode)
     }
 }
 
-/* Marks INODE to be deleted when it is closed by the last caller who
-   has it open. */
+
+
+
+/* 
+ -----------------------------------------------------------
+ Marks INODE to be deleted when it is closed by the last caller who
+   has it open. 
+ -----------------------------------------------------------
+ */
 void
 inode_remove (struct inode *inode) 
 {
@@ -194,9 +268,17 @@ inode_remove (struct inode *inode)
   inode->removed = true;
 }
 
-/* Reads SIZE bytes from INODE into BUFFER, starting at position OFFSET.
+
+
+
+
+/* 
+ -----------------------------------------------------------
+ Reads SIZE bytes from INODE into BUFFER, starting at position OFFSET.
    Returns the number of bytes actually read, which may be less
-   than SIZE if an error occurs or end of file is reached. */
+   than SIZE if an error occurs or end of file is reached. 
+ -----------------------------------------------------------
+ */
 off_t
 inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset) 
 {
@@ -229,7 +311,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
         {
           /* Read sector into bounce buffer, then partially copy
              into caller's buffer. */
-          if (bounce == NULL) 
+          if (bounce == NULL)
             {
               bounce = malloc (BLOCK_SECTOR_SIZE);
               if (bounce == NULL)
@@ -249,11 +331,15 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
   return bytes_read;
 }
 
-/* Writes SIZE bytes from BUFFER into INODE, starting at OFFSET.
+/* 
+ -----------------------------------------------------------
+ Writes SIZE bytes from BUFFER into INODE, starting at OFFSET.
    Returns the number of bytes actually written, which may be
    less than SIZE if end of file is reached or an error occurs.
    (Normally a write at end of file would extend the inode, but
-   growth is not yet implemented.) */
+   growth is not yet implemented.) 
+ -----------------------------------------------------------
+ */
 off_t
 inode_write_at (struct inode *inode, const void *buffer_, off_t size,
                 off_t offset) 
@@ -317,8 +403,14 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   return bytes_written;
 }
 
-/* Disables writes to INODE.
-   May be called at most once per inode opener. */
+
+
+/* 
+ -----------------------------------------------------------
+ Disables writes to INODE.
+   May be called at most once per inode opener. 
+ -----------------------------------------------------------
+ */
 void
 inode_deny_write (struct inode *inode) 
 {
@@ -326,9 +418,16 @@ inode_deny_write (struct inode *inode)
   ASSERT (inode->deny_write_cnt <= inode->open_cnt);
 }
 
-/* Re-enables writes to INODE.
+
+
+
+/* 
+ -----------------------------------------------------------
+ Re-enables writes to INODE.
    Must be called once by each inode opener who has called
-   inode_deny_write() on the inode, before closing the inode. */
+   inode_deny_write() on the inode, before closing the inode. 
+ -----------------------------------------------------------
+ */
 void
 inode_allow_write (struct inode *inode) 
 {
@@ -337,7 +436,13 @@ inode_allow_write (struct inode *inode)
   inode->deny_write_cnt--;
 }
 
-/* Returns the length, in bytes, of INODE's data. */
+
+
+/* 
+ -----------------------------------------------------------
+ Returns the length, in bytes, of INODE's data. 
+ -----------------------------------------------------------
+ */
 off_t
 inode_length (const struct inode *inode)
 {
