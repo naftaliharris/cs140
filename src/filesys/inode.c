@@ -48,6 +48,7 @@
 #define NUM_BLOCK_IDS_PER_BLOCK 128
 #define INODE_INDIRECT_BLOCK_INDEX 124
 #define INDOE_DOUBLE_INDIRECT_BLOCK_INDEX 125
+16383
 
 /* 
  -----------------------------------------------------------
