@@ -49,6 +49,21 @@ void init_cache_lock(struct cache_lock* lock);
 struct cache_entry* search_for_existing_entry(unsigned sector_id, bool exclusive);
 struct cache_entry* check_for_unused_entry();
 struct cache_entry* evict();
+void advance_clock_hand();
+void clear_cache_entry(struct cache_entry* entry);
+
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: Note, only be called by a thread currently 
+    holding the eviction_lock
+ -----------------------------------------------------------
+ */
+void advance_clock_hand() {
+    clock_hand++;
+    if (clock_hand >= NUM_CACHE_ENTRIES) {
+        clock_hand = 0;
+    }
+}
 
 /*
  -----------------------------------------------------------
@@ -142,6 +157,21 @@ struct cache_entry* check_for_unused_entry() {
 
 /*
  -----------------------------------------------------------
+ DESCRIPTION: clears the fields of a cache_entry. This is 
+    called after a cache_entry has been evicted.
+ NOTE: This must be called with the current process having
+    allready acquired the cache_lock exclusively. 
+ -----------------------------------------------------------
+ */
+void clear_cache_entry(struct cache_entry* entry) {
+    entry->sector_id = UNUSED_ENTRY_INDICATOR;
+    entry->accessed = false;
+    entry->dirty = false;
+    memset(entry->bytes, 0, BLOCK_SECTOR_SIZE);
+}
+
+/*
+ -----------------------------------------------------------
  DESCRIPTION: finds an entry to evict by checking the 
     accessed bits.
  NOTE: this is the clock algorithm described in lecture
@@ -153,8 +183,18 @@ struct cache_entry* evict() {
         struct cache_entry* curr = &cache[clock_hand];
         acquire_cache_lock_for_write(&curr->lock);
         if (curr->accessed == false) {
-            <#statements#>
+            if (curr->dirty) {
+                block_write(fs_device, (block_sector_t)curr->sector_id, curr->bytes);
+                clear_cache_entry(curr);
+            }
+            advance_clock_hand();
+            lock_release(&eviction_lock);
+            return curr;
         }
+        curr->accessed = false;
+        release_cache_lock_for_write(&curr->lock);
+        advance_clock_hand();
+        lock_release(&eviction_lock);
     }
 }
 
@@ -169,19 +209,34 @@ struct cache_entry* evict() {
     in the exclusive context. Thus, both check_for_unused_entry
     and evict return a non_null cache entry with the cache_lock
     aquired in the exclusive context.
+ NOTE: the use of the while true loop is to handle the case
+    where we want the cache_entry locked in the shared context, 
+    but when switching to shared lock, get swapped out. Thus, 
+    we have to check for state consistency. 
+ NOTE: one other alternative is to disable interrupts.
  -----------------------------------------------------------
  */
 struct cache_entry* get_cache_entry_for_sector(unsigned sector_id, bool exclusive) {
-    struct cache_entry* entry = search_for_existing_entry(sector_id, exclusive);
-    if (entry != NULL) {
-        return entry;
+    while (true) {
+        struct cache_entry* entry = search_for_existing_entry(sector_id, exclusive);
+        if (entry != NULL) {
+            return entry;
+        }
+        entry = check_for_unused_entry();
+        if (entry == NULL) {
+            entry = evict();
+        }
+        block_read(fs_device, sector_id, entry->bytes);
+        if (exclusive == false) {
+            release_cache_lock_for_write(&entry->lock);
+            acquire_cache_lock_for_read(&entry->lock);
+            if (entry->sector_id == sector_id) {
+                return entry;
+            }
+        } else {
+            return entry;
+        }
     }
-    entry = check_for_unused_entry();
-    if (entry == NULL) {
-        entry = evict();
-    }
-    //now we will load the sector into the cache entry here
-    //then check exclusive field.
 }
 
 
