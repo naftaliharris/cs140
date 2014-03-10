@@ -248,7 +248,7 @@ async_fetch(block_sector_t sector)
 }
 
 /* Write all of the cached blocks back to disk. */
-static void
+void
 write_back_all(void)
 {
     /* XXX: Hard-coded 64 cache blocks */
