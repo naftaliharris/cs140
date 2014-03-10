@@ -47,6 +47,11 @@ static unsigned LP_tell (int fd);
 static void LP_close (int fd);
 static mapid_t mmap (int fd, void *addr);
 static void munmap (mapid_t mapping);
+static bool chdir(const char *dir);
+static bool mkdir(const char *dir);
+static bool readdir(int fd, char *name);
+static bool isdir(int fd);
+static int inumber(int fd);
 // END   LP DEFINED SYSTEM CALL HANDLERS //
 
 //BEGIN LP Project 3 additions
@@ -149,6 +154,27 @@ syscall_handler (struct intr_frame *f )
         case SYS_MUNMAP:
             arg1 = read_frame(f, 4);
             munmap((mapid_t) arg1);
+            break;
+        case SYS_CHDIR:
+            arg1 = read_frame(f, 4);
+            f->eax = (uint32_t)chdir((const char*)arg1);
+            break;
+        case SYS_MKDIR:
+            arg1 = read_frame(f, 4);
+            f->eax = (uint32_t)mkdir((const char*)arg1);
+            break;
+        case SYS_READDIR:
+            arg1 = read_frame(f, 4);
+            arg2 = read_frame(f, 8);
+            f->eax = (uint32_t)readdir((int)arg1, (char *)arg2);
+            break;
+        case SYS_ISDIR:
+            arg1 = read_frame(f, 4);
+            f->eax = (uint32_t)isdir((int)arg1);
+            break;
+        case SYS_INUMBER:
+            arg1 = read_frame(f, 4);
+            f->eax = (uint32_t)inumber((int)arg1);
             break;
         default:
             LP_exit(-1); //should never get here. If we do, exit with -1.
@@ -573,6 +599,51 @@ munmap(mapid_t mapping)
             return;
         }
     }
+}
+
+/* Changes the current working directory of the process to dir, which may be
+ * relative or absolute. Returns true if successful, false on failure. */
+static bool
+chdir(const char *dir)
+{
+    return false;
+}
+
+/* Creates the directory named dir, which may be relative or absolute. Returns
+ * true if successful, false on failure. Fails if dir already exists or if any
+ * directory name in dir, besides the last, does not already exist. That is,
+ * mkdir("/a/b/c") succeeds only if /a/b already exists and /a/b/c does not. */
+static bool
+mkdir(const char *dir)
+{
+    return false;
+}
+
+
+/* Reads a directory entry from file descriptor fd, which must represent a
+ * directory. If successful, stores the null-terminated file name in name, which
+ * must have room for READDIR_MAX_LEN + 1 bytes, and returns true. If no entries
+ * are left in the directory, returns false. */
+static bool
+readdir(int fd, char *name)
+{
+    return false;
+}
+
+/* Returns true if fd represents a directory, false if it represents an ordinary
+ * file. */
+static bool
+isdir(int fd)
+{
+    return false;
+}
+
+/* Returns the inode number of the inode associated with fd, which may represent
+ * an ordinary file or a directory. */
+static int
+inumber(int fd)
+{
+    return -1;
 }
 
 /*
