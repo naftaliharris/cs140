@@ -476,7 +476,8 @@ inode_close (struct inode *inode)
         /* Deallocate blocks if removed. */
         if (inode->removed) {
             //here we need to release all blocks and clear cache entries
-            
+            //first, get the ondisk inode loaded into a cache entry
+            //then free blocks
             
             
             
