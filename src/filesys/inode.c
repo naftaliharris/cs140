@@ -387,7 +387,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
         {
           /* Write full sector directly to disk. */
             struct cache_entry* entry = get_cache_entry_for_sector(sector_idx, true);
-            write_to_cache(entry, buffer+bytes_written, 0, BLOCK_SECTOR_SIZE);
+            write_to_cache(entry, (const void*)buffer+bytes_written, 0, BLOCK_SECTOR_SIZE);
             release_cache_lock_for_write(&entry->lock);
           //block_write (fs_device, sector_idx, buffer + bytes_written);
         }
@@ -411,7 +411,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
           memcpy (bounce + sector_ofs, buffer + bytes_written, chunk_size);
           block_write (fs_device, sector_idx, bounce);*/
             struct cache_entry* entry = get_cache_entry_for_sector(sector_idx, true);
-            write_to_cache(entry, buffer+bytes_written, sector_ofs, chunk_size);
+            write_to_cache(entry, (const void*)buffer+bytes_written, sector_ofs, chunk_size);
             release_cache_lock_for_write(&entry->lock);
         }
 

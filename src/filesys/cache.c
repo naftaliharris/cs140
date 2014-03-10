@@ -7,7 +7,12 @@
 //
 
 #include <stdio.h>
-#include "cache.h"
+#include <string.h>
+#include "filesys/cache.h"
+#include "threads/palloc.h"
+#include "filesys/filesys.h"
+#include "devices/block.h"
+
 
 /*
  -----------------------------------------------------------
@@ -43,10 +48,10 @@ unsigned clock_hand;
  */
 struct cache_entry cache[NUM_CACHE_ENTRIES];
 
-//==============================================================\\
+/* ============================================================== */
 //LP defined helper functions
 void init_cache_lock(struct cache_lock* lock);
-struct cache_entry* search_for_existing_entry(unsigned sector_id, bool exclusive);
+struct cache_entry* search_for_existing_entry(int sector_id, bool exclusive);
 struct cache_entry* check_for_unused_entry(void);
 struct cache_entry* evict(void);
 void advance_clock_hand(void);
@@ -81,7 +86,7 @@ void init_cache(void) {
     int j;
     void* page;
     for (i = 0; i < NUM_KERNEL_PAGES; i++) {
-        page = palloc_get_page(PAL_ZEROS);
+        page = palloc_get_page(PAL_ZERO);
         for (j = 0; j < NUM_CACHE_ENTRIES_PER_PAGE; j++) {
             int curr_index = (i*NUM_KERNEL_PAGES) + j;
             cache[curr_index].bytes = page + (j*BLOCK_SECTOR_SIZE);
@@ -108,7 +113,7 @@ void cache_free(void) {
     int i;
     for (i = 0; i < NUM_CACHE_ENTRIES; i++) {
         int index = i * NUM_CACHE_ENTRIES_PER_PAGE;
-        struct cache_entry* entry = cache[i];
+        struct cache_entry* entry = &cache[index];
         void* page_to_free = entry->bytes;
         palloc_free_page(page_to_free);
     }
@@ -131,7 +136,7 @@ void cache_free(void) {
     have to restart the process. 
  -----------------------------------------------------------
  */
-struct cache_entry* search_for_existing_entry(unsigned sector_id, bool exclusive) {
+struct cache_entry* search_for_existing_entry(int sector_id, bool exclusive) {
     int i;
     for (i = 0; i < NUM_CACHE_ENTRIES; i++) {
         acquire_cache_lock_for_read(&cache[i].lock);
@@ -142,7 +147,7 @@ struct cache_entry* search_for_existing_entry(unsigned sector_id, bool exclusive
                 if (cache[i].sector_id == sector_id) {
                     return &cache[i];
                 } else {
-                    release_cache_lock_for_write(cache[i].lock);
+                    release_cache_lock_for_write(&cache[i].lock);
                     i = 0;
                 }
             } else {
@@ -236,7 +241,7 @@ struct cache_entry* evict(void) {
  NOTE: one other alternative is to disable interrupts.
  -----------------------------------------------------------
  */
-struct cache_entry* get_cache_entry_for_sector(unsigned sector_id, bool exclusive) {
+struct cache_entry* get_cache_entry_for_sector(int sector_id, bool exclusive) {
     while (true) {
         struct cache_entry* entry = search_for_existing_entry(sector_id, exclusive);
         if (entry != NULL) {
@@ -290,7 +295,7 @@ void read_from_cache(struct cache_entry* entry, void* buffer, off_t offset, unsi
  NOTE: Offset must be in bytes.
  -----------------------------------------------------------
  */
-void write_to_cache(struct cache_entry* entry, void* buffer, off_t offset, unsigned num_bytes) {
+void write_to_cache(struct cache_entry* entry, const void* buffer, off_t offset, unsigned num_bytes) {
     void* copy_to_address = entry->bytes + offset;
     memcpy(copy_to_address, buffer, num_bytes);
     entry->accessed = true;
@@ -311,7 +316,7 @@ void write_to_cache(struct cache_entry* entry, void* buffer, off_t offset, unsig
 void flush_cache(void) {
     int i;
     for (i = 0; i < NUM_CACHE_ENTRIES; i++) {
-        struct cache_entry* entry = cache[i];
+        struct cache_entry* entry = &cache[i];
         acquire_cache_lock_for_read(&entry->lock);
         if (entry->sector_id != UNUSED_ENTRY_INDICATOR) {
             block_write(fs_device, (block_sector_t)entry->sector_id, entry->bytes);
@@ -322,7 +327,7 @@ void flush_cache(void) {
 }
 
 
-//================SHARED LOCK CODE============================\\
+/* ================SHARED LOCK CODE============================ */
 
 /*
  -----------------------------------------------------------
@@ -382,10 +387,11 @@ void acquire_cache_lock_for_read(struct cache_lock* lock) {
  */
 void release_cache_lock_for_read(struct cache_lock* lock) {
     lock_acquire(&lock->internal_lock);
-    if (!--lock->i) {
+    lock->i--;
+    if (!(lock->i)) {
         cond_signal(&lock->cond, &lock->internal_lock);
     }
-    release_lock(&lock->internal_lock);
+    lock_release(&lock->internal_lock);
 }
 
 

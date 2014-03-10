@@ -444,10 +444,16 @@ struct semaphore* get_semaphore_to_signal(struct condition* cond) {
         ASSERT(currSemaElem != NULL);
         curr_t = get_highest_priority_thread(&(currSemaElem->semaphore.waiters),
                                              false);
+        if (curr_t == NULL) {
+            continue;
+        }
         if (curr_t->priority > curr_highest_priority || toSignal == NULL) {
             curr_highest_priority = curr_t->priority;
             toSignal = currSemaElem;
         }
+    }
+    if (toSignal == NULL) {
+        return NULL;
     }
     list_remove(&(toSignal->elem));
     return &(toSignal->semaphore);
@@ -474,7 +480,9 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
 
     if (!list_empty (&cond->waiters)) {
         struct semaphore* sema = get_semaphore_to_signal(cond);
-        sema_up(sema);
+        if (sema != NULL) {
+             sema_up(sema);
+        }
     }
 }
 

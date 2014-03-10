@@ -6,8 +6,8 @@
 //
 //
 
-#ifndef _cache_h
-#define _cache_h
+#ifndef FILESYS_CACHE_H
+#define FILESYS_CACHE_H
 
 #include "off_t.h"
 #include "threads/synch.h"
@@ -42,7 +42,7 @@ struct cache_lock {
  -----------------------------------------------------------
  */
 struct cache_entry {
-    unsigned sector_id; /*used to identify the sector from disk that is in this
+    int sector_id; /*used to identify the sector from disk that is in this
                             entry currently*/
     bool accessed;      /*true if the data has been accessed recently */
     bool dirty;         /*true if the data has been written to */
@@ -105,7 +105,7 @@ void cache_free(void);
     write, or shared lock for a read
  -----------------------------------------------------------
  */
-struct cache_entry* get_cache_entry_for_sector(unsigned sector_id, bool exclusive);
+struct cache_entry* get_cache_entry_for_sector(int sector_id, bool exclusive);
 
 /*
  -----------------------------------------------------------
@@ -135,7 +135,7 @@ void read_from_cache(struct cache_entry* entry, void* buffer, off_t offset, unsi
     responsibility of the caller. 
  -----------------------------------------------------------
  */
-void write_to_cache(struct cache_entry* entry, void* buffer, off_t offset, unsigned num_bytes);
+void write_to_cache(struct cache_entry* entry, const void* buffer, off_t offset, unsigned num_bytes);
 
 /*
  -----------------------------------------------------------
