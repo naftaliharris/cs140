@@ -48,7 +48,6 @@
 #define NUM_BLOCK_IDS_PER_BLOCK 128
 #define INODE_INDIRECT_BLOCK_INDEX 124
 #define INDOE_DOUBLE_INDIRECT_BLOCK_INDEX 125
-16383
 
 /* 
  -----------------------------------------------------------
@@ -183,9 +182,24 @@ static block_sector_t get_double_indirect_block_sector_number(struct cache_entry
     block_sector_t double_indirect_block_number = get_direct_block_sector_number(disk_inode_cache_entry, NUM_DIRECT_BLOCKS + NUM_INDIRECT_BLOCKS);
     struct cache_entry* double_indirect_block_cache_entry = get_cache_entry_for_sector(double_indirect_block_number, false);
     int index_in_double_indirect_block = 0;
+    index = index - NUM_DIRECT_BLOCKS - NUM_BLOCK_IDS_PER_BLOCK; //This gives us an index relative to double indirect.
     while (true) {
-        
+        if (index < NUM_BLOCK_IDS_PER_BLOCK) break;
+        index = index - NUM_BLOCK_IDS_PER_BLOCK;
+        index_in_double_indirect_block++;
     }
+    block_sector_t indirect_block_number = 0;
+    off_t offset = index_in_double_indirect_block * sizeof(block_sector_t);
+    read_from_cache(double_indirect_block_cache_entry, &indirect_block_number, offset, sizeof(block_sector_t));
+    release_cache_lock_for_read(&double_indirect_block_cache_entry->lock);
+    
+    struct cache_entry* indirect_block_cache_entry = get_cache_entry_for_sector(indirect_block_number, false);
+    block_sector_t block_number = 0;
+    offset = index * sizeof(block_sector_t);
+    read_from_cache(indirect_block_cache_entry, &block_number, offset, sizeof(block_sector_t));
+    release_cache_lock_for_read(&indirect_block_cache_entry->lock);
+    
+    return block_number;
 }
 
 
@@ -219,9 +233,6 @@ byte_to_sector (const struct inode *inode, off_t pos)
 }
 
 
-
-
-
 /* 
  -----------------------------------------------------------
  List of open inodes, so that opening a single inode twice
@@ -233,9 +244,10 @@ static struct lock open_inodes_lock;
 
 /* Initializes the inode module. */
 void
-inode_init (void) 
+inode_init (void)
 {
-  list_init (&open_inodes);
+    list_init(&open_inodes);
+    lock_init(&open_inodes_lock);
 }
 
 /*
