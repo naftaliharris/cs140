@@ -1,6 +1,6 @@
 //
 //  cache.c
-//  
+//
 //
 //  Created by Luke Pappas on 3/9/14.
 //
@@ -17,10 +17,10 @@
 /*
  -----------------------------------------------------------
  DESCRIPTTION: lock used when accessing the cache. Because
-    the cache is global, when modifing the cache, we 
-    have to lock it. The only time we use this lock is during
-    eviction however, as each cache entry has its own lock, 
-    and the cache itself is a static array.
+ the cache is global, when modifing the cache, we
+ have to lock it. The only time we use this lock is during
+ eviction however, as each cache entry has its own lock,
+ and the cache itself is a static array.
  -----------------------------------------------------------
  */
 static struct lock eviction_lock;
@@ -43,7 +43,7 @@ unsigned clock_hand;
 
 /*
  -----------------------------------------------------------
- DESCRIPTION: global array of cache entries. 
+ DESCRIPTION: global array of cache entries.
  -----------------------------------------------------------
  */
 struct cache_entry cache[NUM_CACHE_ENTRIES];
@@ -51,16 +51,19 @@ struct cache_entry cache[NUM_CACHE_ENTRIES];
 /* ============================================================== */
 //LP defined helper functions
 void init_cache_lock(struct cache_lock* lock);
-struct cache_entry* search_for_existing_entry(int sector_id, bool exclusive);
+struct cache_entry* search_for_existing_entry(int sector_id);
 struct cache_entry* check_for_unused_entry(void);
 struct cache_entry* evict(void);
 void advance_clock_hand(void);
 void clear_cache_entry(struct cache_entry* entry);
+int check_existing_mappings(int sector_id);
+void clear_mapping(int sector_id);
+void install_mapping(int sector_id, int index);
 
 /*
  -----------------------------------------------------------
- DESCRIPTION: Note, only be called by a thread currently 
-    holding the eviction_lock
+ DESCRIPTION: Note, only be called by a thread currently
+ holding the eviction_lock
  -----------------------------------------------------------
  */
 void advance_clock_hand(void) {
@@ -70,15 +73,24 @@ void advance_clock_hand(void) {
     }
 }
 
+struct mapping_package {
+    int sector_id;
+    int index_in_cache;
+};
+
+struct mapping_package mappings[NUM_CACHE_ENTRIES];
+
+struct lock mappings_lock;
+
 /*
  -----------------------------------------------------------
  DESCRIPTION: Initializes the global cache.
  NOTE: We allocate pages in the kernel to use as our
-    cache. The pages are of size 4096 bytes. This means
-    that we can fit 4096 bytes / 512 bytes = 8 cache 
-    entries per page. 
- NOTE: because we have 64 cache entries, that comes to 
-    8 kernel pages.
+ cache. The pages are of size 4096 bytes. This means
+ that we can fit 4096 bytes / 512 bytes = 8 cache
+ entries per page.
+ NOTE: because we have 64 cache entries, that comes to
+ 8 kernel pages.
  -----------------------------------------------------------
  */
 void init_cache(void) {
@@ -93,9 +105,15 @@ void init_cache(void) {
             cache[curr_index].accessed = false;
             cache[curr_index].dirty = false;
             cache[curr_index].sector_id = UNUSED_ENTRY_INDICATOR;
+            cache[curr_index].index = curr_index;
             init_cache_lock(&cache[curr_index].lock);
         }
     }
+    for (i = 0; i < NUM_CACHE_ENTRIES; i++) {
+        mappings[i].sector_id = -1;
+        mappings[i].index_in_cache = -1;
+    }
+    lock_init(&mappings_lock);
     clock_hand = 0;
     lock_init(&eviction_lock);
     can_flush = true;
@@ -106,7 +124,7 @@ void init_cache(void) {
  DESCRIPTION: frees the kernel pages that the cache uses.
  NOTE: Must be called after cache_flush.
  NOTE: after calling this function, all of the byte
-    fields within the cache_entry's will be invalid.
+ fields within the cache_entry's will be invalid.
  -----------------------------------------------------------
  */
 void cache_free(void) {
@@ -117,45 +135,36 @@ void cache_free(void) {
         void* page_to_free = entry->bytes;
         palloc_free_page(page_to_free);
     }
-    can_flush = false;
 }
 
 
 /*
  -----------------------------------------------------------
  DESCRIPTION: searches the list of cache entries for one
-    that matches sector_id. Returns the cache entry, with  
-    the lock aquired according to exclusive if found,
-    returns NULL if non found.
- NOTE: we aquire the lock initially in the shared sense as 
-    all we want to do is read the sector_id field. If 
-    we find a match, and want the lock in exclusive mode
-    we have to release shared and reaquire the lock in 
-    write context. However, there is a chance that we get
-    swapped out in between these two calls. If that happens
-    if the sector_id still matches, we are fine, otherwise we 
-    have to restart the process. 
+ that matches sector_id. Returns the cache entry, with
+ the lock aquired according to exclusive if found,
+ returns NULL if non found.
+ NOTE: we aquire the lock initially in the shared sense as
+ all we want to do is read the sector_id field. If
+ we find a match, and want the lock in exclusive mode
+ we have to release shared and reaquire the lock in
+ write context. However, there is a chance that we get
+ swapped out in between these two calls. If that happens
+ if the sector_id still matches, we are fine, otherwise we
+ have to restart the process.
  -----------------------------------------------------------
  */
-struct cache_entry* search_for_existing_entry(int sector_id, bool exclusive) {
+struct cache_entry* search_for_existing_entry(int sector_id) {
     int i;
     for (i = 0; i < NUM_CACHE_ENTRIES; i++) {
-        acquire_cache_lock_for_read(&cache[i].lock);
-        if (cache[i].sector_id == sector_id) {
-            if (exclusive) {
-                release_cache_lock_for_read(&cache[i].lock);
-                acquire_cache_lock_for_write(&cache[i].lock);
-                if (cache[i].sector_id == sector_id) {
-                    return &cache[i];
-                } else {
-                    release_cache_lock_for_write(&cache[i].lock);
-                    i = 0;
-                }
-            } else {
+        bool success = try_acquire_cache_lock_for_write(&cache[i].lock);
+        if (success) {
+            if (cache[i].sector_id == sector_id) {
                 return &cache[i];
+            } else {
+                release_cache_lock_for_write(&cache[i].lock);
             }
         }
-        release_cache_lock_for_read(&cache[i].lock);
     }
     return NULL;
 }
@@ -164,32 +173,71 @@ struct cache_entry* search_for_existing_entry(int sector_id, bool exclusive) {
  -----------------------------------------------------------
  DESCRIPTION: checks the cache for an unused entry.
  NOTE: initialy checks a cache entry by acquiring the lock
-    in shared mode. If the entry is not used, then 
-    aquires the releases lock from shared mode, and tries
-    to reaquire in exclusive mode. If the cache_entry is 
-    no longer unused after this, then moves on, else, 
-    returns the cache entry that is currently unused with the 
-    cache_lock acquired in the exclusive context. If no
-    unused cache entries exist, returns null.
+ in shared mode. If the entry is not used, then
+ aquires the releases lock from shared mode, and tries
+ to reaquire in exclusive mode. If the cache_entry is
+ no longer unused after this, then moves on, else,
+ returns the cache entry that is currently unused with the
+ cache_lock acquired in the exclusive context. If no
+ unused cache entries exist, returns null.
  NOTE: this is exactly the same code as the search for existing entry
-    with sector_id of unused and exclusive = true passed in. Thus
-    we wrap this function here.
+ with sector_id of unused and exclusive = true passed in. Thus
+ we wrap this function here.
  -----------------------------------------------------------
  */
 struct cache_entry* check_for_unused_entry() {
-    struct cache_entry* entry = search_for_existing_entry(UNUSED_ENTRY_INDICATOR, true);
+    struct cache_entry* entry = search_for_existing_entry(UNUSED_ENTRY_INDICATOR);
     return entry;
 }
 
 /*
  -----------------------------------------------------------
- DESCRIPTION: clears the fields of a cache_entry. This is 
-    called after a cache_entry has been evicted.
+ DESCRIPTION: clears the mapping for sector_id
+ NOTE: expects that the caller has acquired the mappings_lock
+ -----------------------------------------------------------
+ */
+void clear_mapping(int sector_id) {
+    int i;
+    int num_matches = 0;
+    for (i = 0; i < NUM_CACHE_ENTRIES; i++) {
+        if (mappings[i].sector_id == sector_id) {
+            num_matches++;
+            mappings[i].sector_id = -1;
+            mappings[i].index_in_cache = -1;
+        }
+    }
+    ASSERT(num_matches == 1);
+}
+
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: installs a mapping from sector_id
+ to index of the cache where cache_entry contains
+ data of sector_id
+ NOTE: expects caller has acquired the mappings_lock
+ -----------------------------------------------------------
+ */
+void install_mapping(int sector_id, int index) {
+    int i;
+    for (i = 0; i < NUM_CACHE_ENTRIES; i++) {
+        if (mappings[i].sector_id == -1) {
+            mappings[i].sector_id = sector_id;
+            mappings[i].index_in_cache = index;
+            return;
+        }
+    }
+}
+
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: clears the fields of a cache_entry. This is
+ called after a cache_entry has been evicted.
  NOTE: This must be called with the current process having
-    allready acquired the cache_lock exclusively. 
+ allready acquired the cache_lock exclusively.
  -----------------------------------------------------------
  */
 void clear_cache_entry(struct cache_entry* entry) {
+    clear_mapping(entry->sector_id);
     entry->sector_id = UNUSED_ENTRY_INDICATOR;
     entry->accessed = false;
     entry->dirty = false;
@@ -198,8 +246,8 @@ void clear_cache_entry(struct cache_entry* entry) {
 
 /*
  -----------------------------------------------------------
- DESCRIPTION: finds an entry to evict by checking the 
-    accessed bits.
+ DESCRIPTION: finds an entry to evict by checking the
+ accessed bits.
  NOTE: this is the clock algorithm described in lecture
  -----------------------------------------------------------
  */
@@ -207,72 +255,113 @@ struct cache_entry* evict(void) {
     while (true) {
         lock_acquire(&eviction_lock);
         struct cache_entry* curr = &cache[clock_hand];
-        acquire_cache_lock_for_write(&curr->lock);
-        if (curr->accessed == false) {
-            if (curr->dirty) {
-                block_write(fs_device, (block_sector_t)curr->sector_id, curr->bytes);
-                clear_cache_entry(curr);
+        bool success = try_acquire_cache_lock_for_write(&curr->lock);
+        if (success) {
+            if (curr->accessed == false) {
+                if (curr->dirty) {
+                    block_write(fs_device, (block_sector_t)curr->sector_id, curr->bytes);
+                    clear_cache_entry(curr); //calls clear_mapping
+                } else {
+                    clear_mapping(curr->sector_id);
+                }
+                advance_clock_hand();
+                lock_release(&eviction_lock);
+                return curr;
             }
+            curr->accessed = false;
+            release_cache_lock_for_write(&curr->lock);
             advance_clock_hand();
             lock_release(&eviction_lock);
-            return curr;
+        } else {
+            advance_clock_hand();
+            lock_release(&eviction_lock);
         }
-        curr->accessed = false;
-        release_cache_lock_for_write(&curr->lock);
-        advance_clock_hand();
-        lock_release(&eviction_lock);
     }
 }
 
 /*
  -----------------------------------------------------------
  DESCRIPTION: returns the cache_entry for a given
-    sector_id with the data of that sector loaded
-    into the cache entry.
+ sector_id with the data of that sector loaded
+ into the cache entry.
  NOTE: in the case where we do not find an existing entry
-    we will be responsible for loading data into the 
-    the cache. To do this, we have to acquire the cache_lock
-    in the exclusive context. Thus, both check_for_unused_entry
-    and evict return a non_null cache entry with the cache_lock
-    aquired in the exclusive context.
+ we will be responsible for loading data into the
+ the cache. To do this, we have to acquire the cache_lock
+ in the exclusive context. Thus, both check_for_unused_entry
+ and evict return a non_null cache entry with the cache_lock
+ aquired in the exclusive context.
  NOTE: the use of the while true loop is to handle the case
-    where we want the cache_entry locked in the shared context, 
-    but when switching to shared lock, get swapped out. Thus, 
-    we have to check for state consistency. 
+ where we want the cache_entry locked in the shared context,
+ but when switching to shared lock, get swapped out. Thus,
+ we have to check for state consistency.
  NOTE: one other alternative is to disable interrupts.
  -----------------------------------------------------------
  */
 struct cache_entry* get_cache_entry_for_sector(int sector_id, bool exclusive) {
     while (true) {
-        struct cache_entry* entry = search_for_existing_entry(sector_id, exclusive);
-        if (entry != NULL) {
-            return entry;
+        lock_acquire(&mappings_lock);
+        int index = check_existing_mappings(sector_id);
+        lock_release(&mappings_lock);
+        if (index != -1) {
+            struct cache_entry* entry = &cache[index];
+            if (exclusive) {
+                acquire_cache_lock_for_write(&entry->lock);
+                if (entry->sector_id == sector_id) return entry;
+                release_cache_lock_for_write(&entry->lock);
+            } else {
+                acquire_cache_lock_for_read(&entry->lock);
+                if (entry->sector_id == sector_id) return entry;
+                release_cache_lock_for_read(&entry->lock);
+            }
         }
-        entry = check_for_unused_entry();
+        lock_acquire(&mappings_lock);
+        struct cache_entry* entry = check_for_unused_entry();
         if (entry == NULL) {
             entry = evict();
         }
-        block_read(fs_device, sector_id, entry->bytes);
+        install_mapping(sector_id, entry->index);
         entry->sector_id = sector_id;
-        if (exclusive == false) {
+        lock_release(&mappings_lock);
+        
+        block_read(fs_device, sector_id, entry->bytes);
+        if (exclusive == true) {
+            return entry;
+        } else {
             release_cache_lock_for_write(&entry->lock);
             acquire_cache_lock_for_read(&entry->lock);
             if (entry->sector_id == sector_id) {
                 return entry;
+            } else {
+                release_cache_lock_for_read(&entry->lock);
             }
-        } else {
-            return entry;
         }
     }
 }
 
 /*
  -----------------------------------------------------------
+ DESCRIPTION: checks the current mappings. If there is
+ one for sector_id, returns the index.
+ NOTE: expects caller to acquire mappings_lock
+ -----------------------------------------------------------
+ */
+int check_existing_mappings(int sector_id) {
+    int i;
+    for (i = 0; i < NUM_CACHE_ENTRIES; i++) {
+        if (mappings[i].sector_id == sector_id) {
+            return mappings[i].index_in_cache;
+        }
+    }
+    return -1;
+}
+
+/*
+ -----------------------------------------------------------
  DESCRIPTION: None
  NOTE: the updating of the accessed field allows for a benign
-    race, as multiple readers will set this field to true. 
-    This is ok, because when checking for accessed in eviction, 
-    we lock the cache_entry exclusively beforehand. 
+ race, as multiple readers will set this field to true.
+ This is ok, because when checking for accessed in eviction,
+ we lock the cache_entry exclusively beforehand.
  NOTE: does not release cache_entry lock. Requires caller to
  do so.
  -----------------------------------------------------------
@@ -286,13 +375,13 @@ void read_from_cache(struct cache_entry* entry, void* buffer, off_t offset, unsi
 /*
  -----------------------------------------------------------
  DESCRIPTION: writes the buffer to the cache, writing
-    num_bytes and offset in the cache.
+ num_bytes and offset in the cache.
  NOTE: Updates accessed and dirty bits to true.
  NOTE: Caller must have already acquired the cache_entry
-    lock in the exclusive context, prior to calling
-    this function.
+ lock in the exclusive context, prior to calling
+ this function.
  NOTE: does not release cache_entry lock. That is the
-    responsibility of the caller.
+ responsibility of the caller.
  NOTE: Offset must be in bytes.
  -----------------------------------------------------------
  */
@@ -306,12 +395,12 @@ void write_to_cache(struct cache_entry* entry, const void* buffer, off_t offset,
 /*
  -----------------------------------------------------------
  DESCRIPTION: Flushes the cache to disk. We do this
-    periodically to account for power failures.
+ periodically to account for power failures.
  NOTE: Launch a thread in to do this for us. Thus
-    the thread will periodically call this function.
+ the thread will periodically call this function.
  NOTE: Only flush if the cache_entry is in use
  NOTE: Because we are not writing to the cache_entry
-    we can aquire the cache_entry lock in the shared context
+ we can aquire the cache_entry lock in the shared context
  -----------------------------------------------------------
  */
 void flush_cache(void) {
@@ -330,17 +419,17 @@ void flush_cache(void) {
 /*
  -----------------------------------------------------------
  DESCRIPTION: Clears the cache entry that pertains to the
-    given sector_id if it is contained in cache.
- NOTE: we want to aquire the exlusive cache lock, as we will
-    be clearing data.
+ given sector_id if it is contained in cache.
  -----------------------------------------------------------
  */
 void clear_cache_entry_if_present(int sector_id) {
-    struct cache_entry* entry = search_for_existing_entry(sector_id, true);
-    if (entry == NULL) return;
-    clear_cache_entry(entry);
-    release_cache_lock_for_write(&entry->lock);
-    
+    lock_acquire(&mappings_lock);
+    int index = check_existing_mappings(sector_id);
+    if (index != -1) {
+        struct cache_entry* entry = &cache[index];
+        clear_cache_entry(entry);
+    }
+    lock_release(&mappings_lock);
 }
 
 
@@ -412,9 +501,25 @@ void release_cache_lock_for_read(struct cache_lock* lock) {
 }
 
 
+bool try_acquire_cache_lock_for_write(struct cache_lock* lock) {
+    lock_acquire(&lock->internal_lock);
+    if (lock->i == 0) {
+        lock->i = -1;
+        lock_release(&lock->internal_lock);
+        return true;
+    }
+    lock_release(&lock->internal_lock);
+    return false;
+}
 
-
-
-
-
+bool try_acquire_cache_lock_for_read(struct cache_lock* lock) {
+    lock_acquire(&lock->internal_lock);
+    if (lock->i >= -1) {
+        lock->i++;
+        lock_release(&lock->internal_lock);
+        return true;
+    }
+    lock_release(&lock->internal_lock);
+    return false;
+}
 
