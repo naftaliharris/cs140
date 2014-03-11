@@ -51,13 +51,9 @@ void
 free_map_release (block_sector_t sector, size_t cnt)
 {
     lock_acquire(&free_map_lock);
-    bool outcome = bitmap_all (free_map, sector, cnt);
-    if (outcome == false) {
-        printf("false bitmap return value");
-    }
-  //ASSERT (bitmap_all (free_map, sector, cnt));
-  bitmap_set_multiple (free_map, sector, cnt, false);
-  bitmap_write (free_map, free_map_file);
+    ASSERT (bitmap_all (free_map, sector, cnt));
+    bitmap_set_multiple (free_map, sector, cnt, false);
+    bitmap_write (free_map, free_map_file);
     lock_release(&free_map_lock);
 }
 

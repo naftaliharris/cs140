@@ -116,7 +116,8 @@ struct inode
     int open_cnt;                       /* Number of openers. */
     bool removed;                       /* True if deleted, false otherwise. */
     int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
-    struct lock data_lock;        /* lock protecting internal inode data */
+    struct lock data_lock;              /* lock protecting internal inode data */
+    struct lock extend_inode_lock;      /* ensures writing past EOF and subsequent inode_extension is atomic */
     //struct inode_disk data;             /* Inode content. */
 };
 
@@ -576,6 +577,7 @@ inode_open (block_sector_t sector)
     inode->deny_write_cnt = 0;
     inode->removed = false;
     lock_init(&inode->data_lock);
+    lock_init(&inode->extend_inode_lock);
     list_push_front (&open_inodes, &inode->elem);
     lock_release(&open_inodes_lock);
     return inode;
@@ -693,6 +695,20 @@ inode_remove (struct inode *inode)
  Reads SIZE bytes from INODE into BUFFER, starting at position OFFSET.
    Returns the number of bytes actually read, which may be less
    than SIZE if an error occurs or end of file is reached. 
+ NOTE: we only synchronize EOF in inode_write. Assume that 
+    A is reading at EOF and B is writing at EOF of same file.
+    If B is scehduled first, B will acquire the extend_inode
+    lock, will then acquire blocks to extend inode exclusively,
+    will then write necessary data to these blocks, and update 
+    inode block id's array, and finally, after all of that is 
+    finished, update the length of the inode accordingly, 
+    and then release the extend_inode lock. When A resumes 
+    execution after B, it will no longer be at EOF, and will
+    read what B wrote, up to new EOF. Assume B gets swapped
+    out mid execution of extension. Then A runs, will still
+    see itself at EOF, as A has not updated inode_length yet
+    and will thus return 0 bytes read. This is acceptable
+    behavior as stated in program specification. 
  -----------------------------------------------------------
  */
 off_t
@@ -702,6 +718,11 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
     off_t bytes_read = 0;
     
     while (size > 0) {
+        /* check for reading past EOF */
+        if (offset > inode_length(inode)) {
+            break;
+        }
+        
         /* Disk sector to read, starting byte offset within sector. */
         block_sector_t sector_idx = byte_to_sector (inode, offset);
         int sector_ofs = offset % BLOCK_SECTOR_SIZE;
@@ -729,7 +750,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
         /* Advance. */
         size -= chunk_size;
         offset += chunk_size;
-        //here we make the read_ahead call
+        //here we make the read_ahead call. 
         bytes_read += chunk_size;
     }
     return bytes_read;
@@ -742,6 +763,29 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
    less than SIZE if end of file is reached or an error occurs.
    (Normally a write at end of file would extend the inode, but
    growth is not yet implemented.) 
+ NOTE: Suppose both A and B are writing same file, and both
+    are currently at EOF. In this case, both try to acquire 
+    the extend_inode lock. The first will acquire, will 
+    check length, see that it is still too small, so it will 
+    acquire blocks for inode extension exclusively, and then write data
+    into these blocks, and when finished updated the length of 
+    inode, and then release the extend inode lock.
+    Then, the second process trying to extend will 
+    now acquire the extend lock, will re-check the inode
+    length, and see that it is now extended, and thus will
+    release the extend lock, and resume normal writes, as
+    it is no longer wrting past EOF.
+ PROCESS OF EXTENDING AN INODE:
+    1. determine the number 0 bytes to write, starting
+    at current EOF and extedning up to start of offset.
+    2. Then, add the blocks to the inode that will
+    be needed to extend the file.
+    3. then write these blocks with the corresponding
+    data.
+    4. Then, update the inode length. 
+    5. Then release the inode lock
+    6. Then return the number of bytes written = SIZE
+        as we do not count the zero bytes
  -----------------------------------------------------------
  */
 off_t
@@ -750,66 +794,55 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 {
   const uint8_t *buffer = buffer_;
   off_t bytes_written = 0;
-  uint8_t *bounce = NULL;
 
   if (inode->deny_write_cnt)
     return 0;
 
-  while (size > 0) 
-    {
+  while (size > 0) {
+      
+      /* if offset is greater than current length of inode, we extend, must be atomic, so acquire inode_extend lock */
+      if (offset > inode_length(inode)) {
+          lock_acquire(&inode->extend_inode_lock);
+          if (offset > inode_length(inode)) {
+              //here we extend the inode exclusively
+              lock_release(&inode->extend_inode_lock);
+              //return size;
+              return bytes_written;
+          } else {
+              lock_release(&inode->extend_inode_lock);
+          }
+      }
+      
       /* Sector to write, starting byte offset within sector. */
       block_sector_t sector_idx = byte_to_sector (inode, offset);
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
-
+      
       /* Bytes left in inode, bytes left in sector, lesser of the two. */
       off_t inode_left = inode_length (inode) - offset;
       int sector_left = BLOCK_SECTOR_SIZE - sector_ofs;
       int min_left = inode_left < sector_left ? inode_left : sector_left;
-
+      
       /* Number of bytes to actually write into this sector. */
       int chunk_size = size < min_left ? size : min_left;
-      if (chunk_size <= 0)
-        break;
-
-      if (sector_ofs == 0 && chunk_size == BLOCK_SECTOR_SIZE)
-        {
-          /* Write full sector directly to disk. */
-            struct cache_entry* entry = get_cache_entry_for_sector(sector_idx, true);
-            write_to_cache(entry, (const void*)buffer+bytes_written, 0, BLOCK_SECTOR_SIZE);
-            release_cache_lock_for_write(&entry->lock);
-          //block_write (fs_device, sector_idx, buffer + bytes_written);
-        }
-      else 
-        {
-          /* We need a bounce buffer. */
-          if (bounce == NULL) 
-            {
-              bounce = malloc (BLOCK_SECTOR_SIZE);
-              if (bounce == NULL)
-                break;
-            }
-
-          /* If the sector contains data before or after the chunk
-             we're writing, then we need to read in the sector
-             first.  Otherwise we start with a sector of all zeros. */
-         /* if (sector_ofs > 0 || chunk_size < sector_left)
-            block_read (fs_device, sector_idx, bounce);
-          else
-            memset (bounce, 0, BLOCK_SECTOR_SIZE);
-          memcpy (bounce + sector_ofs, buffer + bytes_written, chunk_size);
-          block_write (fs_device, sector_idx, bounce);*/
-            struct cache_entry* entry = get_cache_entry_for_sector(sector_idx, true);
-            write_to_cache(entry, (const void*)buffer+bytes_written, sector_ofs, chunk_size);
-            release_cache_lock_for_write(&entry->lock);
-        }
-
+      if (chunk_size <= 0) {
+          break;
+      }
+      
+      struct cache_entry* entry = get_cache_entry_for_sector(sector_idx, true);
+      if (sector_ofs == 0 && chunk_size == BLOCK_SECTOR_SIZE) {
+          write_to_cache(entry, (const void*)buffer+bytes_written, 0, BLOCK_SECTOR_SIZE);
+          release_cache_lock_for_write(&entry->lock);
+      } else {
+          write_to_cache(entry, (const void*)buffer+bytes_written, sector_ofs, chunk_size);
+          release_cache_lock_for_write(&entry->lock);
+      }
+      
       /* Advance. */
       size -= chunk_size;
       offset += chunk_size;
       bytes_written += chunk_size;
-    }
-  free (bounce);
-
+  }
+    
   return bytes_written;
 }
 
