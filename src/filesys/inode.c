@@ -190,7 +190,7 @@ static block_sector_t get_double_indirect_block_sector_number(struct cache_entry
     block_sector_t double_indirect_block_number = get_direct_block_sector_number(disk_inode_cache_entry, NUM_DIRECT_BLOCKS + NUM_INDIRECT_BLOCKS);
     struct cache_entry* double_indirect_block_cache_entry = get_cache_entry_for_sector(double_indirect_block_number, false);
     int index_in_double_indirect_block = 0;
-    index = index - NUM_DIRECT_BLOCKS - (NUM_BLOCK_IDS_PER_BLOCK * NUM_DOUBLE_INDIRECT_BLOCKS); //This gives us an index relative to double indirect.
+    index = index - NUM_DIRECT_BLOCKS - (NUM_BLOCK_IDS_PER_BLOCK * NUM_INDIRECT_BLOCKS); //This gives us an index relative to double indirect.
     while (true) {
         if (index < NUM_BLOCK_IDS_PER_BLOCK) break;
         index = index - NUM_BLOCK_IDS_PER_BLOCK;
@@ -224,7 +224,7 @@ static block_sector_t get_double_indirect_block_sector_number(struct cache_entry
 static block_sector_t
 byte_to_sector (const struct inode *inode, off_t pos, off_t length_p)
 {
-    //ASSERT (inode != NULL);
+    ASSERT (inode != NULL);
     off_t length;
     if (inode == NULL) {
         length = length_p;
