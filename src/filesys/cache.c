@@ -326,7 +326,6 @@ struct cache_entry* get_cache_entry_for_sector(int sector_id, bool exclusive) {
         install_mapping(sector_id, entry->index);
         entry->sector_id = sector_id;
         lock_release(&mappings_lock);
-        
         block_read(fs_device, sector_id, entry->bytes);
         if (exclusive == true) {
             return entry;
