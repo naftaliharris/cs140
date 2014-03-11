@@ -225,7 +225,7 @@ byte_to_sector (const struct inode *inode, off_t pos)
     }
     
     struct cache_entry* disk_inode_cache_entry = get_cache_entry_for_sector(inode->sector, false); //false because we are reading here.
-    unsigned index_for_pos = pos % BLOCK_SECTOR_SIZE;
+    unsigned index_for_pos = (unsigned)pos / (unsigned)BLOCK_SECTOR_SIZE;
     if (index_for_pos < NUM_DIRECT_BLOCKS) {
         return get_direct_block_sector_number(disk_inode_cache_entry, index_for_pos);
     }
@@ -292,7 +292,7 @@ static void clear_indirect_blocks(struct cache_entry* disk_inode_cache_entry, si
         clear_cache_entry_if_present(curr_block_to_clear);
         free_map_release(curr_block_to_clear, 1);
         (*num_blocks_to_clear)--;
-        if ((*num_blocks_to_clear) == 0) return;
+        if ((*num_blocks_to_clear) == 0) break;
     }
     clear_cache_entry_if_present(indirect_block_number);
     free_map_release(indirect_block_number, 1);
@@ -469,6 +469,7 @@ static bool settup_double_indirect_blocks(struct cache_entry* disk_inode_cache_e
         release_cache_lock_for_write(&curr_indirect_block_cache_entry->lock);
         off_t offset_in_double_indirect_block = double_indirect_index * sizeof(block_sector_t);
         write_to_cache(double_indirect_block_cache_entry, &curr_indirect_block, offset_in_double_indirect_block, sizeof(block_sector_t));
+        if ((*num_sectors_needed) == 0) break;
     }
     release_cache_lock_for_write(&double_indirect_block_cache_entry->lock);
     off_t offset_in_inode = sizeof(off_t) + sizeof(unsigned) + ((NUM_DIRECT_BLOCKS + NUM_DOUBLE_INDIRECT_BLOCKS) * sizeof(block_sector_t));
@@ -504,7 +505,7 @@ bool
 inode_create (block_sector_t sector, off_t length)
 {
     if (length > MAX_FILE_LENGTH_IN_BYTES) return false;
-    bool success = false;
+    bool success;
     
     ASSERT (length >= 0);
     
@@ -518,15 +519,17 @@ inode_create (block_sector_t sector, off_t length)
     write_to_cache(disk_inode_cache_entry, &magic, sizeof(off_t), sizeof(unsigned));
     size_t num_sectors_needed = bytes_to_sectors(length);
     size_t num_sectors_allocated = 0;
-    success = settup_direct_blocks(disk_inode_cache_entry, &num_sectors_needed, &num_sectors_allocated);
-    if (success == false) return false;
+    if (num_sectors_needed > 0) {
+        success = settup_direct_blocks(disk_inode_cache_entry, &num_sectors_needed, &num_sectors_allocated);
+        if (success == false) return false;
+    }
     if (num_sectors_needed > 0) {
         success = settup_indirect_blocks(disk_inode_cache_entry, &num_sectors_needed, &num_sectors_allocated);
         if (success == false) return false;
-        if (num_sectors_needed > 0) {
-            success = settup_double_indirect_blocks(disk_inode_cache_entry, &num_sectors_needed, &num_sectors_allocated);
-            if (success == false) return false;
-        }
+    }
+    if (num_sectors_needed > 0) {
+        success = settup_double_indirect_blocks(disk_inode_cache_entry, &num_sectors_needed, &num_sectors_allocated);
+        if (success == false) return false;
     }
     release_cache_lock_for_write(&disk_inode_cache_entry->lock);
     
@@ -534,7 +537,7 @@ inode_create (block_sector_t sector, off_t length)
 }
 
 
-/* 
+/*
  -----------------------------------------------------------
  Reads an inode from SECTOR
    and returns a `struct inode' that contains it.
