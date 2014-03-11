@@ -132,6 +132,13 @@ static block_sector_t get_direct_block_sector_number(struct cache_entry* disk_in
 static block_sector_t get_indirect_block_sector_number(struct cache_entry* disk_inode_cache_entry, unsigned index);
 static block_sector_t get_double_indirect_block_sector_number(struct cache_entry* disk_inode_cache_entry, unsigned index);
 static off_t extend_inode(struct inode* inode, void* buffer, off_t size, off_t offset);
+static void add_blocks_to_inode(struct inode* inode, off_t num_blocks_needed, off_t index_of_next_block_to_add);
+static void add_direct_blocks(struct cache_entry* disk_inode_cache_entry, off_t* num_blocks_needed, off_t* index_of_next_block_to_add);
+static void add_indirect_blocks(struct cache_entry* disk_inode_cache_entry, off_t* num_blocks_needed, off_t* index_of_next_block_to_add);
+static void add_double_indirect_blocks(struct cache_entry* disk_inode_cache_entry, off_t* num_blocks_needed, off_t* index_of_next_block_to_add);
+static off_t get_indirect_block_index_in_double_indirect_block(off_t index);
+static void add_to_existing_indirect_block(struct cache_entry* double_indirect_block_cache_entry, off_t* num_blocks_needed, off_t* index_of_next_block_to_add);
+
 
 /*
  -----------------------------------------------------------
@@ -863,6 +870,18 @@ static off_t extend_inode(struct inode* inode, void* buffer, off_t size, off_t o
     //bytes remaining in current last block of inode to write to are BLOCK_SECTOR_SIZE*blocks previous to length - inode_length(inode).
     //bytes to zero = offset - inode_length(inode);
     off_t old_length = inode_length(inode);
+    off_t new_length = offset + size;
+    off_t delta_length = new_length - old_length;
+    off_t num_blocks_needed = bytes_to_sectors(delta_length);
+    //now we allocate blocks to the inode to extend
+    off_t index_of_next_block_to_add = bytes_to_sector(old_length); //as we 0 index, we don't subtract 1
+    add_blocks_to_inode(inode, num_blocks_needed, index_of_next_block_to_add);
+    
+    
+    
+    
+    
+    
     off_t bytes_to_zero = offset - old_length;
     off_t number_used_bytes_in_last_block;
     if (old_length % BLOCK_SECTOR_SIZE == 0) {
@@ -871,6 +890,161 @@ static off_t extend_inode(struct inode* inode, void* buffer, off_t size, off_t o
         number_used_bytes_in_last_block = old_length % BLOCK_SECTOR_SIZE;
     }
     
+}
+
+/*
+ */
+static void add_direct_blocks(struct cache_entry* disk_inode_cache_entry, off_t* num_blocks_needed, off_t* index_of_next_block_to_add) {
+    while (true) {
+        if ((*index_of_next_block_to_add) >= NUM_DIRECT_BLOCKS) break;
+        if ((*num_blocks_needed) == 0) break;
+        
+        block_sector_t curr_sector = 0;
+        bool success = free_map_allocate(1, &curr_sector);
+        if (success == false) {
+            ASSERT(0 == 1);
+        }
+        off_t offset = sizeof(off_t) + sizeof(unsigned) + ((*index_of_next_block_to_add) * sizeof(block_sector_t));
+        write_to_cache(disk_inode_cache_entry, &curr_sector, offset, sizeof(block_sector_t));
+        (*num_blocks_needed)--;
+        (*index_of_next_block_to_add)++;
+    }
+}
+
+/*
+ */
+static void add_indirect_blocks(struct cache_entry* disk_inode_cache_entry, off_t* num_blocks_needed, off_t* index_of_next_block_to_add) {
+    
+    block_sector_t indirect_block_number = 0;
+    off_t offset_of_indirect_block_id = sizeof(off_t) + sizeof(unsigned) + (NUM_DIRECT_BLOCKS * sizeof(block_sector_t));
+    read_from_cache(disk_inode_cache_entry, &indirect_block_number, offset_of_indirect_block_id, sizeof(block_sector_t));
+    struct cache_entry* indirect_block_cache_entry = get_cache_entry_for_sector(indirect_block_number, true);
+    while (true) {
+        if ((*index_of_next_block_to_add) >= NUM_DIRECT_BLOCKS + NUM_BLOCK_IDS_PER_BLOCK) break;
+        if ((*num_blocks_needed) == 0) break;
+        
+        block_sector_t curr_sector = 0;
+        bool success = free_map_allocate(1, &curr_sector);
+        if (success == false) {
+            ASSERT(0 == 1);
+        }
+        off_t offset_in_indirect_block = (((*index_of_next_block_to_add) - NUM_DIRECT_BLOCKS) * sizeof(block_sector_t));
+        write_to_cache(indirect_block_cache_entry, &curr_sector, offset_in_indirect_block, sizeof(block_sector_t));
+        (*num_blocks_needed)--;
+        (*index_of_next_block_to_add)++;
+    }
+    release_cache_lock_for_write(&indirect_block_cache_entry->lock);
+}
+
+/*
+ */
+static off_t get_indirect_block_index_in_double_indirect_block(off_t index) {
+    index = index - NUM_DIRECT_BLOCKS - (NUM_BLOCK_IDS_PER_BLOCK * NUM_INDIRECT_BLOCKS);
+    off_t indirect_index = 0;
+    while (true) {
+        if (index < NUM_BLOCK_IDS_PER_BLOCK) break;
+        index = index - NUM_BLOCK_IDS_PER_BLOCK;
+        indirect_index++;
+    }
+    return indirect_index;
+}
+
+/*
+ */
+static void add_to_existing_indirect_block(struct cache_entry* double_indirect_block_cache_entry, off_t* num_blocks_needed, off_t* index_of_next_block_to_add) {
+    off_t indirect_index = get_indirect_block_index_in_double_indirect_block((*index_of_next_block_to_add));
+    block_sector_t indirect_block_number = 0;
+    off_t offset_to_indirect_block = indirect_index * sizeof(block_sector_t);
+    read_from_cache(double_indirect_block_cache_entry, &indirect_block_number, offset_to_indirect_block, sizeof(block_sector_t));
+    struct cache_entry* indirect_block_cache_entry = get_cache_entry_for_sector(indirect_block_number, true);
+    off_t begin_index = (*index_of_next_block_to_add) - NUM_DIRECT_BLOCKS - (NUM_BLOCK_IDS_PER_BLOCK * NUM_INDIRECT_BLOCKS) - (indirect_index * NUM_BLOCK_IDS_PER_BLOCK);
+    int i;
+    for (i = begin_index; i < NUM_BLOCK_IDS_PER_BLOCK; i++) {
+        if ((*num_blocks_needed) == 0) break;
+        block_sector_t curr_sector = 0;
+        bool success = free_map_allocate(1, &curr_sector);
+        if (success == false) {
+            ASSERT(0 == 1);
+        }
+        off_t offset_in_indirect_block = (i * sizeof(block_sector_t));
+        write_to_cache(indirect_block_cache_entry, &curr_sector, offset_in_indirect_block, sizeof(block_sector_t));
+        (*num_blocks_needed)--;
+        (*index_of_next_block_to_add)++;
+    }
+    release_cache_lock_for_write(&indirect_block_cache_entry->lock);
+}
+
+
+/*
+ */
+static void add_double_indirect_blocks(struct cache_entry* disk_inode_cache_entry, off_t* num_blocks_needed, off_t* index_of_next_block_to_add) {
+    
+    block_sector_t double_indirect_block_number = 0;
+    off_t offset_of_double_indirect_block_id = sizeof(off_t) + sizeof(unsigned) + ((NUM_DIRECT_BLOCKS + NUM_INDIRECT_BLOCKS) * sizeof(block_sector_t));
+    read_from_cache(disk_inode_cache_entry, &double_indirect_block_number, offset_of_double_indirect_block_id, sizeof(block_sector_t));
+    struct cache_entry* double_indirect_block_cache_entry = get_cache_entry_for_sector(double_indirect_block_number, true);
+    if (((*index_of_next_block_to_add) - NUM_DIRECT_BLOCKS - (NUM_BLOCK_IDS_PER_BLOCK*NUM_INDIRECT_BLOCKS)) % NUM_BLOCK_IDS_PER_BLOCK != 0) {
+        add_to_existing_indirect_block(double_indirect_block_cache_entry, num_blocks_needed, index_of_next_block_to_add);
+    }
+    if ((*num_blocks_needed) == 0) {
+        release_cache_lock_for_write(&double_indirect_block_cache_entry->lock);
+        return;
+    }
+    ASSERT((*index_of_next_block_to_add) - NUM_DIRECT_BLOCKS - (NUM_BLOCK_IDS_PER_BLOCK * NUM_INDIRECT_BLOCKS) % NUM_BLOCK_IDS_PER_BLOCK == 0);
+    off_t indirect_start_index = get_indirect_block_index_in_double_indirect_block((*index_of_next_block_to_add));
+    int double_indirect_index;
+    for (double_indirect_index = indirect_start_index; double_indirect_index < NUM_BLOCK_IDS_PER_BLOCK; double_indirect_index++) {
+        block_sector_t curr_indirect_block = 0;
+        bool success = free_map_allocate(1, &curr_indirect_block);
+        if (success == false) {
+            ASSERT(0 == 1);
+        }
+        struct cache_entry* curr_indirect_block_cache_entry = get_cache_entry_for_sector(curr_indirect_block, true);
+        int indirect_index;
+        for (indirect_index = 0; indirect_index < NUM_BLOCK_IDS_PER_BLOCK; indirect_index++) {
+            block_sector_t curr_sector = 0;
+            bool success = free_map_allocate(1, &curr_sector);
+            if (success == false) {
+                ASSERT(0 == 1);
+            }
+            off_t offset = (indirect_index * sizeof(block_sector_t));
+            write_to_cache(curr_indirect_block_cache_entry, &curr_sector, offset, sizeof(block_sector_t));
+            (*index_of_next_block_to_add)++;
+            (*num_blocks_needed)--;
+            if ((*num_blocks_needed) == 0) break;
+        }
+        release_cache_lock_for_write(&curr_indirect_block_cache_entry->lock);
+        off_t offset_in_double_indirect_block = double_indirect_index * sizeof(block_sector_t);
+        write_to_cache(double_indirect_block_cache_entry, &curr_indirect_block, offset_in_double_indirect_block, sizeof(block_sector_t));
+        if ((*num_blocks_needed) == 0) break;
+    }
+    release_cache_lock_for_write(&double_indirect_block_cache_entry->lock);
+}
+
+
+
+/*
+ */
+static void add_blocks_to_inode(struct inode* inode, off_t num_blocks_needed, off_t index_of_next_block_to_add) {
+    struct cache_entry* disk_inode_cache_entry = get_cache_entry_for_sector(inode->sector, true);
+    
+    if (index_of_next_block_to_add < (NUM_DIRECT_BLOCKS)) {
+        add_direct_blocks(disk_inode_cache_entry, &num_blocks_needed, &index_of_next_block_to_add);
+        if (num_blocks_needed > 0) {
+            add_indirect_blocks(disk_inode_cache_entry, &num_blocks_needed, &index_of_next_block_to_add);
+        }
+        if (num_blocks_needed > 0) {
+            add_double_indirect_blocks(disk_inode_cache_entry, &num_blocks_needed, &index_of_next_block_to_add);
+        }
+    } else if (index_of_next_block_to_add < NUM_DIRECT_BLOCKS + (NUM_BLOCK_IDS_PER_BLOCK)) {
+        add_indirect_blocks(disk_inode_cache_entry, &num_blocks_needed, &index_of_next_block_to_add);
+        if (num_blocks_needed > 0) {
+            add_double_indirect_blocks(disk_inode_cache_entry, &num_blocks_needed, &index_of_next_block_to_add);
+        }
+    } else {
+        add_double_indirect_blocks(disk_inode_cache_entry, &num_blocks_needed, &index_of_next_block_to_add);
+    }
+    release_cache_lock_for_write(&disk_inode_cache_entry->lock);
 }
 
 
