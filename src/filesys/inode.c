@@ -78,12 +78,11 @@
     to file data.
  -----------------------------------------------------------
  */
-struct inode_disk
-{
-    //block_sector_t start;               /* First data sector. */
+struct inode_disk {
+    //block_sector_t start;             /* First data sector. */
     off_t length;                       /* File size in bytes. */
     unsigned magic;                     /* Magic number. */
-    block_sector_t blocks[NUM_BLOCK_IDS_IN_INODE] /*array containing the sector 
+    block_sector_t blocks[NUM_BLOCK_IDS_IN_INODE]; /*array containing the sector
                                                    numbers of blocks that contain
                                                    file data. Please see comment above
                                                    for indication as to indexing and
@@ -511,7 +510,7 @@ inode_create (block_sector_t sector, off_t length)
     
     /* If this assertion fails, the inode structure is not exactly
      one sector in size, and you should fix that. */
-    ASSERT (sizeof *disk_inode == BLOCK_SECTOR_SIZE);
+    ASSERT (sizeof(struct inode_disk) == BLOCK_SECTOR_SIZE);
     
     struct cache_entry* disk_inode_cache_entry = get_cache_entry_for_sector(sector, true);
     write_to_cache(disk_inode_cache_entry, &length, 0, sizeof(off_t));
@@ -533,9 +532,6 @@ inode_create (block_sector_t sector, off_t length)
     
     return true;
 }
-
-
-
 
 
 /* 
@@ -702,17 +698,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
     uint8_t *buffer = buffer_;
     off_t bytes_read = 0;
     
-    while (size > 0)
-    {
-        
-        
-        
-        
-        
-        
-        
-        
-        
+    while (size > 0) {
         /* Disk sector to read, starting byte offset within sector. */
         block_sector_t sector_idx = byte_to_sector (inode, offset);
         int sector_ofs = offset % BLOCK_SECTOR_SIZE;
@@ -724,32 +710,17 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
         
         /* Number of bytes to actually copy out of this sector. */
         int chunk_size = size < min_left ? size : min_left;
-        if (chunk_size <= 0)
+        if (chunk_size <= 0) {
             break;
+        }
         
-        if (sector_ofs == 0 && chunk_size == BLOCK_SECTOR_SIZE)
-        {
-            /* Read full sector directly into caller's buffer. */
-            struct cache_entry* entry = get_cache_entry_for_sector(sector_idx, false);
+        struct cache_entry* entry = get_cache_entry_for_sector(sector_idx, false);
+        if (sector_ofs == 0 && chunk_size == BLOCK_SECTOR_SIZE) {
             read_from_cache(entry, buffer+bytes_read, 0, BLOCK_SECTOR_SIZE);
             release_cache_lock_for_read(&entry->lock);
-            //block_read (fs_device, sector_idx, buffer + bytes_read);
-        }
-        else
-        {
-            /* Read sector into bounce buffer, then partially copy
-             into caller's buffer. */
-            if (bounce == NULL)
-            {
-                bounce = malloc (BLOCK_SECTOR_SIZE);
-                if (bounce == NULL)
-                    break;
-            }
-            struct cache_entry* entry = get_cache_entry_for_sector(sector_idx, false);
+        } else {
             read_from_cache(entry, buffer+bytes_read, sector_ofs, chunk_size);
             release_cache_lock_for_read(&entry->lock);
-            //block_read (fs_device, sector_idx, bounce);
-            //memcpy (buffer + bytes_read, bounce + sector_ofs, chunk_size);
         }
         
         /* Advance. */
@@ -757,8 +728,6 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
         offset += chunk_size;
         bytes_read += chunk_size;
     }
-    free (bounce);
-    
     return bytes_read;
 }
 
