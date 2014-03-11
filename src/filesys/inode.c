@@ -131,6 +131,7 @@ static void clear_double_indirect_blocks(struct cache_entry* disk_inode_cache_en
 static block_sector_t get_direct_block_sector_number(struct cache_entry* disk_inode_cache_entry, unsigned index);
 static block_sector_t get_indirect_block_sector_number(struct cache_entry* disk_inode_cache_entry, unsigned index);
 static block_sector_t get_double_indirect_block_sector_number(struct cache_entry* disk_inode_cache_entry, unsigned index);
+static off_t extend_inode(struct inode* inode, void* buffer, off_t size, off_t offset);
 
 /*
  -----------------------------------------------------------
@@ -804,9 +805,8 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       if (offset > inode_length(inode)) {
           lock_acquire(&inode->extend_inode_lock);
           if (offset > inode_length(inode)) {
-              //here we extend the inode exclusively
+              bytes written += extend_inode(inode, buffer + bytes_written, size, offset); //note might not be size if we max out the disk space.
               lock_release(&inode->extend_inode_lock);
-              //return size;
               return bytes_written;
           } else {
               lock_release(&inode->extend_inode_lock);
@@ -846,9 +846,36 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   return bytes_written;
 }
 
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: Extends the inode writing size bytes from
+    buffer to the inode starting at offset bytes into the 
+    inode.
+ NOTE: Expects that the caller has acquired the lock
+    on extedning the inode, namely inode->extend_inode_lock;
+ NOTE: bytes_to_sectors(length) - 1 is the index of block
+    containing length byte.
+ 1. get the index 
+ -----------------------------------------------------------
+ */
+static off_t extend_inode(struct inode* inode, void* buffer, off_t size, off_t offset) {
+    //here we extend the inode exclusively
+    //bytes remaining in current last block of inode to write to are BLOCK_SECTOR_SIZE*blocks previous to length - inode_length(inode).
+    //bytes to zero = offset - inode_length(inode);
+    off_t old_length = inode_length(inode);
+    off_t bytes_to_zero = offset - old_length;
+    off_t number_used_bytes_in_last_block;
+    if (old_length % BLOCK_SECTOR_SIZE == 0) {
+        number_used_bytes_in_last_block = BLOCK_SECTOR_SIZE;
+    } else {
+        number_used_bytes_in_last_block = old_length % BLOCK_SECTOR_SIZE;
+    }
+    
+}
 
 
-/* 
+
+/*
  -----------------------------------------------------------
  Disables writes to INODE.
    May be called at most once per inode opener. 
