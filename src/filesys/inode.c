@@ -210,6 +210,7 @@ static block_sector_t get_double_indirect_block_sector_number(struct cache_entry
    within INODE.
    Returns -1 if INODE does not contain data for a byte at offset
    POS. 
+ returns -2 if pos exceeds max_file_length_in_bytes
  -----------------------------------------------------------
  */
 static block_sector_t
@@ -217,8 +218,11 @@ byte_to_sector (const struct inode *inode, off_t pos)
 {
     ASSERT (inode != NULL);
     off_t length = inode_length(inode);
-    if (length < pos || pos > MAX_FILE_LENGTH_IN_BYTES) {
-        return -1;
+    if (pos > MAX_FILE_LENGTH_IN_BYTES) {
+        return (block_sector_t)-2;
+    }
+    if (length < pos) {
+        return (block_sector_t)-1;
     }
     
     struct cache_entry* disk_inode_cache_entry = get_cache_entry_for_sector(inode->sector, false); //false because we are reading here.
@@ -693,61 +697,69 @@ inode_remove (struct inode *inode)
  -----------------------------------------------------------
  */
 off_t
-inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset) 
+inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
 {
-  uint8_t *buffer = buffer_;
-  off_t bytes_read = 0;
-  uint8_t *bounce = NULL;
-
-  while (size > 0) 
+    uint8_t *buffer = buffer_;
+    off_t bytes_read = 0;
+    
+    while (size > 0)
     {
-      /* Disk sector to read, starting byte offset within sector. */
-      block_sector_t sector_idx = byte_to_sector (inode, offset);
-      int sector_ofs = offset % BLOCK_SECTOR_SIZE;
-
-      /* Bytes left in inode, bytes left in sector, lesser of the two. */
-      off_t inode_left = inode_length (inode) - offset;
-      int sector_left = BLOCK_SECTOR_SIZE - sector_ofs;
-      int min_left = inode_left < sector_left ? inode_left : sector_left;
-
-      /* Number of bytes to actually copy out of this sector. */
-      int chunk_size = size < min_left ? size : min_left;
-      if (chunk_size <= 0)
-        break;
-
-      if (sector_ofs == 0 && chunk_size == BLOCK_SECTOR_SIZE)
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        /* Disk sector to read, starting byte offset within sector. */
+        block_sector_t sector_idx = byte_to_sector (inode, offset);
+        int sector_ofs = offset % BLOCK_SECTOR_SIZE;
+        
+        /* Bytes left in inode, bytes left in sector, lesser of the two. */
+        off_t inode_left = inode_length (inode) - offset;
+        int sector_left = BLOCK_SECTOR_SIZE - sector_ofs;
+        int min_left = inode_left < sector_left ? inode_left : sector_left;
+        
+        /* Number of bytes to actually copy out of this sector. */
+        int chunk_size = size < min_left ? size : min_left;
+        if (chunk_size <= 0)
+            break;
+        
+        if (sector_ofs == 0 && chunk_size == BLOCK_SECTOR_SIZE)
         {
-          /* Read full sector directly into caller's buffer. */
+            /* Read full sector directly into caller's buffer. */
             struct cache_entry* entry = get_cache_entry_for_sector(sector_idx, false);
             read_from_cache(entry, buffer+bytes_read, 0, BLOCK_SECTOR_SIZE);
             release_cache_lock_for_read(&entry->lock);
-          //block_read (fs_device, sector_idx, buffer + bytes_read);
+            //block_read (fs_device, sector_idx, buffer + bytes_read);
         }
-      else 
+        else
         {
-          /* Read sector into bounce buffer, then partially copy
+            /* Read sector into bounce buffer, then partially copy
              into caller's buffer. */
-          if (bounce == NULL)
+            if (bounce == NULL)
             {
-              bounce = malloc (BLOCK_SECTOR_SIZE);
-              if (bounce == NULL)
-                break;
+                bounce = malloc (BLOCK_SECTOR_SIZE);
+                if (bounce == NULL)
+                    break;
             }
             struct cache_entry* entry = get_cache_entry_for_sector(sector_idx, false);
             read_from_cache(entry, buffer+bytes_read, sector_ofs, chunk_size);
             release_cache_lock_for_read(&entry->lock);
-          //block_read (fs_device, sector_idx, bounce);
-          //memcpy (buffer + bytes_read, bounce + sector_ofs, chunk_size);
+            //block_read (fs_device, sector_idx, bounce);
+            //memcpy (buffer + bytes_read, bounce + sector_ofs, chunk_size);
         }
-      
-      /* Advance. */
-      size -= chunk_size;
-      offset += chunk_size;
-      bytes_read += chunk_size;
+        
+        /* Advance. */
+        size -= chunk_size;
+        offset += chunk_size;
+        bytes_read += chunk_size;
     }
-  free (bounce);
-
-  return bytes_read;
+    free (bounce);
+    
+    return bytes_read;
 }
 
 /* 
