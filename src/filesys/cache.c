@@ -299,11 +299,15 @@ struct cache_entry* evict(void) {
  */
 struct cache_entry* get_cache_entry_for_sector(int sector_id, bool exclusive) {
     while (true) {
-        lock_acquire(&mappings_lock);
-        int index = check_existing_mappings(sector_id);
-        lock_release(&mappings_lock);
-        if (index != -1) {
+        while (true) {
+            lock_acquire(&mappings_lock);
+            int index = check_existing_mappings(sector_id);
+            //lock_release(&mappings_lock);
+            if (index == -1) {
+                break;
+            }
             struct cache_entry* entry = &cache[index];
+            lock_release(&mappings_lock);
             if (exclusive) {
                 acquire_cache_lock_for_write(&entry->lock);
                 if (entry->sector_id == sector_id) return entry;
@@ -314,7 +318,7 @@ struct cache_entry* get_cache_entry_for_sector(int sector_id, bool exclusive) {
                 release_cache_lock_for_read(&entry->lock);
             }
         }
-        lock_acquire(&mappings_lock);
+        //if we fall through here, we still have the mappings_lock
         struct cache_entry* entry = check_for_unused_entry();
         if (entry == NULL) {
             entry = evict();
