@@ -729,6 +729,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
         /* Advance. */
         size -= chunk_size;
         offset += chunk_size;
+        //here we make the read_ahead call
         bytes_read += chunk_size;
     }
     return bytes_read;
