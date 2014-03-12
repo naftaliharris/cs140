@@ -79,18 +79,10 @@
  -----------------------------------------------------------
  */
 struct inode_disk {
-    //block_sector_t start;             /* First data sector. */
-    off_t length;                       /* File size in bytes. */
-    unsigned magic;                     /* Magic number. */
-    block_sector_t blocks[NUM_BLOCK_IDS_IN_INODE]; /*array containing the sector
-                                                   numbers of blocks that contain
-                                                   file data. Please see comment above
-                                                   for indication as to indexing and
-                                                   indirection, and double indirection. */
-    
-    //uint32_t unused[125];               /* Not used. */
+    off_t length;                                  /* File size in bytes. */
+    unsigned magic;                                /* Magic number. */
+    block_sector_t blocks[NUM_BLOCK_IDS_IN_INODE]; /* block id's of file data */
 };
-
 
 
 /*
@@ -106,7 +98,6 @@ bytes_to_sectors (off_t size)
 }
 
 
-
 /* In-memory inode. */
 /* This is in kernel memory I think */
 struct inode
@@ -118,7 +109,6 @@ struct inode
     int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
     struct lock data_lock;              /* lock protecting internal inode data */
     struct lock extend_inode_lock;      /* ensures writing past EOF and subsequent inode_extension is atomic */
-    //struct inode_disk data;             /* Inode content. */
 };
 
 static bool settup_direct_blocks(struct cache_entry* disk_inode_cache_entry, size_t* num_sectors_needed, size_t* num_sectors_allocated);
@@ -138,6 +128,7 @@ static void add_indirect_blocks(struct inode* inode, off_t* num_blocks_needed, o
 static void add_double_indirect_blocks(struct inode* inode, off_t* num_blocks_needed, off_t* index_of_next_block_to_add);
 static off_t get_indirect_block_index_in_double_indirect_block(off_t index);
 static void add_to_existing_indirect_block(struct cache_entry* double_indirect_block_cache_entry, off_t* num_blocks_needed, off_t* index_of_next_block_to_add);
+static block_sector_t 
 
 
 /*
@@ -211,7 +202,7 @@ static block_sector_t get_double_indirect_block_sector_number(struct cache_entry
 
 
 /*
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  Returns the block device sector that contains byte offset POS
    within INODE.
    Returns -1 if INODE does not contain data for a byte at offset
@@ -224,7 +215,7 @@ static block_sector_t get_double_indirect_block_sector_number(struct cache_entry
     case. 
  NOTE: could have written a new function, but
     that would have been repeated code. 
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  */
 static block_sector_t
 byte_to_sector (const struct inode *inode, off_t pos, bool use_param_length, off_t length_p)
@@ -262,10 +253,10 @@ byte_to_sector (const struct inode *inode, off_t pos, bool use_param_length, off
 
 
 /* 
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  List of open inodes, so that opening a single inode twice
    returns the same `struct inode'. 
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  */
 static struct list open_inodes;
 static struct lock open_inodes_lock;
@@ -279,9 +270,9 @@ inode_init (void)
 }
 
 /*
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  DESCRIPTION: clears direct blocks
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  */
 static void clear_direct_blocks(struct cache_entry* disk_inode_cache_entry, size_t* num_blocks_to_clear) {
     int direct_index;
@@ -297,11 +288,11 @@ static void clear_direct_blocks(struct cache_entry* disk_inode_cache_entry, size
 }
 
 /*
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  DESCRIPTION: clears blocks that are held indirectly, 
     Also, clears the indirect block in the 
     disk_inode_cache_entry.
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  */
 static void clear_indirect_blocks(struct cache_entry* disk_inode_cache_entry, size_t* num_blocks_to_clear, block_sector_t indirect_block_number) {
     if (indirect_block_number == 0) {
@@ -325,9 +316,9 @@ static void clear_indirect_blocks(struct cache_entry* disk_inode_cache_entry, si
 }
 
 /*
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  DESCRIPTION: clears doubly indirect blocks.
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  */
 static void clear_double_indirect_blocks(struct cache_entry* disk_inode_cache_entry, size_t* num_blocks_to_clear) {
     block_sector_t double_indirect_block_number = 0;
@@ -348,7 +339,7 @@ static void clear_double_indirect_blocks(struct cache_entry* disk_inode_cache_en
 }
 
 /*
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  DESCRIPTION: Releases the blocks that the inode currently
     has. 
  NOTE: length tells us how many blocks the inode has
@@ -361,7 +352,7 @@ static void clear_double_indirect_blocks(struct cache_entry* disk_inode_cache_en
     locks for those blocks.
  NOTE: also releases th block for the inode on disk, but does   
     not release the cache entry lock for that block
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  */
 static void release_blocks(struct cache_entry* disk_inode_cache_entry, off_t length) {
     size_t num_blocks_to_clear = bytes_to_sectors(length);
@@ -381,11 +372,11 @@ static void release_blocks(struct cache_entry* disk_inode_cache_entry, off_t len
 }
 
 /*
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  DESCRIPTION: code that sets up the direct blocks
     within the inode.
  NOTE: return true on success, false otherwise
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  */
 static bool settup_direct_blocks(struct cache_entry* disk_inode_cache_entry, size_t* num_sectors_needed, size_t* num_sectors_allocated) {
     
@@ -408,10 +399,10 @@ static bool settup_direct_blocks(struct cache_entry* disk_inode_cache_entry, siz
 }
 
 /*
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  DESCRIPTION: ode that sets up the indirect blocks for 
     an inode. 
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  */
 static bool settup_indirect_blocks(struct cache_entry* disk_inode_cache_entry, size_t* num_sectors_needed, size_t* num_sectors_allocated) {
     
@@ -447,10 +438,10 @@ static bool settup_indirect_blocks(struct cache_entry* disk_inode_cache_entry, s
 }
 
 /*
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  DESCRIPTION: Code that sets up doubly indirect blocks
     in inode
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  */
 static bool settup_double_indirect_blocks(struct cache_entry* disk_inode_cache_entry, size_t* num_sectors_needed, size_t* num_sectors_allocated) {
     
@@ -505,7 +496,7 @@ static bool settup_double_indirect_blocks(struct cache_entry* disk_inode_cache_e
 
 
 /*
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  Initializes an inode with LENGTH bytes of data and
    writes the new inode to sector SECTOR on the file system
    device.
@@ -524,7 +515,7 @@ static bool settup_double_indirect_blocks(struct cache_entry* disk_inode_cache_e
     that local copy to a cache entry at the very end allows
     us to minimize the amount of time we hold the cache
     lock. 
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  */
 bool
 inode_create (block_sector_t sector, off_t length)
@@ -563,11 +554,11 @@ inode_create (block_sector_t sector, off_t length)
 
 
 /*
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  Reads an inode from SECTOR
    and returns a `struct inode' that contains it.
    Returns a null pointer if memory allocation fails. 
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  */
 struct inode *
 inode_open (block_sector_t sector)
@@ -607,9 +598,9 @@ inode_open (block_sector_t sector)
 }
 
 /* 
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  Reopens and returns INODE. 
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  */
 struct inode *
 inode_reopen (struct inode *inode)
@@ -623,9 +614,9 @@ inode_reopen (struct inode *inode)
 }
 
 /* 
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  Returns INODE's inode number. 
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  */
 block_sector_t
 inode_get_inumber (const struct inode *inode)
@@ -634,7 +625,7 @@ inode_get_inumber (const struct inode *inode)
 }
 
 /* 
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  Closes INODE and writes it to disk.
    If this was the last reference to INODE, frees its memory.
    If INODE was also a removed inode, frees its blocks. 
@@ -649,7 +640,7 @@ inode_get_inumber (const struct inode *inode)
     not removing, the file data will be consistent, as if
     it is in the cache, will be written back to block 
     during eviction.
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  */
 void
 inode_close (struct inode *inode)
@@ -681,10 +672,10 @@ inode_close (struct inode *inode)
 }
 
 /* 
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  Marks INODE to be deleted when it is closed by the last caller who
    has it open. 
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  */
 void
 inode_remove (struct inode *inode)
@@ -696,7 +687,7 @@ inode_remove (struct inode *inode)
 }
 
 /* 
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  Reads SIZE bytes from INODE into BUFFER, starting at position OFFSET.
    Returns the number of bytes actually read, which may be less
    than SIZE if an error occurs or end of file is reached. 
@@ -714,7 +705,7 @@ inode_remove (struct inode *inode)
     see itself at EOF, as A has not updated inode_length yet
     and will thus return 0 bytes read. This is acceptable
     behavior as stated in program specification. 
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  */
 off_t
 inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
@@ -762,7 +753,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
 }
 
 /* 
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  Writes SIZE bytes from BUFFER into INODE, starting at OFFSET.
    Returns the number of bytes actually written, which may be
    less than SIZE if end of file is reached or an error occurs.
@@ -791,7 +782,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
     5. Then release the inode lock
     6. Then return the number of bytes written = SIZE
         as we do not count the zero bytes
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  */
 off_t
 inode_write_at (struct inode *inode, const void *buffer_, off_t size,
@@ -809,7 +800,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       if (offset >= inode_length(inode)) {
           lock_acquire(&inode->extend_inode_lock);
           if (offset >= inode_length(inode)) {
-              bytes_written += extend_inode(inode, buffer + bytes_written, size, offset); //note might not be size if we max out the disk space.
+              bytes_written += extend_inode(inode, buffer + bytes_written, size, offset); 
               lock_release(&inode->extend_inode_lock);
               return bytes_written;
           } else {
@@ -851,14 +842,14 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 }
 
 /*
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  DESCRIPTION: Extends the inode writing size bytes from
     buffer to the inode starting at offset bytes into the 
     inode.
  NOTE: Expects that the caller has acquired the lock
     on extedning the inode, namely inode->extend_inode_lock;
  NOTE: because we zero 
- -----------------------------------------------------------
+ ----------------------------------------------------------------------------
  */
 static off_t extend_inode(struct inode* inode, const void* buffer, off_t size, off_t offset) {
     off_t size_ = size;
@@ -922,6 +913,9 @@ static off_t extend_inode(struct inode* inode, const void* buffer, off_t size, o
 }
 
 /*
+ ----------------------------------------------------------------------------
+ DESCRIPTION: 
+ ----------------------------------------------------------------------------
  */
 static void add_direct_blocks(struct inode* inode, off_t* num_blocks_needed, off_t* index_of_next_block_to_add) {
     struct cache_entry* disk_inode_cache_entry = get_cache_entry_for_sector(inode->sector, true);
@@ -943,6 +937,9 @@ static void add_direct_blocks(struct inode* inode, off_t* num_blocks_needed, off
 }
 
 /*
+ ----------------------------------------------------------------------------
+ DESCRIPTION: 
+ ----------------------------------------------------------------------------
  */
 static void add_indirect_blocks(struct inode* inode, off_t* num_blocks_needed, off_t* index_of_next_block_to_add) {
     block_sector_t indirect_block_number = 0;
@@ -981,6 +978,9 @@ static void add_indirect_blocks(struct inode* inode, off_t* num_blocks_needed, o
 }
 
 /*
+ ----------------------------------------------------------------------------
+ DESCRIPTION:
+ ----------------------------------------------------------------------------
  */
 static off_t get_indirect_block_index_in_double_indirect_block(off_t index) {
     index = index - NUM_DIRECT_BLOCKS - (NUM_BLOCK_IDS_PER_BLOCK * NUM_INDIRECT_BLOCKS);
@@ -994,6 +994,9 @@ static off_t get_indirect_block_index_in_double_indirect_block(off_t index) {
 }
 
 /*
+ ----------------------------------------------------------------------------
+ DESCRIPTION: 
+ ----------------------------------------------------------------------------
  */
 static void add_to_existing_indirect_block(struct cache_entry* double_indirect_block_cache_entry, off_t* num_blocks_needed, off_t* index_of_next_block_to_add) {
     off_t indirect_index = get_indirect_block_index_in_double_indirect_block((*index_of_next_block_to_add));
@@ -1020,6 +1023,9 @@ static void add_to_existing_indirect_block(struct cache_entry* double_indirect_b
 
 
 /*
+ ----------------------------------------------------------------------------
+ DESCRIPTION: 
+ ----------------------------------------------------------------------------
  */
 static void add_double_indirect_blocks(struct inode* inode, off_t* num_blocks_needed, off_t* index_of_next_block_to_add) {
     
@@ -1082,6 +1088,9 @@ static void add_double_indirect_blocks(struct inode* inode, off_t* num_blocks_ne
 
 
 /*
+ ----------------------------------------------------------------------------
+ DESCRIPTION: 
+ ----------------------------------------------------------------------------
  */
 static void add_blocks_to_inode(struct inode* inode, off_t num_blocks_needed, off_t index_of_next_block_to_add) {
     if (index_of_next_block_to_add < (NUM_DIRECT_BLOCKS)) {
@@ -1105,10 +1114,10 @@ static void add_blocks_to_inode(struct inode* inode, off_t num_blocks_needed, of
 
 
 /*
- -----------------------------------------------------------
+ ---------------------------------------------------------------------------
  Disables writes to INODE.
    May be called at most once per inode opener. 
- -----------------------------------------------------------
+ ---------------------------------------------------------------------------
  */
 void
 inode_deny_write (struct inode *inode)
@@ -1123,11 +1132,11 @@ inode_deny_write (struct inode *inode)
 
 
 /* 
- -----------------------------------------------------------
+ ---------------------------------------------------------------------------
  Re-enables writes to INODE.
    Must be called once by each inode opener who has called
    inode_deny_write() on the inode, before closing the inode. 
- -----------------------------------------------------------
+ ---------------------------------------------------------------------------
  */
 void
 inode_allow_write (struct inode *inode)
@@ -1142,9 +1151,9 @@ inode_allow_write (struct inode *inode)
 
 
 /* 
- -----------------------------------------------------------
+ ---------------------------------------------------------------------------
  Returns the length, in bytes, of INODE's data. 
- -----------------------------------------------------------
+ ---------------------------------------------------------------------------
  */
 off_t
 inode_length (const struct inode *inode)
