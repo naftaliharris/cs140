@@ -128,6 +128,7 @@ void init_cache(void) {
  -----------------------------------------------------------
  */
 void cache_free(void) {
+    can_flush = false;
     int i;
     for (i = 0; i < NUM_CACHE_ENTRIES; i++) {
         int index = i * NUM_CACHE_ENTRIES_PER_PAGE;

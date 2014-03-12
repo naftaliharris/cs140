@@ -133,9 +133,9 @@ static block_sector_t get_indirect_block_sector_number(struct cache_entry* disk_
 static block_sector_t get_double_indirect_block_sector_number(struct cache_entry* disk_inode_cache_entry, unsigned index);
 static off_t extend_inode(struct inode* inode, const void* buffer, off_t size, off_t offset);
 static void add_blocks_to_inode(struct inode* inode, off_t num_blocks_needed, off_t index_of_next_block_to_add);
-static void add_direct_blocks(struct cache_entry* disk_inode_cache_entry, off_t* num_blocks_needed, off_t* index_of_next_block_to_add);
-static void add_indirect_blocks(struct cache_entry* disk_inode_cache_entry, off_t* num_blocks_needed, off_t* index_of_next_block_to_add);
-static void add_double_indirect_blocks(struct cache_entry* disk_inode_cache_entry, off_t* num_blocks_needed, off_t* index_of_next_block_to_add);
+static void add_direct_blocks(struct inode* inode, off_t* num_blocks_needed, off_t* index_of_next_block_to_add);
+static void add_indirect_blocks(struct inode* inode, off_t* num_blocks_needed, off_t* index_of_next_block_to_add);
+static void add_double_indirect_blocks(struct inode* inode, off_t* num_blocks_needed, off_t* index_of_next_block_to_add);
 static off_t get_indirect_block_index_in_double_indirect_block(off_t index);
 static void add_to_existing_indirect_block(struct cache_entry* double_indirect_block_cache_entry, off_t* num_blocks_needed, off_t* index_of_next_block_to_add);
 
@@ -923,7 +923,8 @@ static off_t extend_inode(struct inode* inode, const void* buffer, off_t size, o
 
 /*
  */
-static void add_direct_blocks(struct cache_entry* disk_inode_cache_entry, off_t* num_blocks_needed, off_t* index_of_next_block_to_add) {
+static void add_direct_blocks(struct inode* inode, off_t* num_blocks_needed, off_t* index_of_next_block_to_add) {
+    struct cache_entry* disk_inode_cache_entry = get_cache_entry_for_sector(inode->sector, true);
     while (true) {
         if ((*index_of_next_block_to_add) >= NUM_DIRECT_BLOCKS) break;
         if ((*num_blocks_needed) == 0) break;
@@ -938,15 +939,29 @@ static void add_direct_blocks(struct cache_entry* disk_inode_cache_entry, off_t*
         (*num_blocks_needed)--;
         (*index_of_next_block_to_add)++;
     }
+    release_cache_lock_for_write(&disk_inode_cache_entry->lock);
 }
 
 /*
  */
-static void add_indirect_blocks(struct cache_entry* disk_inode_cache_entry, off_t* num_blocks_needed, off_t* index_of_next_block_to_add) {
-    
+static void add_indirect_blocks(struct inode* inode, off_t* num_blocks_needed, off_t* index_of_next_block_to_add) {
     block_sector_t indirect_block_number = 0;
     off_t offset_of_indirect_block_id = sizeof(off_t) + sizeof(unsigned) + (NUM_DIRECT_BLOCKS * sizeof(block_sector_t));
-    read_from_cache(disk_inode_cache_entry, &indirect_block_number, offset_of_indirect_block_id, sizeof(block_sector_t));
+    if ((*index_of_next_block_to_add) == NUM_DIRECT_BLOCKS) {
+        //alocate a block for the indrect block in the inode and store block id in inode
+        bool success = free_map_allocate(1, &indirect_block_number);
+        if (success == false) {
+            ASSERT(0 == 1);
+        }
+        struct cache_entry* disk_inode_cache_entry = get_cache_entry_for_sector(inode->sector, true);
+        write_to_cache(disk_inode_cache_entry, &indirect_block_number, offset_of_indirect_block_id, sizeof(block_sector_t));
+        release_cache_lock_for_write(&disk_inode_cache_entry->lock);
+    } else {
+        //otherwise, it has allready been allocated, so read it
+        struct cache_entry* disk_inode_cache_entry = get_cache_entry_for_sector(inode->sector, false);
+        read_from_cache(disk_inode_cache_entry, &indirect_block_number, offset_of_indirect_block_id, sizeof(block_sector_t));
+        release_cache_lock_for_read(&disk_inode_cache_entry->lock);
+    }
     struct cache_entry* indirect_block_cache_entry = get_cache_entry_for_sector(indirect_block_number, true);
     while (true) {
         if ((*index_of_next_block_to_add) >= NUM_DIRECT_BLOCKS + NUM_BLOCK_IDS_PER_BLOCK) break;
@@ -1006,11 +1021,25 @@ static void add_to_existing_indirect_block(struct cache_entry* double_indirect_b
 
 /*
  */
-static void add_double_indirect_blocks(struct cache_entry* disk_inode_cache_entry, off_t* num_blocks_needed, off_t* index_of_next_block_to_add) {
+static void add_double_indirect_blocks(struct inode* inode, off_t* num_blocks_needed, off_t* index_of_next_block_to_add) {
     
     block_sector_t double_indirect_block_number = 0;
     off_t offset_of_double_indirect_block_id = sizeof(off_t) + sizeof(unsigned) + ((NUM_DIRECT_BLOCKS + NUM_INDIRECT_BLOCKS) * sizeof(block_sector_t));
-    read_from_cache(disk_inode_cache_entry, &double_indirect_block_number, offset_of_double_indirect_block_id, sizeof(block_sector_t));
+    if ((*index_of_next_block_to_add) == NUM_DIRECT_BLOCKS + (NUM_BLOCK_IDS_PER_BLOCK*NUM_INDIRECT_BLOCKS)) {
+        //allocate the doubly indirect block for the inode
+        bool success = free_map_allocate(1, &double_indirect_block_number);
+        if (success == false) {
+            ASSERT(0 == 1);
+        }
+        struct cache_entry* disk_inode_cache_entry = get_cache_entry_for_sector(inode->sector, true);
+        write_to_cache(disk_inode_cache_entry, &double_indirect_block_number, offset_of_double_indirect_block_id, sizeof(block_sector_t));
+        release_cache_lock_for_write(&disk_inode_cache_entry->lock);
+    } else {
+        //read block id of doubly indirect block from inode
+        struct cache_entry* disk_inode_cache_entry = get_cache_entry_for_sector(inode->sector, false);
+        read_from_cache(disk_inode_cache_entry, &double_indirect_block_number, offset_of_double_indirect_block_id, sizeof(block_sector_t));
+        release_cache_lock_for_read(&disk_inode_cache_entry->lock);
+    }
     struct cache_entry* double_indirect_block_cache_entry = get_cache_entry_for_sector(double_indirect_block_number, true);
     if (((*index_of_next_block_to_add) - NUM_DIRECT_BLOCKS - (NUM_BLOCK_IDS_PER_BLOCK*NUM_INDIRECT_BLOCKS)) % NUM_BLOCK_IDS_PER_BLOCK != 0) {
         add_to_existing_indirect_block(double_indirect_block_cache_entry, num_blocks_needed, index_of_next_block_to_add);
@@ -1055,25 +1084,22 @@ static void add_double_indirect_blocks(struct cache_entry* disk_inode_cache_entr
 /*
  */
 static void add_blocks_to_inode(struct inode* inode, off_t num_blocks_needed, off_t index_of_next_block_to_add) {
-    struct cache_entry* disk_inode_cache_entry = get_cache_entry_for_sector(inode->sector, true);
-    
     if (index_of_next_block_to_add < (NUM_DIRECT_BLOCKS)) {
-        add_direct_blocks(disk_inode_cache_entry, &num_blocks_needed, &index_of_next_block_to_add);
+        add_direct_blocks(inode, &num_blocks_needed, &index_of_next_block_to_add);
         if (num_blocks_needed > 0) {
-            add_indirect_blocks(disk_inode_cache_entry, &num_blocks_needed, &index_of_next_block_to_add);
+            add_indirect_blocks(inode, &num_blocks_needed, &index_of_next_block_to_add);
         }
         if (num_blocks_needed > 0) {
-            add_double_indirect_blocks(disk_inode_cache_entry, &num_blocks_needed, &index_of_next_block_to_add);
+            add_double_indirect_blocks(inode, &num_blocks_needed, &index_of_next_block_to_add);
         }
     } else if (index_of_next_block_to_add < NUM_DIRECT_BLOCKS + (NUM_BLOCK_IDS_PER_BLOCK)) {
-        add_indirect_blocks(disk_inode_cache_entry, &num_blocks_needed, &index_of_next_block_to_add);
+        add_indirect_blocks(inode, &num_blocks_needed, &index_of_next_block_to_add);
         if (num_blocks_needed > 0) {
-            add_double_indirect_blocks(disk_inode_cache_entry, &num_blocks_needed, &index_of_next_block_to_add);
+            add_double_indirect_blocks(inode, &num_blocks_needed, &index_of_next_block_to_add);
         }
     } else {
-        add_double_indirect_blocks(disk_inode_cache_entry, &num_blocks_needed, &index_of_next_block_to_add);
+        add_double_indirect_blocks(inode, &num_blocks_needed, &index_of_next_block_to_add);
     }
-    release_cache_lock_for_write(&disk_inode_cache_entry->lock);
 }
 
 
