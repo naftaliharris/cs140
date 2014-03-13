@@ -158,6 +158,9 @@ struct thread
     
     
     //END PROJECT 2 ADDITIONS//
+    
+    /* current working directory */
+    struct dir* curr_dir;
 #endif
     
     /* Owned by thread.c. */

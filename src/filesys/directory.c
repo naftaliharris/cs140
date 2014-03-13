@@ -316,3 +316,78 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
     }
     return false;
 }
+
+
+/* 
+ ----------------------------------------------------------------------------
+ Resolves a path name and current working directory into the inode that it
+ points to.
+ Returns the final inode, or NULL if it fails.
+ The caller must close the returned inode.
+ It can fail if:
+  * A file name exceeds NAME_MAX
+  * A file is treated as a directory when it is not
+  * Failure in dir_open (calloc returns NULL)
+ ----------------------------------------------------------------------------
+ */
+struct inode*
+dir_resolve_path(char* path, struct dir* cwd) {
+  char* offset = path;
+  struct inode* lastInode;
+  
+  // decide if we use root or cwd
+  if(path[0] == '/') {
+    lastInode = inode_open(ROOT_DIR_SECTOR);
+    offset++;
+  } else {
+    lastInode = inode_reopen(cwd->inode);
+  }
+  
+  char fileName[NAME_MAX + 1];
+  
+  while(true) {
+    // skip all /'s
+    while(*offset == '/')
+      offset++;
+    
+    // Ensures that even if file name ends with /'s we have no problem
+    if(*offset == NULL) {
+      return lastInode;
+    }
+    
+    // As we're looking for the next file name the last one must be a directory
+    if(!lastInode->is_directory) {
+      inode_close(lastInode);
+      return NULL;
+    }
+    
+    // Copy file name into our own array
+    int i;
+    for(i = 0; *offset != '/' && offset != NULL; i++,offset++) {
+      // If we reach this then we have exceeded our file name length
+      if(i == NAME_MAX) {
+        inode_close(lastInode);
+        return NULL;
+      }
+      
+      fileName[i] = *offset;
+    }
+    // Make sure to null-terminate the array
+    fileName[i] = '\0';
+    
+    // dir_open will call inode_close for us
+    struct dir* lastInodeAsDir = dir_open(lastInode);
+    if(lastInodeAsDir == NULL) {
+      return NULL;
+    }
+    
+    // Find the next file name
+    // Overwriting lastInode is fine, as dir_close will close the former value
+    bool lookupResult = dir_lookup(lastInodeAsDir, fileName, &lastInode);
+    dir_close(lastInodeAsDir);
+    if(!lookupResult) {
+      return NULL;
+    }
+  }
+  NOT_REACHED();
+}

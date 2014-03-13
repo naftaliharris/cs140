@@ -939,8 +939,10 @@ static void init_child_managment_info(struct thread* t) {
     
     if (t == initial_thread) {
         t->parent_thread = NULL;
+        t->curr_dir = dir_open_root();
     } else {
         t->parent_thread = thread_current();
+        t->curr_dir = dir_reopen(thread_current()->curr_dir);
     }
     
 }

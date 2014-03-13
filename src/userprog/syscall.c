@@ -46,6 +46,12 @@ static void LP_close (int fd);
 // END   LP DEFINED SYSTEM CALL HANDLERS //
 
 
+static bool chdir(const char* dir);
+static bool mkdir(const char* dir);
+static bool readdir(int fd, char* name);
+static bool isdir(int fd);
+static int inumber(int fd);
+
 /*
  --------------------------------------------------------------------
  Description: we do any file system initialization here. 
@@ -132,6 +138,27 @@ syscall_handler (struct intr_frame *f )
             arg1 = read_frame(f, 4);
             LP_close((int)arg1);
             break;
+        case SYS_CHDIR:
+          arg1 = read_frame(f, 4);
+          f->eax = (uint32_t)chdir((const char*)arg1);
+          break;
+        case SYS_MKDIR:
+          arg1 = read_frame(f, 4);
+          f->eax = (uint32_t)mkdir((const char*)arg1);
+          break;
+        case SYS_READDIR:
+          arg1 = read_frame(f, 4);
+          arg2 = read_frame(f, 8);
+          f->eax = (uint32_t)readdir((int)arg1, (char*)arg2);
+          break;
+        case SYS_ISDIR:
+          arg1 = read_frame(f, 4);
+          f->eax = (uint32_t)isdir((int)arg1);
+          break;
+        case SYS_INUMBER:
+          arg1 = read_frame(f, 4);
+          f->eax = (uint32_t)inumber((int)arg1);
+          break;
         default:
             LP_exit(-1); //should never get here. If we do, exit with -1.
             break;
@@ -431,6 +458,83 @@ static void LP_close (int fd) {
     lock_release(&file_system_lock);
     free(package);
 }
+
+
+
+
+
+/*
+ --------------------------------------------------------------------
+ Description: Changes the current working directory of the process to
+  dir, which may be relative or absolute. Returns true if successful,
+  false on failure.
+ --------------------------------------------------------------------
+ */
+static bool chdir(const char* dir) {
+}
+
+/*
+ --------------------------------------------------------------------
+ Description: Creates the directory named dir, which may be relative
+  or absolute. Returns true if successful, false on failure. Fails if
+  dir already exists or if any directory name in dir, besides the
+  last, does not already exist.
+ --------------------------------------------------------------------
+ */
+static bool mkdir(const char* dir) {
+}
+
+/*
+ --------------------------------------------------------------------
+ Description: Reads a directory entry from file descriptor fd, which
+  must represent a directory. If successful, stores the
+  null-terminated file name in name, which must have room for
+  READDIR_MAX_LEN + 1 bytes, and returns true. If no entries are left
+  in the directory, returns false.
+ --------------------------------------------------------------------
+ */
+static bool readdir(int fd, char* name) {
+}
+
+/*
+ --------------------------------------------------------------------
+ Description: Returns true if fd represents a directory, false if it
+  represents an ordinary file.
+ --------------------------------------------------------------------
+ */
+static bool isdir(int fd) {
+  lock_acquire(&file_system_lock);
+  struct file_package* package = get_file_package_from_open_list(fd);
+  if (package == NULL) {
+      lock_release(&file_system_lock);
+      LP_exit(-1);
+  }
+  bool result = package->fp->inode->is_directory;
+  lock_release(&file_system_lock);
+  return result;
+}
+
+/*
+ --------------------------------------------------------------------
+ Description: Returns the inode number of the inode associated with
+  fd, which may represent an ordinary file or a directory.
+ --------------------------------------------------------------------
+ */
+static int inumber(int fd) {
+  lock_acquire(&file_system_lock);
+  struct file_package* package = get_file_package_from_open_list(fd);
+  if (package == NULL) {
+      lock_release(&file_system_lock);
+      LP_exit(-1);
+  }
+  int result = (int)(package->fp->inode->sector);
+  lock_release(&file_system_lock);
+  return result;
+}
+
+
+
+
 
 /*
  --------------------------------------------------------------------
