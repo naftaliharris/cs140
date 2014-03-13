@@ -504,7 +504,15 @@ void release_cache_lock_for_read(struct cache_lock* lock) {
     lock_release(&lock->internal_lock);
 }
 
-
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: try lock for the shared cache entry locks. 
+    Used during eviction so that processes do not
+    wait on cache entry's that are in I/O. 
+ NOTE: in this case, we are attempting to acquire the shared
+    lock for write purposes.
+ -----------------------------------------------------------
+ */
 bool try_acquire_cache_lock_for_write(struct cache_lock* lock) {
     lock_acquire(&lock->internal_lock);
     if (lock->i == 0) {
@@ -516,6 +524,15 @@ bool try_acquire_cache_lock_for_write(struct cache_lock* lock) {
     return false;
 }
 
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: try lock for the shared cache entry locks.
+    Used during eviction so that processes do not
+    wait on cache entry's that are in I/O.
+ NOTE: in this case, we are attempting to acquire the shared
+    lock for read purposes.
+ -----------------------------------------------------------
+ */
 bool try_acquire_cache_lock_for_read(struct cache_lock* lock) {
     lock_acquire(&lock->internal_lock);
     if (lock->i >= -1) {

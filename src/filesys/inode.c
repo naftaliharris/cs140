@@ -7,6 +7,7 @@
 #include "filesys/free-map.h"
 #include "threads/malloc.h"
 #include "filesys/cache.h"
+#include "threads/thread.h"
 
 //TO-DO:
 //1.Add a lock to the free_map so that it is synchronized
@@ -779,7 +780,17 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
         /* Advance. */
         size -= chunk_size;
         offset += chunk_size;
-        //here we make the read_ahead call. 
+        //here we make the read_ahead call if necesary.
+        block_sector_t read_ahead_block = byte_to_sector (inode, offset, false, 0);
+        if (read_ahead_block != sector_idx && (int)read_ahead_block != -1) {
+            struct read_ahead_package* request = malloc(sizeof(struct read_ahead_package));
+            if (request != NULL) {
+                request->sector_number = read_ahead_block;
+                lock_acquire(&read_ahead_requests_list_lock);
+                list_push_back(&read_ahead_requests_list, &request->elem);
+                lock_release(&read_ahead_requests_list_lock);
+            }
+        }
         bytes_read += chunk_size;
     }
     return bytes_read;

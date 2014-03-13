@@ -57,6 +57,8 @@ static bool should_update_thread_priorities;
 
 
 
+
+
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame 
   {
@@ -106,6 +108,7 @@ static void init_vital_info(struct thread* t);
 
 /* LP Project 4 additions */
 void flush_cache_function(void* aux UNUSED);
+void process_read_ahead_list(void* aux UNUSED);
 
 
 /*
@@ -270,7 +273,9 @@ void thread_init (void)
     /*Here we initialize the thread system. */
     /*We do any thread_system init here */
     lock_init (&tid_lock);
-    lock_init(&file_system_lock);
+    lock_init (&file_system_lock);
+    lock_init (&read_ahead_requests_list_lock);
+    list_init (&read_ahead_requests_list);
     list_init (&ready_list);
     list_init (&all_list);
     list_init (&cpu_changed_list);
@@ -299,13 +304,17 @@ void thread_start (void)
     init_vital_info(initial_thread);
     thread_create ("idle", PRI_MIN, idle, &idle_started);
     
-    thread_create("flushing_thread", PRI_DEFAULT, flush_cache_function, NULL);
-    
     /* Start preemptive thread scheduling. */
     intr_enable ();
     
     /* Wait for the idle thread to initialize idle_thread. */
     sema_down (&idle_started);
+    
+    /* create flusing cache thread */
+    thread_create("flushing_thread", PRI_DEFAULT, flush_cache_function, NULL);
+    
+    /* create read_ahead_thread */
+    thread_create("read_ahead_thread", PRI_DEFAULT, process_read_ahead_list, NULL);
 }
 
 
@@ -1207,6 +1216,32 @@ void flush_cache_function(void* aux UNUSED) {
             flush_cache();
         }
         timer_sleep((uint64_t)NUM_TICKS_TO_SLEEP);
+    }
+}
+
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: Thread performing read ahead.
+ NOTE: Important to yield after thread has processed the list
+    as after completing list processing, there is no useful 
+    work to be done until another thread gets scheduled that can 
+    add an element to the read ahead list
+ NOTE: Must free the request struct, as it is malloced
+    by thread making the request.
+ --------------------------------------------------------------------
+ */
+void process_read_ahead_list(void* aux UNUSED) {
+    while (true) {
+        lock_acquire(&read_ahead_requests_list_lock);
+        while (!list_empty(&read_ahead_requests_list)) {
+            struct list_elem* curr = list_pop_front(&read_ahead_requests_list);
+            struct read_ahead_package* request = list_entry(curr, struct read_ahead_package, elem);
+            struct cache_entry* entry = get_cache_entry_for_sector(request->sector_number, false);
+            release_cache_lock_for_read(&entry->lock);
+            free(request);
+        }
+        lock_release(&read_ahead_requests_list_lock);
+        thread_yield();
     }
 }
 

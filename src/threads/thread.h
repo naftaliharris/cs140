@@ -204,6 +204,22 @@ struct file_package {
     struct list_elem elem; //so it can be placed in a list
 };
 
+/*
+ ----------------------------------------------------------------
+ DESCRIPTION: Allows threads to communicate to the read_ahead 
+    thread the sector numbers that they will need to have
+    read ahead.
+ ----------------------------------------------------------------
+ */
+struct read_ahead_package {
+    unsigned sector_number; /* sector to read */
+    struct list_elem elem;
+};
+
+struct list read_ahead_requests_list;      /* list of read_ahead_packages */
+struct lock read_ahead_requests_list_lock; /* race condition protection */
+                                            
+
 /* global lock to be used for file_system access */
 struct lock file_system_lock;
 
