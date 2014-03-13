@@ -81,7 +81,6 @@
 struct inode_disk {
     off_t length;                                  /* File size in bytes. */
     bool is_directory;                             /* true if inode represents a directory, false for files */
-    to do: update offsets of inodes for is_directory, then update call to inode_create 
     unsigned magic;                                /* Magic number. */
     block_sector_t blocks[NUM_BLOCK_IDS_IN_INODE]; /* block id's of file data */
 };
@@ -117,6 +116,7 @@ struct inode
     block_sector_t sector;              /* Sector number of disk location. */
     int open_cnt;                       /* Number of openers. */
     bool removed;                       /* True if deleted, false otherwise. */
+    bool is_directory;                  /* True if is direcrtory, false otherwise. Set on call to inode_open, as it is read from disk_inode */
     int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
     struct lock data_lock;              /* lock protecting internal inode data */
     struct lock extend_inode_lock;      /* ensures writing past EOF and subsequent inode_extension is atomic */
@@ -140,7 +140,7 @@ static void add_indirect_blocks(struct inode* inode, off_t* num_blocks_needed, o
 static void add_double_indirect_blocks(struct inode* inode, off_t* num_blocks_needed, off_t* index_of_next_block_to_add);
 static off_t get_indirect_block_index_in_double_indirect_block(off_t index);
 static void add_to_existing_indirect_block(struct cache_entry* double_indirect_block_cache_entry, off_t* num_blocks_needed, off_t* index_of_next_block_to_add);
-static block_sector_t 
+
 
 
 /*
@@ -582,6 +582,10 @@ inode_create (block_sector_t sector, off_t length, bool is_directory)
     have to update the inode data when this happens. Thus, 
     we store all inode disk data on disk, and keep a sector 
     number as access to disk when needed. 
+ NOTE: We do not release the open_inodes_lock if we do not
+    find an inode in the list, because we want inode creation
+    to be atomic. Otherwise, there could be multiple inodes
+    in the list for the same file. 
  ----------------------------------------------------------------------------
  */
 struct inode *
@@ -603,7 +607,6 @@ inode_open (block_sector_t sector)
             return inode;
         }
     }
-    
     /* Allocate memory. */
     inode = malloc (sizeof *inode);
     if (inode == NULL)
@@ -617,6 +620,11 @@ inode_open (block_sector_t sector)
     lock_init(&inode->data_lock);
     lock_init(&inode->extend_inode_lock);
     lock_init(&inode->directory_lock);
+    struct cache_entry* disk_inode_cache_entry = get_cache_entry_for_sector(sector, false);
+    bool is_directory;
+    read_from_cache(disk_inode_cache_entry, &is_directory, sizeof(off_t), sizeof(bool));
+    release_cache_lock_for_read(&disk_inode_cache_entry->lock);
+    inode->is_directory = is_directory;
     list_push_front (&open_inodes, &inode->elem);
     lock_release(&open_inodes_lock);
     return inode;
@@ -1190,3 +1198,4 @@ inode_length (const struct inode *inode)
     release_cache_lock_for_read(&disk_inode_cache_entry->lock);
     return length;
 }
+
