@@ -749,7 +749,8 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
     
     while (size > 0) {
         /* check for reading past EOF */
-        if (offset > inode_length(inode)) {
+        off_t inode_len = inode_length(inode);
+        if (offset >= inode_len) {
             break;
         }
         
@@ -841,7 +842,8 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   while (size > 0) {
       
       /* if offset is greater than current length of inode, we extend, must be atomic, so acquire inode_extend lock */
-      if (offset >= inode_length(inode)) {
+      off_t inode_len = inode_length(inode);
+      if (offset >= inode_len) {
           lock_acquire(&inode->extend_inode_lock);
           if (offset >= inode_length(inode)) {
               bytes_written += extend_inode(inode, buffer + bytes_written, size, offset); 

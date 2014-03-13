@@ -1224,7 +1224,7 @@ void flush_cache_function(void* aux UNUSED) {
  DESCRIPTION: Thread performing read ahead.
  NOTE: Important to yield after thread has processed the list
     as after completing list processing, there is no useful 
-    work to be done until another thread gets scheduled that can 
+    work to be done until another thread gets scheduled that can
     add an element to the read ahead list
  NOTE: Must free the request struct, as it is malloced
     by thread making the request.

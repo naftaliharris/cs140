@@ -237,9 +237,9 @@ static bool LP_create (const char *file, unsigned initial_size) {
     if (!check_file_name_length(file)) {
         return false;
     }
-    lock_acquire(&file_system_lock);
+    //lock_acquire(&file_system_lock);
     bool outcome = filesys_create(file, initial_size);
-    lock_release(&file_system_lock);
+    //lock_release(&file_system_lock);
     
     return outcome;
 }
@@ -260,9 +260,9 @@ static bool LP_remove (const char *file) {
         return -1;
     }
     
-    lock_acquire(&file_system_lock);
+    //lock_acquire(&file_system_lock);
     bool outcome = filesys_remove(file);
-    lock_release(&file_system_lock);
+    //lock_release(&file_system_lock);
     
     return outcome;
 }
@@ -279,14 +279,14 @@ static int LP_open (const char *file) {
     if (!check_file_name_length(file)) {
         return -1;
     }
-    lock_acquire(&file_system_lock);
+    //lock_acquire(&file_system_lock);
     struct file* fp = filesys_open(file);
     if (fp == NULL) {
-        lock_release(&file_system_lock);
+        //lock_release(&file_system_lock);
         return -1;
     }
     int fd = add_to_open_file_list(fp);
-    lock_release(&file_system_lock);
+    //lock_release(&file_system_lock);
     return fd;
 }
 
@@ -297,14 +297,14 @@ static int LP_open (const char *file) {
  --------------------------------------------------------------------
  */
 static int LP_filesize (int fd) {
-    lock_acquire(&file_system_lock);
+    //lock_acquire(&file_system_lock);
     struct file* fp = get_file_from_open_list(fd);
     if (fp == NULL) {
-        lock_release(&file_system_lock);
+        //lock_release(&file_system_lock);
         return -1;
     }
     off_t size = file_length(fp);
-    lock_release(&file_system_lock);
+    //lock_release(&file_system_lock);
     return (int)size;
 }
 
@@ -328,15 +328,15 @@ static int LP_read (int fd, void *buffer, unsigned length) {
         return length;
     }
     
-    lock_acquire(&file_system_lock);
+    //lock_acquire(&file_system_lock);
     struct file_package* package = get_file_package_from_open_list(fd);
     if (package == NULL) {
-        lock_release(&file_system_lock);
+        //lock_release(&file_system_lock);
         return -1;
     }
     int num_bytes_read = file_read_at(package->fp, buffer, length, package->position);
     package->position += num_bytes_read;
-    lock_release(&file_system_lock);
+    //lock_release(&file_system_lock);
     return num_bytes_read;
 }
 
@@ -355,15 +355,15 @@ static int LP_write (int fd, const void *buffer, unsigned length) {
         return length;
     }
     
-    lock_acquire(&file_system_lock);
+    //lock_acquire(&file_system_lock);
     struct file_package* package = get_file_package_from_open_list(fd);
     if (package == NULL) {
-        lock_release(&file_system_lock);
+        //lock_release(&file_system_lock);
         return -1;
     }
     int num_bytes_written = file_write_at(package->fp, buffer, length, package->position);
     package->position += num_bytes_written;
-    lock_release(&file_system_lock);
+    //lock_release(&file_system_lock);
     return num_bytes_written;
 }
 
@@ -378,14 +378,14 @@ static int LP_write (int fd, const void *buffer, unsigned length) {
  --------------------------------------------------------------------
  */
 static void LP_seek (int fd, unsigned position) {
-    lock_acquire(&file_system_lock);
+    //lock_acquire(&file_system_lock);
     struct file_package* package = get_file_package_from_open_list(fd);
     if (package == NULL) {
-        lock_release(&file_system_lock);
+        //lock_release(&file_system_lock);
         LP_exit(-1);
     }
     package->position = position;
-    lock_release(&file_system_lock);
+    //lock_release(&file_system_lock);
 }
 
 /*
@@ -399,14 +399,14 @@ static void LP_seek (int fd, unsigned position) {
  --------------------------------------------------------------------
  */
 static unsigned LP_tell (int fd) {
-    lock_acquire(&file_system_lock);
+    //lock_acquire(&file_system_lock);
     struct file_package* package = get_file_package_from_open_list(fd);
     if (package == NULL) {
-        lock_release(&file_system_lock);
+        //lock_release(&file_system_lock);
         LP_exit(-1);
     }
     unsigned position = package->position;
-    lock_release(&file_system_lock);
+    //lock_release(&file_system_lock);
     return position;
 }
 
@@ -420,15 +420,15 @@ static unsigned LP_tell (int fd) {
  --------------------------------------------------------------------
  */
 static void LP_close (int fd) {
-    lock_acquire(&file_system_lock);
+    //lock_acquire(&file_system_lock);
     struct file_package* package = get_file_package_from_open_list(fd);
     if (package == NULL) {
-        lock_release(&file_system_lock);
+        //lock_release(&file_system_lock);
         LP_exit(-1);
     }
     file_close(package->fp);
     list_remove(&package->elem);
-    lock_release(&file_system_lock);
+    //lock_release(&file_system_lock);
     free(package);
 }
 
