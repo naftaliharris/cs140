@@ -44,12 +44,12 @@ bool dir_create (block_sector_t sector, block_sector_t parent_sector, size_t ent
     if (creation_success == true) {
         struct inode* directory_inode = inode_open(sector);
         struct dir* newly_created_directory = dir_open(directory_inode);
-        bool success1 = dir_add(dir, SELF_DIRECTORY_STRING, sector);
+        bool success1 = dir_add(newly_created_directory, SELF_DIRECTORY_STRING, sector);
         if (success1 == false) {
             dir_close(newly_created_directory);
             return false;
         }
-        bool success2 = dir_add(dir, PARENT_DIRECTORY_STRING, parent_sector);
+        bool success2 = dir_add(newly_created_directory, PARENT_DIRECTORY_STRING, parent_sector);
         if (success2 == false) {
             dir_close(newly_created_directory);
             return false;
