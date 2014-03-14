@@ -6,9 +6,9 @@
 #include "filesys/inode.h"
 #include "threads/malloc.h"
 
-/* Directory Constants */
-static char* PARENT_DIRECTORY_STRING = "..";
-static char* SELF_DIRECTORY_STRING = ".";
+  /* Directory Constants */
+const char* PARENT_DIRECTORY_STRING = "..";
+const char* SELF_DIRECTORY_STRING = ".";
 
 /* A single directory entry. */
 struct dir_entry 

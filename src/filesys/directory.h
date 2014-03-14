@@ -19,6 +19,10 @@ struct dir
     off_t pos;                          /* Current position. */
   };
 
+  /* Directory Constants */
+const char* PARENT_DIRECTORY_STRING;
+const char* SELF_DIRECTORY_STRING;
+  
 /* Opening and closing directories. */
 bool dir_create (block_sector_t sector, block_sector_t parent_sector, size_t entry_cnt);
 struct dir *dir_open (struct inode *);

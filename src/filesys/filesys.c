@@ -92,6 +92,10 @@ filesys_open (const char *name)
     return NULL;
   }
 
+  // Will only happen with 'filesys_open("/")'
+  if(*(name + fileNameOffset) == '\0') {
+    return file_open(inode_open (ROOT_DIR_SECTOR));
+  }
   dir_lookup (parentDir, name + fileNameOffset, &inode);
   dir_close(parentDir);
 
@@ -110,10 +114,15 @@ filesys_remove (const char *name)
   int fileNameOffset;
   struct inode* dirInode = dir_resolve_path(name, thread_current()->curr_dir, &fileNameOffset, true);
   struct dir* parentDir = NULL;
-  // failed to open directory
-  if(!(dirInode->is_directory && (parentDir = dir_open(dirInode)))) {
+  // failed to open directory, or called 'filesys_remove("/")'
+  if(!(dirInode->is_directory && (parentDir = dir_open(dirInode))) || *(name + fileNameOffset) == '\0') {
     dir_close(parentDir);
     return NULL;
+  }
+  
+  if(strcmp(name + fileNameOffset, SELF_DIRECTORY_STRING) == 0 || strcmp(name + fileNameOffset, PARENT_DIRECTORY_STRING) == 0) {
+    dir_close(parentDir);
+    return false;
   }
 
   success = dir_remove (parentDir, name + fileNameOffset);
