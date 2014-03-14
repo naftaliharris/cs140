@@ -25,7 +25,6 @@ static void check_usr_string(const char* str);
 static void check_usr_buffer(const void* buffer, unsigned length);
 static uint32_t read_frame(struct intr_frame* f, int byteOffset);
 static int add_to_open_file_list(struct file* fp);
-static struct file* get_file_from_open_list(int fd);
 static struct file_package* get_file_package_from_open_list(int fd);
 // END LP DEFINED HELPER FUNCTIONS  //
 
@@ -264,10 +263,11 @@ static bool LP_create (const char *file, unsigned initial_size) {
     lock_acquire(&file_system_lock);
     int fileName;
     struct inode* dirInode = dir_resolve_path(file, thread_current()->curr_dir, &fileName, true);
-    struct dir* parentDir;
+    struct dir* parentDir = NULL;
     // failed to open directory
-    if(!(dirInode->is_directory && parentDir = dir_open(dirInode))) {
+    if(!(dirInode->is_directory && (parentDir = dir_open(dirInode)))) {
       lock_release(&file_system_lock);
+      dir_close(parentDir);
       return false;
     }
     bool outcome = filesys_create(file + fileName, parentDir, false, initial_size);
@@ -291,16 +291,7 @@ static bool LP_remove (const char *file) {
     check_usr_string(file);
     
     lock_acquire(&file_system_lock);
-    int fileName;
-    struct inode* dirInode = dir_resolve_path(file, thread_current()->curr_dir, &fileName, true);
-    struct dir* parentDir;
-    // failed to open directory
-    if(!(dirInode->is_directory && parentDir = dir_open(dirInode))) {
-      lock_release(&file_system_lock);
-      return false;
-    }
-    bool outcome = filesys_remove(file + fileName, parentDir);
-    dir_close(parentDir);
+    bool outcome = filesys_remove(file);
     lock_release(&file_system_lock);
     
     return outcome;
@@ -315,25 +306,14 @@ static bool LP_remove (const char *file) {
  */
 static int LP_open (const char *file) {
     check_usr_string(file);
-    if (!check_file_name_length(file)) {
-        return -1;
-    }
     lock_acquire(&file_system_lock);
-    int fileName;
-    struct inode* dirInode = dir_resolve_path(file, thread_current()->curr_dir, &fileName, true);
-    struct dir* parentDir;
-    // failed to open directory
-    if(!(dirInode->is_directory && parentDir = dir_open(dirInode))) {
-      lock_release(&file_system_lock);
-      return false;
-    }
-    struct file* fp = filesys_open(file + fileName, parentDir);
+    
+    struct file* fp = filesys_open(file);
     if (fp == NULL) {
         lock_release(&file_system_lock);
         return -1;
     }
     int fd = add_to_open_file_list(fp);
-    dir_close(parentDir);
     lock_release(&file_system_lock);
     return fd;
 }
@@ -526,10 +506,11 @@ static bool mkdir(const char* dir) {
   lock_acquire(&file_system_lock);
   int fileName;
   struct inode* dirInode = dir_resolve_path(dir, thread_current()->curr_dir, &fileName, true);
-  struct dir* parentDir;
+  struct dir* parentDir = NULL;
   // failed to open directory
-  if(!(dirInode->is_directory && parentDir = dir_open(dirInode))) {
+  if(!(dirInode->is_directory && (parentDir = dir_open(dirInode)))) {
     lock_release(&file_system_lock);
+    dir_close(parentDir);
     return false;
   }
   bool success = filesys_create(dir + fileName, parentDir, true, 16);
@@ -548,7 +529,7 @@ static bool mkdir(const char* dir) {
  --------------------------------------------------------------------
  */
 static bool readdir(int fd, char* name) {
-  check_usr_buffer(name, READDIR_MAX_LEN + 1);
+  check_usr_buffer(name, NAME_MAX + 1);
   lock_acquire(&file_system_lock);
   struct file_package* package = get_file_package_from_open_list(fd);
   if (package == NULL) {
@@ -558,7 +539,7 @@ static bool readdir(int fd, char* name) {
   if(!file_is_dir(package->fp)) {
     return false;
   }
-  bool result = dir_readdir(package->fp->dir, &name);
+  bool result = dir_readdir(package->fp->dir, name);
   lock_release(&file_system_lock);
   return result;
 }
@@ -619,27 +600,6 @@ static struct file_package* get_file_package_from_open_list(int fd) {
         struct file_package* package = list_entry(curr, struct file_package, elem);
         if (package->fd == fd) {
             return package;
-        }
-    }
-    return NULL;
-}
-
-/*
- --------------------------------------------------------------------
- Description: checks the list of file_packages in the thread for one 
-    contains fd. If none exist, returns NULL.
- --------------------------------------------------------------------
- */
-static struct file* get_file_from_open_list(int fd) {
-    struct thread* curr_thread = thread_current();
-    struct list_elem* curr = list_head(&curr_thread->open_files);
-    struct list_elem* tail = list_tail(&curr_thread->open_files);
-    while (true) {
-        curr = list_next(curr);
-        if (curr == tail) break;
-        struct file_package* package = list_entry(curr, struct file_package, elem);
-        if (package->fd == fd) {
-            return package->fp;
         }
     }
     return NULL;

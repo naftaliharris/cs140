@@ -11,8 +11,6 @@
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
-#include "filesys/directory.h"
-#include "filesys/inode.h"
 #include "threads/flags.h"
 #include "threads/init.h"
 #include "threads/interrupt.h"
@@ -595,14 +593,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
-  int fileNameOffset;
-  struct inode* dirInode = dir_resolve_path(file_name, thread_current()->curr_dir, &fileNameOffset, true);
-  struct dir* parentDir;
-  // failed to open directory
-  if(dirInode->is_directory && parentDir = dir_open(dirInode)) {
-    file = filesys_open(file_name + fileNameOffset, parentDir);
-  }
-  dir_close(parentDir);
+  file = filesys_open (file_name);
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", file_name);

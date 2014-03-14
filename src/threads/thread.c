@@ -15,6 +15,7 @@
 #include "devices/timer.h"
 #ifdef FILESYS
 #include "filesys/cache.h"
+#include "filesys/directory.h"
 #endif
 #ifdef USERPROG
 #include "userprog/process.h"

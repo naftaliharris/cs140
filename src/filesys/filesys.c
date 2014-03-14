@@ -7,6 +7,7 @@
 #include "filesys/inode.h"
 #include "filesys/directory.h"
 #include "filesys/cache.h"
+#include "threads/thread.h"
 
 /* Partition that contains the file system. */
 struct block *fs_device;
@@ -78,12 +79,21 @@ filesys_create (const char *name, struct dir* parent, bool isDir, off_t initial_
    Fails if no file named NAME exists,
    or if an internal memory allocation fails. */
 struct file *
-filesys_open (const char *name, struct dir* parent)
+filesys_open (const char *name)
 {
-  ASSERT(parent != NULL);
   struct inode *inode = NULL;
+  
+  int fileNameOffset;
+  struct inode* dirInode = dir_resolve_path(name, thread_current()->curr_dir, &fileNameOffset, true);
+  struct dir* parentDir = NULL;
+  // failed to open directory
+  if(!(dirInode->is_directory && (parentDir = dir_open(dirInode)))) {
+    dir_close(parentDir);
+    return NULL;
+  }
 
-  dir_lookup (parent, name, &inode);
+  dir_lookup (parentDir, name + fileNameOffset, &inode);
+  dir_close(parentDir);
 
   return file_open (inode);
 }
@@ -93,9 +103,21 @@ filesys_open (const char *name, struct dir* parent)
    Fails if no file named NAME exists,
    or if an internal memory allocation fails. */
 bool
-filesys_remove (const char *name, struct dir* parent) 
+filesys_remove (const char *name) 
 {
-  bool success = parent != NULL && dir_remove (parent, name);
+  bool success = false;
+
+  int fileNameOffset;
+  struct inode* dirInode = dir_resolve_path(name, thread_current()->curr_dir, &fileNameOffset, true);
+  struct dir* parentDir = NULL;
+  // failed to open directory
+  if(!(dirInode->is_directory && (parentDir = dir_open(dirInode)))) {
+    dir_close(parentDir);
+    return NULL;
+  }
+
+  success = dir_remove (parentDir, name + fileNameOffset);
+  dir_close(parentDir);
 
   return success;
 }

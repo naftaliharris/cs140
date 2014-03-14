@@ -10,13 +10,6 @@
 static char* PARENT_DIRECTORY_STRING = "..";
 static char* SELF_DIRECTORY_STRING = ".";
 
-/* A directory. */
-struct dir 
-  {
-    struct inode *inode;                /* Backing store. */
-    off_t pos;                          /* Current position. */
-  };
-
 /* A single directory entry. */
 struct dir_entry 
   {
@@ -156,7 +149,7 @@ lookup (const struct dir *dir, const char *name,
   
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
-  ASSERT(lock_held_by_current_thread(dir->inode->directory_lock)); // Added b/c of above comment
+  ASSERT(lock_held_by_current_thread(&dir->inode->directory_lock)); // Added b/c of above comment
 
   for (ofs = 0; inode_read_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
        ofs += sizeof e) 
@@ -308,7 +301,7 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
         dir->pos += sizeof e;
         if (e.in_use)
         {
-            if (strncmp(e.name, SELF_DIRECTORY_STRING, 4) == 0 || strncmp(e.name, PARENT_DIRECTORY_STRING, 4) == 0) {
+            if (strcmp(e.name, SELF_DIRECTORY_STRING) == 0 || strcmp(e.name, PARENT_DIRECTORY_STRING) == 0) {
                 continue;
             }
             strlcpy (name, e.name, NAME_MAX + 1);
@@ -358,7 +351,7 @@ dir_resolve_path(const char* path, struct dir* cwd, int* fileNameIndex, bool par
       offset++;
     
     // Ensures that even if file name ends with /'s we have no problem
-    if(*offset == NULL) {
+    if(*offset == '\0') {
       return lastInode;
     }
     
@@ -390,7 +383,7 @@ dir_resolve_path(const char* path, struct dir* cwd, int* fileNameIndex, bool par
         offset++;
       
       // Ensures that even if file name ends with /'s we have no problem
-      if(*offset == NULL) {
+      if(*offset == '\0') {
         return lastInode;
       }
     }

@@ -4,6 +4,31 @@
 #include <stdbool.h>
 #include "filesys/off_t.h"
 #include "devices/block.h"
+#include "threads/synch.h"
+
+/* 
+ -----------------------------------------------------------
+ In-memory inode. 
+ NOTE: The dir struct in the directory.c code
+    maintains a pointer to an inode struct. If multiple
+    processess have the same directory open, they
+    will have unique dir structs, but each will
+    have a pointer to the same inode struct. Thus
+    we have to put the directory lock in this struct!
+ -----------------------------------------------------------
+ */
+struct inode
+{
+    struct list_elem elem;              /* Element in inode list. */
+    block_sector_t sector;              /* Sector number of disk location. */
+    int open_cnt;                       /* Number of openers. */
+    bool removed;                       /* True if deleted, false otherwise. */
+    bool is_directory;                  /* True if is direcrtory, false otherwise. Set on call to inode_open, as it is read from disk_inode */
+    int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
+    struct lock data_lock;              /* lock protecting internal inode data */
+    struct lock extend_inode_lock;      /* ensures writing past EOF and subsequent inode_extension is atomic */
+    struct lock directory_lock;         /* ensures atomic directory access */
+};
 
 struct bitmap;
 
