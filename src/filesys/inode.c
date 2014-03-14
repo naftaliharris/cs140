@@ -746,13 +746,15 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
 {
     uint8_t *buffer = buffer_;
     off_t bytes_read = 0;
+    off_t len = inode_length(inode);
+    
+    if (offset >= len) {
+        return 0;
+    }
     
     while (size > 0) {
         /* check for reading past EOF */
         off_t inode_len = inode_length(inode);
-        if (offset >= inode_len) {
-            break;
-        }
         
         /* Disk sector to read, starting byte offset within sector. */
         block_sector_t sector_idx = byte_to_sector (inode, offset, false, 0);
@@ -781,6 +783,10 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
         /* Advance. */
         size -= chunk_size;
         offset += chunk_size;
+        bytes_read += chunk_size;
+        if (offset >= inode_len) {
+            break;
+        }
         //here we make the read_ahead call if necesary.
         block_sector_t read_ahead_block = byte_to_sector (inode, offset, false, 0);
         if (read_ahead_block != sector_idx && (int)read_ahead_block != -1) {
@@ -792,7 +798,6 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
                 lock_release(&read_ahead_requests_list_lock);
             }
         }
-        bytes_read += chunk_size;
     }
     return bytes_read;
 }
