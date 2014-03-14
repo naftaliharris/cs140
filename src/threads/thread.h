@@ -6,6 +6,7 @@
 #include <threads/synch.h>
 #include <stdint.h>
 #include "threads/fixed-point.h"
+#include "filesys/directory.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -267,5 +268,6 @@ void donate_priority(void);
 void shed_priority(void);
 struct thread* get_highest_priority_thread(struct list*, bool should_remove);
 
+struct dir* get_cwd(void);
 
 #endif /* threads/thread.h */

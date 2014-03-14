@@ -149,7 +149,7 @@ lookup (const struct dir *dir, const char *name,
   
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
-  ASSERT(lock_held_by_current_thread(&dir->inode->directory_lock)); // Added b/c of above comment
+  //ASSERT(lock_held_by_current_thread(&dir->inode->directory_lock)); // Added b/c of above comment
 
   for (ofs = 0; inode_read_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
        ofs += sizeof e) 
@@ -378,7 +378,7 @@ dir_resolve_path(const char* path, struct dir* cwd, int* fileNameIndex, bool par
     
     // Copy file name into our own array
     int i;
-    for(i = 0; *offset != '/' && offset != NULL; i++,offset++) {
+    for(i = 0; *offset != '/' && *offset != '\0'; i++,offset++) {
       // If we reach this then we have exceeded our file name length
       if(i == NAME_MAX) {
         inode_close(lastInode);

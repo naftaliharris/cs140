@@ -84,7 +84,7 @@ filesys_open (const char *name)
   struct inode *inode = NULL;
   
   int fileNameOffset;
-  struct inode* dirInode = dir_resolve_path(name, thread_current()->curr_dir, &fileNameOffset, true);
+  struct inode* dirInode = dir_resolve_path(name, get_cwd(), &fileNameOffset, true);
   struct dir* parentDir = NULL;
   // failed to open directory
   if(!(dirInode->is_directory && (parentDir = dir_open(dirInode)))) {
@@ -112,7 +112,7 @@ filesys_remove (const char *name)
   bool success = false;
 
   int fileNameOffset;
-  struct inode* dirInode = dir_resolve_path(name, thread_current()->curr_dir, &fileNameOffset, true);
+  struct inode* dirInode = dir_resolve_path(name, get_cwd(), &fileNameOffset, true);
   struct dir* parentDir = NULL;
   // failed to open directory, or called 'filesys_remove("/")'
   if(!(dirInode->is_directory && (parentDir = dir_open(dirInode))) || *(name + fileNameOffset) == '\0') {

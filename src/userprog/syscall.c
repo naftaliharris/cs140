@@ -262,18 +262,18 @@ static bool LP_create (const char *file, unsigned initial_size) {
     check_usr_string(file);
     lock_acquire(&file_system_lock);
     int fileNameOffset;
-    struct inode* dirInode = dir_resolve_path(file, thread_current()->curr_dir, &fileNameOffset, true);
+    struct inode* dirInode = dir_resolve_path(file, get_cwd(), &fileNameOffset, true);
     struct dir* parentDir = NULL;
     // failed to open directory, or 'LP_create("/",...)'
     if(!(dirInode->is_directory && (parentDir = dir_open(dirInode))) || *(file + fileNameOffset) == '\0') {
-      lock_release(&file_system_lock);
       dir_close(parentDir);
+      lock_release(&file_system_lock);
       return false;
     }
     
     if(strcmp(file + fileNameOffset, SELF_DIRECTORY_STRING) == 0 || strcmp(file + fileNameOffset, PARENT_DIRECTORY_STRING) == 0) {
-      lock_release(&file_system_lock);
       dir_close(parentDir);
+      lock_release(&file_system_lock);
       return false;
     }
     
@@ -483,7 +483,7 @@ static bool chdir(const char* dir) {
   lock_acquire(&file_system_lock);
   struct thread* t = thread_current();
   int unused = 0;
-  struct inode* dirInode = dir_resolve_path(dir, t->curr_dir, &unused, false);
+  struct inode* dirInode = dir_resolve_path(dir, get_cwd(), &unused, false);
   if (dirInode == NULL || !dirInode->is_directory) {
       lock_release(&file_system_lock);
       return false;
@@ -512,18 +512,18 @@ static bool mkdir(const char* dir) {
   check_usr_string(dir);
   lock_acquire(&file_system_lock);
   int fileNameOffset;
-  struct inode* dirInode = dir_resolve_path(dir, thread_current()->curr_dir, &fileNameOffset, true);
+  struct inode* dirInode = dir_resolve_path(dir, get_cwd(), &fileNameOffset, true);
   struct dir* parentDir = NULL;
   // failed to open directory, or 'mkdir("/")'
   if(!(dirInode->is_directory && (parentDir = dir_open(dirInode))) || *(dir + fileNameOffset) == '\0') {
-    lock_release(&file_system_lock);
     dir_close(parentDir);
+    lock_release(&file_system_lock);
     return false;
   }
   
   if(strcmp(dir + fileNameOffset, SELF_DIRECTORY_STRING) == 0 || strcmp(dir + fileNameOffset, PARENT_DIRECTORY_STRING) == 0) {
-    lock_release(&file_system_lock);
     dir_close(parentDir);
+    lock_release(&file_system_lock);
     return false;
   }
   

@@ -145,6 +145,11 @@ start_process (void *arg_page_)
     thread_current()->parent_thread->child_did_load_successfully = success;
     thread_current()->is_running_user_program = true;
     sema_up(&(thread_current()->parent_thread->sema_child_load));
+    if(thread_current()->parent_thread->curr_dir == NULL)
+    {
+      thread_current()->parent_thread->curr_dir = dir_open_root();
+    }
+    thread_current()->curr_dir = dir_reopen(thread_current()->parent_thread->curr_dir);
     
     /* If load failed, quit. */
     if (!success)

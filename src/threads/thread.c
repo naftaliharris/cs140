@@ -941,10 +941,8 @@ static void init_child_managment_info(struct thread* t) {
     
     if (t == initial_thread) {
         t->parent_thread = NULL;
-        t->curr_dir = dir_open_root();
     } else {
         t->parent_thread = thread_current();
-        t->curr_dir = dir_reopen(thread_current()->curr_dir);
     }
     
 }
@@ -1252,3 +1250,12 @@ void process_read_ahead_list(void* aux UNUSED) {
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+
+struct dir*
+get_cwd(void) {
+  if(thread_current()->curr_dir == NULL) {
+    thread_current()->curr_dir = dir_open_root();
+  }
+  return thread_current()->curr_dir;
+}
