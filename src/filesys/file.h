@@ -26,4 +26,6 @@ void file_seek (struct file *, off_t);
 off_t file_tell (struct file *);
 off_t file_length (struct file *);
 
+bool file_is_dir(struct file *);
+
 #endif /* filesys/file.h */

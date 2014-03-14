@@ -572,6 +572,7 @@ void thread_exit (void)
      when it calls thread_schedule_tail(). */
     intr_disable ();
     struct thread* curr = thread_current();
+    dir_close(curr->curr_dir);
     ASSERT(curr != NULL);
     list_remove (&curr->allelem);
     if (thread_mlfqs) {

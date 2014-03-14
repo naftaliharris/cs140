@@ -1,6 +1,7 @@
 #include "filesys/file.h"
 #include <debug.h>
 #include "filesys/inode.h"
+#include "filesys/directory.h"
 #include "threads/malloc.h"
 
 /* An open file. */
@@ -9,6 +10,7 @@ struct file
     struct inode *inode;        /* File's inode. */
     off_t pos;                  /* Current position. */
     bool deny_write;            /* Has file_deny_write() been called? */
+    struct dir* dir;
   };
 
 /* Opens a file for the given INODE, of which it takes ownership,
@@ -23,6 +25,15 @@ file_open (struct inode *inode)
       file->inode = inode;
       file->pos = 0;
       file->deny_write = false;
+      if(inode->is_directory) {
+        if((file->dir = dir_open(inode)) == NULL) {
+          free(file);
+          return NULL;
+        }
+      }
+      else {
+        file->dir = NULL;
+      }
       return file;
     }
   else
@@ -48,7 +59,12 @@ file_close (struct file *file)
   if (file != NULL)
     {
       file_allow_write (file);
-      inode_close (file->inode);
+      if(file_is_dir(file)) {
+        dir_close(file->dir);
+      }
+      else {
+        inode_close (file->inode);
+      }
       free (file); 
     }
 }
@@ -68,6 +84,7 @@ file_get_inode (struct file *file)
 off_t
 file_read (struct file *file, void *buffer, off_t size) 
 {
+  ASSERT(!file_is_dir(file));
   off_t bytes_read = inode_read_at (file->inode, buffer, size, file->pos);
   file->pos += bytes_read;
   return bytes_read;
@@ -81,6 +98,7 @@ file_read (struct file *file, void *buffer, off_t size)
 off_t
 file_read_at (struct file *file, void *buffer, off_t size, off_t file_ofs) 
 {
+  ASSERT(!file_is_dir(file));
   return inode_read_at (file->inode, buffer, size, file_ofs);
 }
 
@@ -94,6 +112,7 @@ file_read_at (struct file *file, void *buffer, off_t size, off_t file_ofs)
 off_t
 file_write (struct file *file, const void *buffer, off_t size) 
 {
+  ASSERT(!file_is_dir(file));
   off_t bytes_written = inode_write_at (file->inode, buffer, size, file->pos);
   file->pos += bytes_written;
   return bytes_written;
@@ -110,6 +129,7 @@ off_t
 file_write_at (struct file *file, const void *buffer, off_t size,
                off_t file_ofs) 
 {
+  ASSERT(!file_is_dir(file));
   return inode_write_at (file->inode, buffer, size, file_ofs);
 }
 
@@ -119,6 +139,7 @@ void
 file_deny_write (struct file *file) 
 {
   ASSERT (file != NULL);
+  ASSERT(!file_is_dir(file));
   if (!file->deny_write) 
     {
       file->deny_write = true;
@@ -133,6 +154,7 @@ void
 file_allow_write (struct file *file) 
 {
   ASSERT (file != NULL);
+  ASSERT(!file_is_dir(file));
   if (file->deny_write) 
     {
       file->deny_write = false;
@@ -145,6 +167,7 @@ off_t
 file_length (struct file *file) 
 {
   ASSERT (file != NULL);
+  ASSERT(!file_is_dir(file));
   return inode_length (file->inode);
 }
 
@@ -154,6 +177,7 @@ void
 file_seek (struct file *file, off_t new_pos)
 {
   ASSERT (file != NULL);
+  ASSERT(!file_is_dir(file));
   ASSERT (new_pos >= 0);
   file->pos = new_pos;
 }
@@ -164,5 +188,12 @@ off_t
 file_tell (struct file *file) 
 {
   ASSERT (file != NULL);
+  ASSERT(!file_is_dir(file));
   return file->pos;
+}
+
+/* Returns whether the file is a directory */
+bool
+file_is_dir(struct file* file) {
+  return file->dir != NULL;
 }

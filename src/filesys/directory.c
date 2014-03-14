@@ -156,6 +156,7 @@ lookup (const struct dir *dir, const char *name,
   
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
+  ASSERT(lock_held_by_current_thread(dir->inode->directory_lock)); // Added b/c of above comment
 
   for (ofs = 0; inode_read_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
        ofs += sizeof e) 
@@ -307,7 +308,7 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
         dir->pos += sizeof e;
         if (e.in_use)
         {
-            if (strcmp(e.name, SELF_DIRECTORY_STRING) == 0 || strcmp(e.name, PARENT_DIRECTORY_STRING) == 0) {
+            if (strncmp(e.name, SELF_DIRECTORY_STRING, 4) == 0 || strncmp(e.name, PARENT_DIRECTORY_STRING, 4) == 0) {
                 continue;
             }
             strlcpy (name, e.name, NAME_MAX + 1);
@@ -321,19 +322,25 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
 /* 
  ----------------------------------------------------------------------------
  Resolves a path name and current working directory into the inode that it
- points to.
+ points to. The path must exist.
+ Boolean parameter allows you to return the parent directory of the path,
+ meaning that the full path might not exist
  Returns the final inode, or NULL if it fails.
+ Through fileNameIndex returns the name of the individual file, w/o directories
+ Value of fileNameIndex not guaranteed useable if function fails
  The caller must close the returned inode.
  It can fail if:
   * A file name exceeds NAME_MAX
   * A file is treated as a directory when it is not
   * Failure in dir_open (calloc returns NULL)
+  * lookup fails - the file doesn't exist
  ----------------------------------------------------------------------------
  */
 struct inode*
-dir_resolve_path(char* path, struct dir* cwd) {
-  char* offset = path;
+dir_resolve_path(const char* path, struct dir* cwd, int* fileNameIndex, bool parent) {
+  char* offset = (char*)path;
   struct inode* lastInode;
+  *fileNameIndex = 0;
   
   // decide if we use root or cwd
   if(path[0] == '/') {
@@ -361,6 +368,8 @@ dir_resolve_path(char* path, struct dir* cwd) {
       return NULL;
     }
     
+    *fileNameIndex = (int)(offset - path);
+    
     // Copy file name into our own array
     int i;
     for(i = 0; *offset != '/' && offset != NULL; i++,offset++) {
@@ -374,6 +383,17 @@ dir_resolve_path(char* path, struct dir* cwd) {
     }
     // Make sure to null-terminate the array
     fileName[i] = '\0';
+    
+    if(parent) {
+      // skip all /'s
+      while(*offset == '/')
+        offset++;
+      
+      // Ensures that even if file name ends with /'s we have no problem
+      if(*offset == NULL) {
+        return lastInode;
+      }
+    }
     
     // dir_open will call inode_close for us
     struct dir* lastInodeAsDir = dir_open(lastInode);
