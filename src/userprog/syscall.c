@@ -511,7 +511,7 @@ static bool mkdir(const char* dir) {
   READDIR_MAX_LEN + 1 bytes, and returns true. If no entries are left
   in the directory, returns false.
  Not guaranteed to play nicely with multiple threads
- If not a valid file descriptor, exit the thread
+ If not a valid file descriptor or not a directory exit the thread
  --------------------------------------------------------------------
  */
 static bool readdir(int fd, char* name) {
@@ -523,7 +523,7 @@ static bool readdir(int fd, char* name) {
       LP_exit(-1);
   }
   if(!file_is_dir(package->fp)) {
-    return false;
+    LP_exit(-1);
   }
   bool result = dir_readdir(package->fp->dir, name);
   //lock_release(&file_system_lock);
