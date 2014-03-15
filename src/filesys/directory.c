@@ -30,6 +30,7 @@ struct dir_entry
     parent_sector must equal sector. 
  NOTE: no need to acquire the directory lock here, as we are creating a 
     directory. Race conditions occur in created directories.
+ ThreadSafe
  ----------------------------------------------------------------------------
  */
 bool dir_create (block_sector_t sector, block_sector_t parent_sector, size_t entry_cnt) {
@@ -43,16 +44,20 @@ bool dir_create (block_sector_t sector, block_sector_t parent_sector, size_t ent
         if(newly_created_directory == NULL) {
           return false;
         }
+        lock_acquire(&newly_created_directory->inode->directory_lock);
         bool success1 = dir_add(newly_created_directory, SELF_DIRECTORY_STRING, sector);
         if (success1 == false) {
+            lock_release(&newly_created_directory->inode->directory_lock);
             dir_close(newly_created_directory);
             return false;
         }
         bool success2 = dir_add(newly_created_directory, PARENT_DIRECTORY_STRING, parent_sector);
         if (success2 == false) {
+            lock_release(&newly_created_directory->inode->directory_lock);
             dir_close(newly_created_directory);
             return false;
         }
+        lock_release(&newly_created_directory->inode->directory_lock);
         dir_close(newly_created_directory);
         return true;
     }
@@ -205,7 +210,7 @@ dir_lookup (const struct dir *dir, const char *name,
    Fails if NAME is invalid (i.e. too long) or a disk or memory
    error occurs.
  NOTE: Per the assignment
- ATOMIC
+ dir->inode->directory_lock must be acquired
  ----------------------------------------------------------------------------
  */
 bool
@@ -217,13 +222,12 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
     
     ASSERT (dir != NULL);
     ASSERT (name != NULL);
+    ASSERT(lock_held_by_current_thread(&dir->inode->directory_lock));
     
     /* Check NAME for validity. */
     if (*name == '\0' || (strlen (name) > NAME_MAX)) {
         return false;
     }
-    
-    lock_acquire(&dir->inode->directory_lock);
     
     /* Check that NAME is not in use. */
     if (lookup (dir, name, NULL, NULL))
@@ -248,7 +252,6 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
     success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
     
 done:
-    lock_release(&dir->inode->directory_lock);
     return success;
 }
 
