@@ -54,21 +54,18 @@ filesys_done (void)
  -----------------------------------------------------------
  */
 bool
-filesys_create (const char *path, bool isDir, off_t initial_size) 
+filesys_create (const char *path, bool isDir, off_t initial_size)
 {
   block_sector_t inode_sector = 0;
   bool success;
   
   char* fileName;
-  struct inode* dirInode = dir_resolve_path(path, get_cwd(), &fileName, true);
+  struct inode* parentDirInode = dir_resolve_path(path, get_cwd(), &fileName, true);
   struct dir* parentDir = NULL;
   // failed to open directory, or 'filesys_create("/",...)'
-  if(dirInode == NULL || *fileName == '\0' || !(dirInode->is_directory && (parentDir = dir_open(dirInode)))) {
-    dir_close(parentDir);
-    return false;
-  }
-  // prevent 'filesys_create(".",...)'
-  if(strcmp(fileName, SELF_DIRECTORY_STRING) == 0 || strcmp(fileName, PARENT_DIRECTORY_STRING) == 0) {
+  if(parentDirInode == NULL || *fileName == '\0' || !(parentDirInode->is_directory && (parentDir = dir_open(parentDirInode)))) {
+    if(parentDirInode != NULL)
+      lock_release(&parentDirInode->directory_lock);
     dir_close(parentDir);
     return false;
   }
@@ -84,7 +81,7 @@ filesys_create (const char *path, bool isDir, off_t initial_size)
                   && inode_create (inode_sector, initial_size, false)
                   && dir_add (parentDir, fileName, inode_sector));
   }
-  
+  lock_release(&parentDirInode->directory_lock);
   dir_close(parentDir);
     
   return success;
@@ -101,23 +98,30 @@ filesys_open (const char *path)
   struct inode *inode = NULL;
   
   char* fileName;
-  struct inode* dirInode = dir_resolve_path(path, get_cwd(), &fileName, true);
+  struct inode* parentDirInode = dir_resolve_path(path, get_cwd(), &fileName, true);
   struct dir* parentDir = NULL;
   // failed to open directory
-  if(dirInode == NULL || !(dirInode->is_directory && (parentDir = dir_open(dirInode)))) {
+  if(parentDirInode == NULL || !(parentDirInode->is_directory && (parentDir = dir_open(parentDirInode)))) {
+    if(parentDirInode != NULL)
+      lock_release(&parentDirInode->directory_lock);
     dir_close(parentDir);
     return NULL;
   }
 
+  struct file* result;
   // Will only happen with 'filesys_open("/")'
   if(*fileName == '\0') {
+    lock_release(&parentDirInode->directory_lock);
     dir_close(parentDir);
-    return file_open(inode_open (ROOT_DIR_SECTOR));
+    result = file_open(inode_open (ROOT_DIR_SECTOR));
+  } else {
+    dir_lookup (parentDir, fileName, &inode);
+    lock_release(&parentDirInode->directory_lock);
+    dir_close(parentDir);
+    result = file_open(inode);
   }
-  dir_lookup (parentDir, fileName, &inode);
-  dir_close(parentDir);
 
-  return file_open (inode);
+  return result;
 }
 
 /* Deletes the file named NAME.
@@ -130,20 +134,24 @@ filesys_remove (const char *path)
   bool success = false;
 
   char* fileName;
-  struct inode* dirInode = dir_resolve_path(path, get_cwd(), &fileName, true);
+  struct inode* parentDirInode = dir_resolve_path(path, get_cwd(), &fileName, true);
   struct dir* parentDir = NULL;
   // failed to open directory, or called 'filesys_remove("/")'
-  if(dirInode == NULL || *fileName == '\0' || !(dirInode->is_directory && (parentDir = dir_open(dirInode)))) {
+  if(parentDirInode == NULL || *fileName == '\0' || !(parentDirInode->is_directory && (parentDir = dir_open(parentDirInode)))) {
+    if(parentDirInode != NULL)
+      lock_release(&parentDirInode->directory_lock);
     dir_close(parentDir);
     return false;
   }
   
   if(strcmp(fileName, SELF_DIRECTORY_STRING) == 0 || strcmp(fileName, PARENT_DIRECTORY_STRING) == 0) {
+    lock_release(&parentDirInode->directory_lock);
     dir_close(parentDir);
     return false;
   }
 
   success = dir_remove (parentDir, fileName);
+  lock_release(&parentDirInode->directory_lock);
   dir_close(parentDir);
 
   return success;

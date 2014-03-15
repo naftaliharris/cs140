@@ -36,6 +36,9 @@ bool dir_create (block_sector_t sector, block_sector_t parent_sector, size_t ent
     bool creation_success = inode_create (sector, entry_cnt * sizeof (struct dir_entry), true);
     if (creation_success == true) {
         struct inode* directory_inode = inode_open(sector);
+        if(directory_inode == NULL) {
+          return false;
+        }
         struct dir* newly_created_directory = dir_open(directory_inode);
         if(newly_created_directory == NULL) {
           return false;
@@ -152,7 +155,7 @@ lookup (const struct dir *dir, const char *name,
   
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
-  //ASSERT(lock_held_by_current_thread(&dir->inode->directory_lock)); // Added b/c of above comment
+  ASSERT(lock_held_by_current_thread(&dir->inode->directory_lock));
 
   for (ofs = 0; inode_read_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
        ofs += sizeof e) 
@@ -202,6 +205,7 @@ dir_lookup (const struct dir *dir, const char *name,
    Fails if NAME is invalid (i.e. too long) or a disk or memory
    error occurs.
  NOTE: Per the assignment
+ ATOMIC
  ----------------------------------------------------------------------------
  */
 bool
@@ -218,6 +222,8 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
     if (*name == '\0' || (strlen (name) > NAME_MAX)) {
         return false;
     }
+    
+    lock_acquire(&dir->inode->directory_lock);
     
     /* Check that NAME is not in use. */
     if (lookup (dir, name, NULL, NULL))
@@ -242,6 +248,7 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
     success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
     
 done:
+    lock_release(&dir->inode->directory_lock);
     return success;
 }
 
@@ -251,6 +258,7 @@ done:
  Removes any entry for NAME in DIR.
    Returns true if successful, false on failure,
    which occurs only if there is no file with the given NAME.
+ Must have dir->inode->directory_lock
  ----------------------------------------------------------------------------
  */
 bool
@@ -263,6 +271,7 @@ dir_remove (struct dir *dir, const char *name)
 
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
+  ASSERT(lock_held_by_current_thread(&dir->inode->directory_lock));
 
   /* Find directory entry. */
   if (!lookup (dir, name, &e, &ofs))
@@ -346,6 +355,7 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
   * A file is treated as a directory when it is not
   * Failure in dir_open (calloc returns NULL)
   * lookup fails - the file doesn't exist
+ Returned inode has directory_lock acquired
  ----------------------------------------------------------------------------
  */
 struct inode*
@@ -359,10 +369,12 @@ dir_resolve_path(const char* path, struct dir* cwd, char** fileName, bool parent
     lastInode = inode_open(ROOT_DIR_SECTOR);
     offset++;
   } else if(path[0] == '\0') {
-    lastInode = NULL;
+    return NULL;
   } else {
     lastInode = inode_reopen(cwd->inode);
   }
+  
+  lock_acquire(&lastInode->directory_lock);
   
   char curFileName[NAME_MAX + 1];
   
@@ -380,6 +392,7 @@ dir_resolve_path(const char* path, struct dir* cwd, char** fileName, bool parent
     
     // As we're looking for the next file name the last one must be a directory
     if(!lastInode->is_directory) {
+      lock_release(&lastInode->directory_lock);
       inode_close(lastInode);
       return NULL;
     }
@@ -389,6 +402,7 @@ dir_resolve_path(const char* path, struct dir* cwd, char** fileName, bool parent
     while(*offset != '/' && *offset != '\0') {
       // If we reach this then we have exceeded our file name length
       if(i == NAME_MAX) {
+        lock_release(&lastInode->directory_lock);
         inode_close(lastInode);
         return NULL;
       }
@@ -414,14 +428,19 @@ dir_resolve_path(const char* path, struct dir* cwd, char** fileName, bool parent
     // dir_open will call inode_close for us on failure
     struct dir* lastInodeAsDir = dir_open(lastInode);
     if(lastInodeAsDir == NULL) {
+      lock_release(&lastInode->directory_lock);
       return NULL;
     }
     
     // Find the next file name
     // Overwriting lastInode is fine, as dir_close will close the former value
     bool lookupResult = dir_lookup(lastInodeAsDir, curFileName, &lastInode);
+    lock_acquire(&lastInode->directory_lock);
+    lock_release(&lastInodeAsDir->inode->directory_lock);
+    
     dir_close(lastInodeAsDir);
     if(!lookupResult) {
+      lock_release(&lastInode->directory_lock);
       return NULL;
     }
   }

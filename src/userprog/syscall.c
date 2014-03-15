@@ -254,8 +254,7 @@ static int LP_wait (pid_t pid) {
     bytes in size. Returns true if successful, false otherwise. 
     Creating a new file does not open it: opening the new file 
     is a separate operation which would require a open system call.
- NOTE: we must acquire the file_system_lock to ensure that we 
-    are the only process accessing the file_system. 
+ filesys_create is threadsafe
  --------------------------------------------------------------------
  */
 static bool LP_create (const char *file, unsigned initial_size) {
@@ -273,8 +272,7 @@ static bool LP_create (const char *file, unsigned initial_size) {
     successful, false otherwise. A file may be removed regardless 
     of whether it is open or closed, and removing an open file 
     does not close it. See Removing an Open File, for details.
- NOTE: we must acquire the file_system_lock to ensure that we
-    are the only process accessing the file_system.
+ filesys_remove is threadsafe
  --------------------------------------------------------------------
  */
 static bool LP_remove (const char *file) {
@@ -292,6 +290,7 @@ static bool LP_remove (const char *file) {
  Description: Opens the file called file. Returns a nonnegative 
     integer handle called a "file descriptor" (fd), or -1 if the
     file could not be opened.
+ filesys_open is threadsafe
  --------------------------------------------------------------------
  */
 static int LP_open (const char *file) {
@@ -434,6 +433,7 @@ static unsigned LP_tell (int fd) {
     by calling this function for each one.
  NOTE: if there is no associated file_package for the given fd, 
     forces us to exit the program. 
+ file_close is threadsafe
  --------------------------------------------------------------------
  */
 static void LP_close (int fd) {
@@ -462,23 +462,27 @@ static void LP_close (int fd) {
  */
 static bool chdir(const char* dir) {
   check_usr_string(dir);
-  lock_acquire(&file_system_lock);
+  //lock_acquire(&file_system_lock);
   struct thread* t = thread_current();
   char* unused;
   struct inode* dirInode = dir_resolve_path(dir, get_cwd(), &unused, false);
-  if (dirInode == NULL || !dirInode->is_directory) {
-      lock_release(&file_system_lock);
+  if (dirInode == NULL)
+    return false;
+  lock_release(&dirInode->directory_lock);
+  
+  if(!dirInode->is_directory) {
+      //lock_release(&file_system_lock);
       return false;
   }
   struct dir* new_dir = dir_open(dirInode);
   if(new_dir == NULL)
   {
-    lock_release(&file_system_lock);
+    //lock_release(&file_system_lock);
     return false;
   }
   dir_close(t->curr_dir);
   t->curr_dir = new_dir;
-  lock_release(&file_system_lock);
+  //lock_release(&file_system_lock);
   return true;
 }
 
@@ -488,13 +492,14 @@ static bool chdir(const char* dir) {
   or absolute. Returns true if successful, false on failure. Fails if
   dir already exists or if any directory name in dir, besides the
   last, does not already exist.
+ filesys_create is threadsafe
  --------------------------------------------------------------------
  */
 static bool mkdir(const char* dir) {
   check_usr_string(dir);
-  lock_acquire(&file_system_lock);
+  //lock_acquire(&file_system_lock);
   bool success = filesys_create(dir, true, 16);
-  lock_release(&file_system_lock);
+  //lock_release(&file_system_lock);
   return success;
 }
 
@@ -505,21 +510,23 @@ static bool mkdir(const char* dir) {
   null-terminated file name in name, which must have room for
   READDIR_MAX_LEN + 1 bytes, and returns true. If no entries are left
   in the directory, returns false.
+ Not guaranteed to play nicely with multiple threads
+ If not a valid file descriptor, exit the thread
  --------------------------------------------------------------------
  */
 static bool readdir(int fd, char* name) {
   check_usr_buffer(name, NAME_MAX + 1);
-  lock_acquire(&file_system_lock);
+  //lock_acquire(&file_system_lock);
   struct file_package* package = get_file_package_from_open_list(fd);
   if (package == NULL) {
-      lock_release(&file_system_lock);
+      //lock_release(&file_system_lock);
       LP_exit(-1);
   }
   if(!file_is_dir(package->fp)) {
     return false;
   }
   bool result = dir_readdir(package->fp->dir, name);
-  lock_release(&file_system_lock);
+  //lock_release(&file_system_lock);
   return result;
 }
 
@@ -527,17 +534,18 @@ static bool readdir(int fd, char* name) {
  --------------------------------------------------------------------
  Description: Returns true if fd represents a directory, false if it
   represents an ordinary file.
+ If not a valid file descriptor, exit the thread
  --------------------------------------------------------------------
  */
 static bool isdir(int fd) {
-  lock_acquire(&file_system_lock);
+  //lock_acquire(&file_system_lock);
   struct file_package* package = get_file_package_from_open_list(fd);
   if (package == NULL) {
-      lock_release(&file_system_lock);
+      //lock_release(&file_system_lock);
       LP_exit(-1);
   }
   bool result = file_is_dir(package->fp);
-  lock_release(&file_system_lock);
+  //lock_release(&file_system_lock);
   return result;
 }
 
@@ -545,17 +553,18 @@ static bool isdir(int fd) {
  --------------------------------------------------------------------
  Description: Returns the inode number of the inode associated with
   fd, which may represent an ordinary file or a directory.
+ If not a valid file descriptor, exit the thread
  --------------------------------------------------------------------
  */
 static int inumber(int fd) {
-  lock_acquire(&file_system_lock);
+  //lock_acquire(&file_system_lock);
   struct file_package* package = get_file_package_from_open_list(fd);
   if (package == NULL) {
-      lock_release(&file_system_lock);
+      //lock_release(&file_system_lock);
       LP_exit(-1);
   }
   int result = (int)(package->fp->inode->sector);
-  lock_release(&file_system_lock);
+  //lock_release(&file_system_lock);
   return result;
 }
 
