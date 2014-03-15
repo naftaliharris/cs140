@@ -724,12 +724,15 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
 {
     uint8_t *buffer = buffer_;
     off_t bytes_read = 0;
+    off_t len = inode_length(inode);
+    
+    if (offset >= len) {
+        return 0;
+    }
     
     while (size > 0) {
         /* check for reading past EOF */
-        if (offset > inode_length(inode)) {
-            break;
-        }
+        off_t inode_len = inode_length(inode);
         
         /* Disk sector to read, starting byte offset within sector. */
         block_sector_t sector_idx = byte_to_sector (inode, offset, false, 0);
@@ -758,6 +761,10 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
         /* Advance. */
         size -= chunk_size;
         offset += chunk_size;
+        bytes_read += chunk_size;
+        if (offset >= inode_len) {
+            break;
+        }
         //here we make the read_ahead call if necesary.
         block_sector_t read_ahead_block = byte_to_sector (inode, offset, false, 0);
         if (read_ahead_block != sector_idx && (int)read_ahead_block != -1) {
@@ -769,7 +776,6 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
                 lock_release(&read_ahead_requests_list_lock);
             }
         }
-        bytes_read += chunk_size;
     }
     return bytes_read;
 }
@@ -819,7 +825,8 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   while (size > 0) {
       
       /* if offset is greater than current length of inode, we extend, must be atomic, so acquire inode_extend lock */
-      if (offset >= inode_length(inode)) {
+      off_t inode_len = inode_length(inode);
+      if (offset >= inode_len) {
           lock_acquire(&inode->extend_inode_lock);
           if (offset >= inode_length(inode)) {
               bytes_written += extend_inode(inode, buffer + bytes_written, size, offset); 
@@ -903,9 +910,9 @@ static off_t extend_inode(struct inode* inode, const void* buffer, off_t size, o
         off_t write_length = BLOCK_SECTOR_SIZE - offset_of_write;
         if (write_length > remaining_bytes_of_zeros) write_length = remaining_bytes_of_zeros;
         //write zeros to current block
-        struct cache_entry* block_entry = get_cache_entry_for_sector(curr_block, true);
+        struct cache_entry* block_entry = get_cache_entry_for_sector(curr_block, false);
         write_to_cache(block_entry, &zero_array, offset_of_write, write_length);
-        release_cache_lock_for_write(&block_entry->lock);
+        release_cache_lock_for_read(&block_entry->lock);
         remaining_bytes_of_zeros -= write_length;
         curr_length += write_length;
     }
@@ -918,18 +925,18 @@ static off_t extend_inode(struct inode* inode, const void* buffer, off_t size, o
         off_t offset_of_write = curr_length % BLOCK_SECTOR_SIZE;
         off_t write_length = BLOCK_SECTOR_SIZE - offset_of_write;
         if (write_length > size) write_length = size;
-        struct cache_entry* block_entry = get_cache_entry_for_sector(curr_block, true);
+        struct cache_entry* block_entry = get_cache_entry_for_sector(curr_block, false);
         write_to_cache(block_entry, (buffer + bytes_written), offset_of_write, write_length);
-        release_cache_lock_for_write(&block_entry->lock);
+        release_cache_lock_for_read(&block_entry->lock);
         size -= write_length;
         curr_length += write_length;
         bytes_written += write_length;
     }
     
     /* now update length field in inode */
-    struct cache_entry* disk_inode_cache_entry = get_cache_entry_for_sector(inode->sector, true);
+    struct cache_entry* disk_inode_cache_entry = get_cache_entry_for_sector(inode->sector, false);
     write_to_cache(disk_inode_cache_entry, &new_length, 0, sizeof(off_t));
-    release_cache_lock_for_write(&disk_inode_cache_entry->lock);
+    release_cache_lock_for_read(&disk_inode_cache_entry->lock);
     
     return size_; //note, when handling free-map fail, might not be size. OH said not to worry.
 }
@@ -940,7 +947,7 @@ static off_t extend_inode(struct inode* inode, const void* buffer, off_t size, o
  ----------------------------------------------------------------------------
  */
 static void add_direct_blocks(struct inode* inode, off_t* num_blocks_needed, off_t* index_of_next_block_to_add) {
-    struct cache_entry* disk_inode_cache_entry = get_cache_entry_for_sector(inode->sector, true);
+    struct cache_entry* disk_inode_cache_entry = get_cache_entry_for_sector(inode->sector, false);
     while (true) {
         if ((*index_of_next_block_to_add) >= NUM_DIRECT_BLOCKS) break;
         if ((*num_blocks_needed) == 0) break;
@@ -955,7 +962,7 @@ static void add_direct_blocks(struct inode* inode, off_t* num_blocks_needed, off
         (*num_blocks_needed)--;
         (*index_of_next_block_to_add)++;
     }
-    release_cache_lock_for_write(&disk_inode_cache_entry->lock);
+    release_cache_lock_for_read(&disk_inode_cache_entry->lock);
 }
 
 /*
@@ -972,16 +979,16 @@ static void add_indirect_blocks(struct inode* inode, off_t* num_blocks_needed, o
         if (success == false) {
             ASSERT(0 == 1);
         }
-        struct cache_entry* disk_inode_cache_entry = get_cache_entry_for_sector(inode->sector, true);
+        struct cache_entry* disk_inode_cache_entry = get_cache_entry_for_sector(inode->sector, false);
         write_to_cache(disk_inode_cache_entry, &indirect_block_number, offset_of_indirect_block_id, sizeof(block_sector_t));
-        release_cache_lock_for_write(&disk_inode_cache_entry->lock);
+        release_cache_lock_for_read(&disk_inode_cache_entry->lock);
     } else {
         //otherwise, it has allready been allocated, so read it
         struct cache_entry* disk_inode_cache_entry = get_cache_entry_for_sector(inode->sector, false);
         read_from_cache(disk_inode_cache_entry, &indirect_block_number, offset_of_indirect_block_id, sizeof(block_sector_t));
         release_cache_lock_for_read(&disk_inode_cache_entry->lock);
     }
-    struct cache_entry* indirect_block_cache_entry = get_cache_entry_for_sector(indirect_block_number, true);
+    struct cache_entry* indirect_block_cache_entry = get_cache_entry_for_sector(indirect_block_number, false);
     while (true) {
         if ((*index_of_next_block_to_add) >= NUM_DIRECT_BLOCKS + NUM_BLOCK_IDS_PER_BLOCK) break;
         if ((*num_blocks_needed) == 0) break;
@@ -996,7 +1003,7 @@ static void add_indirect_blocks(struct inode* inode, off_t* num_blocks_needed, o
         (*num_blocks_needed)--;
         (*index_of_next_block_to_add)++;
     }
-    release_cache_lock_for_write(&indirect_block_cache_entry->lock);
+    release_cache_lock_for_read(&indirect_block_cache_entry->lock);
 }
 
 /*
@@ -1025,7 +1032,7 @@ static void add_to_existing_indirect_block(struct cache_entry* double_indirect_b
     block_sector_t indirect_block_number = 0;
     off_t offset_to_indirect_block = indirect_index * sizeof(block_sector_t);
     read_from_cache(double_indirect_block_cache_entry, &indirect_block_number, offset_to_indirect_block, sizeof(block_sector_t));
-    struct cache_entry* indirect_block_cache_entry = get_cache_entry_for_sector(indirect_block_number, true);
+    struct cache_entry* indirect_block_cache_entry = get_cache_entry_for_sector(indirect_block_number, false);
     off_t begin_index = (*index_of_next_block_to_add) - NUM_DIRECT_BLOCKS - (NUM_BLOCK_IDS_PER_BLOCK * NUM_INDIRECT_BLOCKS) - (indirect_index * NUM_BLOCK_IDS_PER_BLOCK);
     int i;
     for (i = begin_index; i < NUM_BLOCK_IDS_PER_BLOCK; i++) {
@@ -1040,7 +1047,7 @@ static void add_to_existing_indirect_block(struct cache_entry* double_indirect_b
         (*num_blocks_needed)--;
         (*index_of_next_block_to_add)++;
     }
-    release_cache_lock_for_write(&indirect_block_cache_entry->lock);
+    release_cache_lock_for_read(&indirect_block_cache_entry->lock);
 }
 
 
@@ -1059,21 +1066,21 @@ static void add_double_indirect_blocks(struct inode* inode, off_t* num_blocks_ne
         if (success == false) {
             ASSERT(0 == 1);
         }
-        struct cache_entry* disk_inode_cache_entry = get_cache_entry_for_sector(inode->sector, true);
+        struct cache_entry* disk_inode_cache_entry = get_cache_entry_for_sector(inode->sector, false);
         write_to_cache(disk_inode_cache_entry, &double_indirect_block_number, offset_of_double_indirect_block_id, sizeof(block_sector_t));
-        release_cache_lock_for_write(&disk_inode_cache_entry->lock);
+        release_cache_lock_for_read(&disk_inode_cache_entry->lock);
     } else {
         //read block id of doubly indirect block from inode
         struct cache_entry* disk_inode_cache_entry = get_cache_entry_for_sector(inode->sector, false);
         read_from_cache(disk_inode_cache_entry, &double_indirect_block_number, offset_of_double_indirect_block_id, sizeof(block_sector_t));
         release_cache_lock_for_read(&disk_inode_cache_entry->lock);
     }
-    struct cache_entry* double_indirect_block_cache_entry = get_cache_entry_for_sector(double_indirect_block_number, true);
+    struct cache_entry* double_indirect_block_cache_entry = get_cache_entry_for_sector(double_indirect_block_number, false);
     if (((*index_of_next_block_to_add) - NUM_DIRECT_BLOCKS - (NUM_BLOCK_IDS_PER_BLOCK*NUM_INDIRECT_BLOCKS)) % NUM_BLOCK_IDS_PER_BLOCK != 0) {
         add_to_existing_indirect_block(double_indirect_block_cache_entry, num_blocks_needed, index_of_next_block_to_add);
     }
     if ((*num_blocks_needed) == 0) {
-        release_cache_lock_for_write(&double_indirect_block_cache_entry->lock);
+        release_cache_lock_for_read(&double_indirect_block_cache_entry->lock);
         return;
     }
     ASSERT((*index_of_next_block_to_add) - NUM_DIRECT_BLOCKS - (NUM_BLOCK_IDS_PER_BLOCK * NUM_INDIRECT_BLOCKS) % NUM_BLOCK_IDS_PER_BLOCK == 0);
@@ -1085,7 +1092,7 @@ static void add_double_indirect_blocks(struct inode* inode, off_t* num_blocks_ne
         if (success == false) {
             ASSERT(0 == 1);
         }
-        struct cache_entry* curr_indirect_block_cache_entry = get_cache_entry_for_sector(curr_indirect_block, true);
+        struct cache_entry* curr_indirect_block_cache_entry = get_cache_entry_for_sector(curr_indirect_block, false);
         int indirect_index;
         for (indirect_index = 0; indirect_index < NUM_BLOCK_IDS_PER_BLOCK; indirect_index++) {
             block_sector_t curr_sector = 0;
@@ -1099,12 +1106,12 @@ static void add_double_indirect_blocks(struct inode* inode, off_t* num_blocks_ne
             (*num_blocks_needed)--;
             if ((*num_blocks_needed) == 0) break;
         }
-        release_cache_lock_for_write(&curr_indirect_block_cache_entry->lock);
+        release_cache_lock_for_read(&curr_indirect_block_cache_entry->lock);
         off_t offset_in_double_indirect_block = double_indirect_index * sizeof(block_sector_t);
         write_to_cache(double_indirect_block_cache_entry, &curr_indirect_block, offset_in_double_indirect_block, sizeof(block_sector_t));
         if ((*num_blocks_needed) == 0) break;
     }
-    release_cache_lock_for_write(&double_indirect_block_cache_entry->lock);
+    release_cache_lock_for_read(&double_indirect_block_cache_entry->lock);
 }
 
 

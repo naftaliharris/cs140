@@ -139,9 +139,9 @@ start_process (void *arg_page_)
     if_.eflags = FLAG_IF | FLAG_MBS;
     
     
-    lock_acquire(&file_system_lock);
+    //lock_acquire(&file_system_lock);
     success = load (file_name, &if_.eip, &if_.esp);
-    lock_release(&file_system_lock);
+    //lock_release(&file_system_lock);
     thread_current()->parent_thread->child_did_load_successfully = success;
     thread_current()->is_running_user_program = true;
     sema_up(&(thread_current()->parent_thread->sema_child_load));
@@ -342,9 +342,9 @@ void close_open_files(struct thread* t) {
     while (!list_empty(&t->open_files)) {
         struct list_elem* curr = list_pop_front(&t->open_files);
         struct file_package* package = list_entry(curr, struct file_package, elem);
-        lock_acquire(&file_system_lock);
+        //lock_acquire(&file_system_lock);
         file_close(package->fp);
-        lock_release(&file_system_lock);
+        //lock_release(&file_system_lock);
         free(package);
     }
 }
