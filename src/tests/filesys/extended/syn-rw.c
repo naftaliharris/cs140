@@ -24,7 +24,7 @@ test_main (void)
   exec_children ("child-syn-rw", children, CHILD_CNT);
 
   random_bytes (buf, sizeof buf);
-  quiet = false;
+  quiet = true;
   for (ofs = 0; ofs < BUF_SIZE; ofs += CHUNK_SIZE)
     CHECK (write (fd, buf + ofs, CHUNK_SIZE) > 0,
            "write %d bytes at offset %zu in \"%s\"",
