@@ -37,6 +37,9 @@ bool dir_create (block_sector_t sector, block_sector_t parent_sector, size_t ent
     if (creation_success == true) {
         struct inode* directory_inode = inode_open(sector);
         struct dir* newly_created_directory = dir_open(directory_inode);
+        if(newly_created_directory == NULL) {
+          return false;
+        }
         bool success1 = dir_add(newly_created_directory, SELF_DIRECTORY_STRING, sector);
         if (success1 == false) {
             dir_close(newly_created_directory);
@@ -212,8 +215,9 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
     ASSERT (name != NULL);
     
     /* Check NAME for validity. */
-    if (*name == '\0' || strlen (name) > NAME_MAX)
+    if (*name == '\0' || (strlen (name) > NAME_MAX)) {
         return false;
+    }
     
     /* Check that NAME is not in use. */
     if (lookup (dir, name, NULL, NULL))
@@ -277,8 +281,10 @@ dir_remove (struct dir *dir, const char *name)
     // check if directory is empty
     if(dir_readdir(inner_dir, temp)) {
       dir_close(inner_dir);
+      inode = NULL;
       goto done;
     }
+    inode = inode_open(e.inode_sector);
     dir_close(inner_dir);
   }
 
@@ -343,25 +349,29 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
  ----------------------------------------------------------------------------
  */
 struct inode*
-dir_resolve_path(const char* path, struct dir* cwd, int* fileNameIndex, bool parent) {
+dir_resolve_path(const char* path, struct dir* cwd, char** fileName, bool parent) {
   char* offset = (char*)path;
   struct inode* lastInode;
-  *fileNameIndex = 0;
+  *fileName = offset;
   
   // decide if we use root or cwd
   if(path[0] == '/') {
     lastInode = inode_open(ROOT_DIR_SECTOR);
     offset++;
+  } else if(path[0] == '\0') {
+    lastInode = NULL;
   } else {
     lastInode = inode_reopen(cwd->inode);
   }
   
-  char fileName[NAME_MAX + 1];
+  char curFileName[NAME_MAX + 1];
   
   while(true) {
     // skip all /'s
     while(*offset == '/')
       offset++;
+    
+    *fileName = offset;
     
     // Ensures that even if file name ends with /'s we have no problem
     if(*offset == '\0') {
@@ -374,21 +384,21 @@ dir_resolve_path(const char* path, struct dir* cwd, int* fileNameIndex, bool par
       return NULL;
     }
     
-    *fileNameIndex = (int)(offset - path);
-    
     // Copy file name into our own array
-    int i;
-    for(i = 0; *offset != '/' && *offset != '\0'; i++,offset++) {
+    int i = 0;
+    while(*offset != '/' && *offset != '\0') {
       // If we reach this then we have exceeded our file name length
       if(i == NAME_MAX) {
         inode_close(lastInode);
         return NULL;
       }
-      
-      fileName[i] = *offset;
+      ASSERT(i < NAME_MAX);
+      curFileName[i] = *offset;
+      i++;
+      offset++;
     }
     // Make sure to null-terminate the array
-    fileName[i] = '\0';
+    curFileName[i] = '\0';
     
     if(parent) {
       // skip all /'s
@@ -401,7 +411,7 @@ dir_resolve_path(const char* path, struct dir* cwd, int* fileNameIndex, bool par
       }
     }
     
-    // dir_open will call inode_close for us
+    // dir_open will call inode_close for us on failure
     struct dir* lastInodeAsDir = dir_open(lastInode);
     if(lastInodeAsDir == NULL) {
       return NULL;
@@ -409,7 +419,7 @@ dir_resolve_path(const char* path, struct dir* cwd, int* fileNameIndex, bool par
     
     // Find the next file name
     // Overwriting lastInode is fine, as dir_close will close the former value
-    bool lookupResult = dir_lookup(lastInodeAsDir, fileName, &lastInode);
+    bool lookupResult = dir_lookup(lastInodeAsDir, curFileName, &lastInode);
     dir_close(lastInodeAsDir);
     if(!lookupResult) {
       return NULL;

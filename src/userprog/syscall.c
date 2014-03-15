@@ -260,25 +260,8 @@ static int LP_wait (pid_t pid) {
  */
 static bool LP_create (const char *file, unsigned initial_size) {
     check_usr_string(file);
-    lock_acquire(&file_system_lock);
-    int fileNameOffset;
-    struct inode* dirInode = dir_resolve_path(file, get_cwd(), &fileNameOffset, true);
-    struct dir* parentDir = NULL;
-    // failed to open directory, or 'LP_create("/",...)'
-    if(!(dirInode->is_directory && (parentDir = dir_open(dirInode))) || *(file + fileNameOffset) == '\0') {
-      dir_close(parentDir);
-      lock_release(&file_system_lock);
-      return false;
-    }
-    
-    if(strcmp(file + fileNameOffset, SELF_DIRECTORY_STRING) == 0 || strcmp(file + fileNameOffset, PARENT_DIRECTORY_STRING) == 0) {
-      dir_close(parentDir);
-      lock_release(&file_system_lock);
-      return false;
-    }
-    
-    bool outcome = filesys_create(file + fileNameOffset, parentDir, false, initial_size);
-    dir_close(parentDir);
+    lock_acquire(&file_system_lock);    
+    bool outcome = filesys_create(file, false, initial_size);
     lock_release(&file_system_lock);
     
     return outcome;
@@ -392,7 +375,7 @@ static int LP_write (int fd, const void *buffer, unsigned length) {
     
     lock_acquire(&file_system_lock);
     struct file_package* package = get_file_package_from_open_list(fd);
-    if (package == NULL) {
+    if (package == NULL || file_is_dir(package->fp)) {
         lock_release(&file_system_lock);
         return -1;
     }
@@ -415,7 +398,7 @@ static int LP_write (int fd, const void *buffer, unsigned length) {
 static void LP_seek (int fd, unsigned position) {
     lock_acquire(&file_system_lock);
     struct file_package* package = get_file_package_from_open_list(fd);
-    if (package == NULL) {
+    if (package == NULL || file_is_dir(package->fp)) {
         lock_release(&file_system_lock);
         LP_exit(-1);
     }
@@ -436,7 +419,7 @@ static void LP_seek (int fd, unsigned position) {
 static unsigned LP_tell (int fd) {
     lock_acquire(&file_system_lock);
     struct file_package* package = get_file_package_from_open_list(fd);
-    if (package == NULL) {
+    if (package == NULL || file_is_dir(package->fp)) {
         lock_release(&file_system_lock);
         LP_exit(-1);
     }
@@ -482,7 +465,7 @@ static bool chdir(const char* dir) {
   check_usr_string(dir);
   lock_acquire(&file_system_lock);
   struct thread* t = thread_current();
-  int unused = 0;
+  char* unused;
   struct inode* dirInode = dir_resolve_path(dir, get_cwd(), &unused, false);
   if (dirInode == NULL || !dirInode->is_directory) {
       lock_release(&file_system_lock);
@@ -511,24 +494,7 @@ static bool chdir(const char* dir) {
 static bool mkdir(const char* dir) {
   check_usr_string(dir);
   lock_acquire(&file_system_lock);
-  int fileNameOffset;
-  struct inode* dirInode = dir_resolve_path(dir, get_cwd(), &fileNameOffset, true);
-  struct dir* parentDir = NULL;
-  // failed to open directory, or 'mkdir("/")'
-  if(!(dirInode->is_directory && (parentDir = dir_open(dirInode))) || *(dir + fileNameOffset) == '\0') {
-    dir_close(parentDir);
-    lock_release(&file_system_lock);
-    return false;
-  }
-  
-  if(strcmp(dir + fileNameOffset, SELF_DIRECTORY_STRING) == 0 || strcmp(dir + fileNameOffset, PARENT_DIRECTORY_STRING) == 0) {
-    dir_close(parentDir);
-    lock_release(&file_system_lock);
-    return false;
-  }
-  
-  bool success = filesys_create(dir + fileNameOffset, parentDir, true, 16);
-  dir_close(parentDir);
+  bool success = filesys_create(dir, true, 16);
   lock_release(&file_system_lock);
   return success;
 }

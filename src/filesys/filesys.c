@@ -54,21 +54,38 @@ filesys_done (void)
  -----------------------------------------------------------
  */
 bool
-filesys_create (const char *name, struct dir* parent, bool isDir, off_t initial_size) 
+filesys_create (const char *path, bool isDir, off_t initial_size) 
 {
   block_sector_t inode_sector = 0;
   bool success;
+  
+  char* fileName;
+  struct inode* dirInode = dir_resolve_path(path, get_cwd(), &fileName, true);
+  struct dir* parentDir = NULL;
+  // failed to open directory, or 'filesys_create("/",...)'
+  if(dirInode == NULL || *fileName == '\0' || !(dirInode->is_directory && (parentDir = dir_open(dirInode)))) {
+    dir_close(parentDir);
+    return false;
+  }
+  // prevent 'filesys_create(".",...)'
+  if(strcmp(fileName, SELF_DIRECTORY_STRING) == 0 || strcmp(fileName, PARENT_DIRECTORY_STRING) == 0) {
+    dir_close(parentDir);
+    return false;
+  }
+  
   if(isDir) {
-    success = (parent != NULL
+    success = (parentDir != NULL
                   && free_map_allocate (1, &inode_sector)
-                  && dir_create (inode_sector, parent->inode->sector, (size_t)initial_size)
-                  && dir_add (parent, name, inode_sector));
+                  && dir_create (inode_sector, parentDir->inode->sector, (size_t)initial_size)
+                  && dir_add (parentDir, fileName, inode_sector));
   } else {
-    success = (parent != NULL
+    success = (parentDir != NULL
                   && free_map_allocate (1, &inode_sector)
                   && inode_create (inode_sector, initial_size, false)
-                  && dir_add (parent, name, inode_sector));
+                  && dir_add (parentDir, fileName, inode_sector));
   }
+  
+  dir_close(parentDir);
     
   return success;
 }
@@ -79,24 +96,25 @@ filesys_create (const char *name, struct dir* parent, bool isDir, off_t initial_
    Fails if no file named NAME exists,
    or if an internal memory allocation fails. */
 struct file *
-filesys_open (const char *name)
+filesys_open (const char *path)
 {
   struct inode *inode = NULL;
   
-  int fileNameOffset;
-  struct inode* dirInode = dir_resolve_path(name, get_cwd(), &fileNameOffset, true);
+  char* fileName;
+  struct inode* dirInode = dir_resolve_path(path, get_cwd(), &fileName, true);
   struct dir* parentDir = NULL;
   // failed to open directory
-  if(!(dirInode->is_directory && (parentDir = dir_open(dirInode)))) {
+  if(dirInode == NULL || !(dirInode->is_directory && (parentDir = dir_open(dirInode)))) {
     dir_close(parentDir);
     return NULL;
   }
 
   // Will only happen with 'filesys_open("/")'
-  if(*(name + fileNameOffset) == '\0') {
+  if(*fileName == '\0') {
+    dir_close(parentDir);
     return file_open(inode_open (ROOT_DIR_SECTOR));
   }
-  dir_lookup (parentDir, name + fileNameOffset, &inode);
+  dir_lookup (parentDir, fileName, &inode);
   dir_close(parentDir);
 
   return file_open (inode);
@@ -107,25 +125,25 @@ filesys_open (const char *name)
    Fails if no file named NAME exists,
    or if an internal memory allocation fails. */
 bool
-filesys_remove (const char *name) 
+filesys_remove (const char *path) 
 {
   bool success = false;
 
-  int fileNameOffset;
-  struct inode* dirInode = dir_resolve_path(name, get_cwd(), &fileNameOffset, true);
+  char* fileName;
+  struct inode* dirInode = dir_resolve_path(path, get_cwd(), &fileName, true);
   struct dir* parentDir = NULL;
   // failed to open directory, or called 'filesys_remove("/")'
-  if(!(dirInode->is_directory && (parentDir = dir_open(dirInode))) || *(name + fileNameOffset) == '\0') {
+  if(dirInode == NULL || *fileName == '\0' || !(dirInode->is_directory && (parentDir = dir_open(dirInode)))) {
     dir_close(parentDir);
-    return NULL;
+    return false;
   }
   
-  if(strcmp(name + fileNameOffset, SELF_DIRECTORY_STRING) == 0 || strcmp(name + fileNameOffset, PARENT_DIRECTORY_STRING) == 0) {
+  if(strcmp(fileName, SELF_DIRECTORY_STRING) == 0 || strcmp(fileName, PARENT_DIRECTORY_STRING) == 0) {
     dir_close(parentDir);
     return false;
   }
 
-  success = dir_remove (parentDir, name + fileNameOffset);
+  success = dir_remove (parentDir, fileName);
   dir_close(parentDir);
 
   return success;

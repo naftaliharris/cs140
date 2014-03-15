@@ -51,11 +51,11 @@ file_close (struct file *file)
 {
   if (file != NULL)
     {
-      file_allow_write (file);
       if(file_is_dir(file)) {
         dir_close(file->dir);
       }
       else {
+        file_allow_write (file);
         inode_close (file->inode);
       }
       free (file); 
