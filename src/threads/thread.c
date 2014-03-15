@@ -528,6 +528,9 @@ struct thread * thread_current (void)
      of stack, so a few big automatic arrays or moderate
      recursion can cause stack overflow. */
   ASSERT (is_thread (t));
+    if (t->status != THREAD_RUNNING) {
+        printf("breakpoint");
+    }
   ASSERT (t->status == THREAD_RUNNING);
 
   return t;
