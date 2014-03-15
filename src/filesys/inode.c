@@ -852,13 +852,13 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
           break;
       }
       
-      struct cache_entry* entry = get_cache_entry_for_sector(sector_idx, false);
+      struct cache_entry* entry = get_cache_entry_for_sector(sector_idx, true);
       if (sector_ofs == 0 && chunk_size == BLOCK_SECTOR_SIZE) {
           write_to_cache(entry, (const void*)buffer+bytes_written, 0, BLOCK_SECTOR_SIZE);
-          release_cache_lock_for_read(&entry->lock);
+          release_cache_lock_for_write(&entry->lock);
       } else {
           write_to_cache(entry, (const void*)buffer+bytes_written, sector_ofs, chunk_size);
-          release_cache_lock_for_read(&entry->lock);
+          release_cache_lock_for_write(&entry->lock);
       }
       
       /* Advance. */
@@ -910,9 +910,9 @@ static off_t extend_inode(struct inode* inode, const void* buffer, off_t size, o
         off_t write_length = BLOCK_SECTOR_SIZE - offset_of_write;
         if (write_length > remaining_bytes_of_zeros) write_length = remaining_bytes_of_zeros;
         //write zeros to current block
-        struct cache_entry* block_entry = get_cache_entry_for_sector(curr_block, false);
+        struct cache_entry* block_entry = get_cache_entry_for_sector(curr_block, true);
         write_to_cache(block_entry, &zero_array, offset_of_write, write_length);
-        release_cache_lock_for_read(&block_entry->lock);
+        release_cache_lock_for_write(&block_entry->lock);
         remaining_bytes_of_zeros -= write_length;
         curr_length += write_length;
     }
@@ -925,13 +925,14 @@ static off_t extend_inode(struct inode* inode, const void* buffer, off_t size, o
         off_t offset_of_write = curr_length % BLOCK_SECTOR_SIZE;
         off_t write_length = BLOCK_SECTOR_SIZE - offset_of_write;
         if (write_length > size) write_length = size;
-        struct cache_entry* block_entry = get_cache_entry_for_sector(curr_block, false);
+        struct cache_entry* block_entry = get_cache_entry_for_sector(curr_block, true);
         write_to_cache(block_entry, (buffer + bytes_written), offset_of_write, write_length);
-        release_cache_lock_for_read(&block_entry->lock);
+        release_cache_lock_for_write(&block_entry->lock);
         size -= write_length;
         curr_length += write_length;
         bytes_written += write_length;
     }
+    ASSERT(curr_length == new_length);
     
     /* now update length field in inode */
     struct cache_entry* disk_inode_cache_entry = get_cache_entry_for_sector(inode->sector, false);
