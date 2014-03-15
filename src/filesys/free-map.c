@@ -30,7 +30,10 @@ free_map_init (void)
 bool
 free_map_allocate (size_t cnt, block_sector_t *sectorp)
 {
+  bool in_recursion = lock_held_by_current_thread(&free_map_lock);
+  if(!in_recursion) {
     lock_acquire(&free_map_lock);
+  }
   block_sector_t sector = bitmap_scan_and_flip (free_map, 0, cnt, false);
   if (sector != BITMAP_ERROR
       && free_map_file != NULL
@@ -42,7 +45,9 @@ free_map_allocate (size_t cnt, block_sector_t *sectorp)
     if (sector != BITMAP_ERROR) {
         *sectorp = sector;
     }
+  if(!in_recursion) {
     lock_release(&free_map_lock);
+  }
   return sector != BITMAP_ERROR;
 }
 
