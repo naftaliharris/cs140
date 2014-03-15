@@ -438,9 +438,10 @@ dir_resolve_path(const char* path, struct dir* cwd, char** fileName, bool parent
     // Find the next file name
     // Overwriting lastInode is fine, as dir_close will close the former value
     bool lookupResult = dir_lookup(lastInodeAsDir, curFileName, &lastInode);
-    lock_acquire(&lastInode->directory_lock);
-    lock_release(&lastInodeAsDir->inode->directory_lock);
-    
+      if (lastInode != lastInodeAsDir->inode) {
+          lock_acquire(&lastInode->directory_lock);
+          lock_release(&lastInodeAsDir->inode->directory_lock);
+      }
     dir_close(lastInodeAsDir);
     if(!lookupResult) {
       lock_release(&lastInode->directory_lock);

@@ -30,25 +30,23 @@ free_map_init (void)
 bool
 free_map_allocate (size_t cnt, block_sector_t *sectorp)
 {
-  bool in_recursion = lock_held_by_current_thread(&free_map_lock);
-  if(!in_recursion) {
+    
     lock_acquire(&free_map_lock);
-  }
-  block_sector_t sector = bitmap_scan_and_flip (free_map, 0, cnt, false);
-  if (sector != BITMAP_ERROR
-      && free_map_file != NULL
-      && !bitmap_write (free_map, free_map_file))
+    block_sector_t sector = bitmap_scan_and_flip (free_map, 0, cnt, false);
+    lock_release(&free_map_lock);
+    
+    /*if (sector != BITMAP_ERROR
+        && free_map_file != NULL
+        && !bitmap_write (free_map, free_map_file))
     {
-      bitmap_set_multiple (free_map, sector, cnt, false); 
-      sector = BITMAP_ERROR;
-    }
+        bitmap_set_multiple (free_map, sector, cnt, false);
+        sector = BITMAP_ERROR;
+    }*/
     if (sector != BITMAP_ERROR) {
         *sectorp = sector;
     }
-  if(!in_recursion) {
-    lock_release(&free_map_lock);
-  }
-  return sector != BITMAP_ERROR;
+    
+    return sector != BITMAP_ERROR;
 }
 
 /* Makes CNT sectors starting at SECTOR available for use. */
@@ -58,7 +56,7 @@ free_map_release (block_sector_t sector, size_t cnt)
     lock_acquire(&free_map_lock);
     ASSERT (bitmap_all (free_map, sector, cnt));
     bitmap_set_multiple (free_map, sector, cnt, false);
-    bitmap_write (free_map, free_map_file);
+    //bitmap_write (free_map, free_map_file);
     lock_release(&free_map_lock);
 }
 
@@ -75,9 +73,10 @@ free_map_open (void)
 
 /* Writes the free map to disk and closes the free map file. */
 void
-free_map_close (void) 
+free_map_close (void)
 {
-  file_close (free_map_file);
+    bitmap_write(free_map, free_map_file);
+    file_close (free_map_file);
 }
 
 /* Creates a new free map file on disk and writes the free map to

@@ -973,7 +973,7 @@ static void add_direct_blocks(struct inode* inode, off_t* num_blocks_needed, off
 static void add_indirect_blocks(struct inode* inode, off_t* num_blocks_needed, off_t* index_of_next_block_to_add) {
     block_sector_t indirect_block_number = 0;
     off_t offset_of_indirect_block_id = sizeof(off_t) + sizeof(bool) + sizeof(unsigned) + (NUM_DIRECT_BLOCKS * sizeof(block_sector_t));
-    if ((*index_of_next_block_to_add) == NUM_DIRECT_BLOCKS) {
+    if ((*index_of_next_block_to_add) == INODE_INDIRECT_BLOCK_INDEX) {
         //alocate a block for the indrect block in the inode and store block id in inode
         bool success = free_map_allocate(1, &indirect_block_number);
         if (success == false) {
@@ -1012,7 +1012,7 @@ static void add_indirect_blocks(struct inode* inode, off_t* num_blocks_needed, o
  ----------------------------------------------------------------------------
  */
 static off_t get_indirect_block_index_in_double_indirect_block(off_t index) {
-    index = index - NUM_DIRECT_BLOCKS - (NUM_BLOCK_IDS_PER_BLOCK * NUM_INDIRECT_BLOCKS);
+    index = index - NUM_DIRECT_BLOCKS + 1 - (NUM_BLOCK_IDS_PER_BLOCK * NUM_INDIRECT_BLOCKS);
     off_t indirect_index = 0;
     while (true) {
         if (index < NUM_BLOCK_IDS_PER_BLOCK) break;
@@ -1033,7 +1033,7 @@ static void add_to_existing_indirect_block(struct cache_entry* double_indirect_b
     off_t offset_to_indirect_block = indirect_index * sizeof(block_sector_t);
     read_from_cache(double_indirect_block_cache_entry, &indirect_block_number, offset_to_indirect_block, sizeof(block_sector_t));
     struct cache_entry* indirect_block_cache_entry = get_cache_entry_for_sector(indirect_block_number, false);
-    off_t begin_index = (*index_of_next_block_to_add) - NUM_DIRECT_BLOCKS - (NUM_BLOCK_IDS_PER_BLOCK * NUM_INDIRECT_BLOCKS) - (indirect_index * NUM_BLOCK_IDS_PER_BLOCK);
+    off_t begin_index = (*index_of_next_block_to_add) - NUM_DIRECT_BLOCKS + 1 - (NUM_BLOCK_IDS_PER_BLOCK * NUM_INDIRECT_BLOCKS) - (indirect_index * NUM_BLOCK_IDS_PER_BLOCK);
     int i;
     for (i = begin_index; i < NUM_BLOCK_IDS_PER_BLOCK; i++) {
         if ((*num_blocks_needed) == 0) break;
@@ -1060,7 +1060,7 @@ static void add_double_indirect_blocks(struct inode* inode, off_t* num_blocks_ne
     
     block_sector_t double_indirect_block_number = 0;
     off_t offset_of_double_indirect_block_id = sizeof(off_t) + sizeof(bool) + sizeof(unsigned) + ((NUM_DIRECT_BLOCKS + NUM_INDIRECT_BLOCKS) * sizeof(block_sector_t));
-    if ((*index_of_next_block_to_add) == NUM_DIRECT_BLOCKS + (NUM_BLOCK_IDS_PER_BLOCK*NUM_INDIRECT_BLOCKS)) {
+    if ((*index_of_next_block_to_add) == NUM_DIRECT_BLOCKS + (NUM_BLOCK_IDS_PER_BLOCK*NUM_INDIRECT_BLOCKS) - 1) {
         //allocate the doubly indirect block for the inode
         bool success = free_map_allocate(1, &double_indirect_block_number);
         if (success == false) {
@@ -1076,14 +1076,14 @@ static void add_double_indirect_blocks(struct inode* inode, off_t* num_blocks_ne
         release_cache_lock_for_read(&disk_inode_cache_entry->lock);
     }
     struct cache_entry* double_indirect_block_cache_entry = get_cache_entry_for_sector(double_indirect_block_number, false);
-    if (((*index_of_next_block_to_add) - NUM_DIRECT_BLOCKS - (NUM_BLOCK_IDS_PER_BLOCK*NUM_INDIRECT_BLOCKS)) % NUM_BLOCK_IDS_PER_BLOCK != 0) {
+    if (((*index_of_next_block_to_add) - NUM_DIRECT_BLOCKS + 1 - (NUM_BLOCK_IDS_PER_BLOCK*NUM_INDIRECT_BLOCKS)) % NUM_BLOCK_IDS_PER_BLOCK != 0) {
         add_to_existing_indirect_block(double_indirect_block_cache_entry, num_blocks_needed, index_of_next_block_to_add);
     }
     if ((*num_blocks_needed) == 0) {
         release_cache_lock_for_read(&double_indirect_block_cache_entry->lock);
         return;
     }
-    ASSERT((*index_of_next_block_to_add) - NUM_DIRECT_BLOCKS - (NUM_BLOCK_IDS_PER_BLOCK * NUM_INDIRECT_BLOCKS) % NUM_BLOCK_IDS_PER_BLOCK == 0);
+    ASSERT((*index_of_next_block_to_add) - NUM_DIRECT_BLOCKS + 1 - (NUM_BLOCK_IDS_PER_BLOCK * NUM_INDIRECT_BLOCKS) % NUM_BLOCK_IDS_PER_BLOCK == 0);
     off_t indirect_start_index = get_indirect_block_index_in_double_indirect_block((*index_of_next_block_to_add));
     int double_indirect_index;
     for (double_indirect_index = indirect_start_index; double_indirect_index < NUM_BLOCK_IDS_PER_BLOCK; double_indirect_index++) {
