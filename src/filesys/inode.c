@@ -773,6 +773,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
                 request->sector_number = read_ahead_block;
                 lock_acquire(&read_ahead_requests_list_lock);
                 list_push_back(&read_ahead_requests_list, &request->elem);
+                cond_signal(&read_ahead_list_populated, &read_ahead_requests_list_lock);
                 lock_release(&read_ahead_requests_list_lock);
             }
         }

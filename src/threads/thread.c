@@ -277,6 +277,7 @@ void thread_init (void)
     lock_init (&file_system_lock);
     lock_init (&read_ahead_requests_list_lock);
     list_init (&read_ahead_requests_list);
+    cond_init (&read_ahead_list_populated);
     list_init (&ready_list);
     list_init (&all_list);
     list_init (&cpu_changed_list);
@@ -1235,13 +1236,16 @@ void flush_cache_function(void* aux UNUSED) {
 void process_read_ahead_list(void* aux UNUSED) {
     while (true) {
         lock_acquire(&read_ahead_requests_list_lock);
-        while (!list_empty(&read_ahead_requests_list)) {
-            struct list_elem* curr = list_pop_front(&read_ahead_requests_list);
-            struct read_ahead_package* request = list_entry(curr, struct read_ahead_package, elem);
-            struct cache_entry* entry = get_cache_entry_for_sector(request->sector_number, false);
-            release_cache_lock_for_read(&entry->lock);
-            free(request);
+        while (list_empty(&read_ahead_requests_list)) {
+            cond_wait(&read_ahead_list_populated, &read_ahead_requests_list_lock);
         }
+        
+        struct list_elem* curr = list_pop_front(&read_ahead_requests_list);
+        struct read_ahead_package* request = list_entry(curr, struct read_ahead_package, elem);
+        struct cache_entry* entry = get_cache_entry_for_sector(request->sector_number, false);
+        release_cache_lock_for_read(&entry->lock);
+        free(request);
+        
         lock_release(&read_ahead_requests_list_lock);
         thread_yield();
     }

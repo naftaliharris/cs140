@@ -222,6 +222,9 @@ struct read_ahead_package {
 
 struct list read_ahead_requests_list;      /* list of read_ahead_packages */
 struct lock read_ahead_requests_list_lock; /* race condition protection */
+struct condition read_ahead_list_populated;/* prevents busy waiting in read_ahead
+                                            thread */
+
                                             
 
 /* global lock to be used for file_system access */
