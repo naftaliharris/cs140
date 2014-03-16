@@ -1,0 +1,634 @@
+     	       	     +-------------------------+
+		     |		CS 140	       |
+		     | PROJECT 4: FILE SYSTEMS |
+		     |	   DESIGN DOCUMENT     |
+		     +-------------------------+
+
+---- GROUP ----
+
+>> Fill in the names and email addresses of your group members.
+
+Luke Pappas <lpappas9@stanford.edu>
+Connor Woodson <cwoodson@stanford.edu>
+Naftali Harris <naftali@stanford.edu>
+
+---- PRELIMINARIES ----
+
+>> If you have any preliminary comments on your submission, notes for the
+>> TAs, or extra credit, please give them here.
+
+>> Please cite any offline or online sources you consulted while
+>> preparing your submission, other than the Pintos documentation, course
+>> text, lecture notes, and course staff.
+
+		     INDEXED AND EXTENSIBLE FILES
+		     ============================
+
+---- DATA STRUCTURES ----
+
+>> A1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+==================================================================
+#define INODE_MAGIC 0x494e4f44 /* Identifies an inode. */
+#define NUM_BLOCK_IDS_IN_INODE 125
+#define NUM_DIRECT_BLOCKS 123
+#define NUM_INDIRECT_BLOCKS 1
+#define NUM_DOUBLE_INDIRECT_BLOCKS 1
+#define MAX_FILE_LENGTH_IN_BYTES 8387976
+#define NUM_BLOCK_IDS_PER_BLOCK 128
+#define INODE_INDIRECT_BLOCK_INDEX 123
+#define INDOE_DOUBLE_INDIRECT_BLOCK_INDEX 124
+
+Purpose: constants of our indexing scheme. 
+==================================================================
+struct inode_disk {
+    off_t length;                                  /* File size in bytes. */
+    bool is_directory;                             /* true if inode represents a directory, false for files */
+    unsigned magic;                                /* Magic number. */
+    block_sector_t blocks[NUM_BLOCK_IDS_IN_INODE]; /* block id's of file data */
+};
+
+Purpose: we modified the on_disk inode struct to contain
+	the above fields. Stores file information on disk.
+==================================================================
+struct inode
+{
+    struct list_elem elem;              /* Element in inode list. */
+    block_sector_t sector;              /* Sector number of disk location. */
+    int open_cnt;                       /* Number of openers. */
+    bool removed;                       /* True if deleted, false otherwise. */
+    bool is_directory;                  /* True if is direcrtory, false otherwise. Set on call to inode_open, as it is 												read from disk_inode */
+    int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
+    struct lock data_lock;              /* lock protecting internal inode data */
+    struct lock extend_inode_lock;      /* ensures writing past EOF and subsequent inode_extension is atomic */
+    struct lock directory_lock;         /* ensures atomic directory access */
+};
+
+Purpose: these structs contain further information
+		about an open inode, and are stored in a globa
+		list. We use three different locks. data_lock
+		protects inode struct data. Extend_inode
+		ensures that extending the file is atomic.
+		dirctory_lock allows us to lock directories. Note
+		we need the directory lock here because directory
+		structs share a pointer to an inode, thus multiple
+		directory structs can reference same inode, and
+		all need to see the same lock.
+==================================================================
+static struct lock open_inodes_lock;
+
+Purpose: because the list of open inodes is a global
+		list shared by threads, we need to lock
+		access down. 
+==================================================================
+static struct lock free_map_lock;
+
+Purpose: because the free_map can be accessed from multiple
+		threads, it needs to by synchronized. Thus we use 
+		a lock to synchronize allocations and frees. 
+==================================================================
+
+
+>> A2: What is the maximum size of a file supported by your inode
+>> structure?  Show your work.
+
+Our inode contains 122 direct blocks, 1 indirect block, and 1
+doubly indirect block. This gives us a total of 
+122 + 128 + 128*128 = 16634 blocks = 8516608 bytes 
+
+Given our disk max size of 8MB, the max file size we could be 
+presented with is as follows. 
+
+There are two cases to consider. The first case is a single directory
+which is maxed out in size with files all of length 0. We have 8MB, 
+of disk space. The metadata of a the inode for the single directory
+is 512 Bytes. Thus, that leaves 8MB - 512 Bytes = 8388488 bytes for which
+the directory can grow in size. In this case, we have sufficient storage.
+
+The second case is that of a single directory, with one file that 
+grows in size to max out the disk. This amounts to 8MB - 512 - 512 =
+8387976 bytes of max file length. This is also smaller than the max
+file size we can support with our inode indexing scheme, so again, 
+we are ok. 
+
+---- SYNCHRONIZATION ----
+
+>> A3: Explain how your code avoids a race if two processes attempt to
+>> extend a file at the same time.
+
+The process of extension begins with a call to inode_write_at
+where the inode is passed in. There are two cases to consider.
+
+Case 1: In this case, the two processes are trying to extend
+different files. Thus, inode_write_at will be called from
+each thread with a different inode. In this case, the only
+potential race would be pertaining to block allocation
+from the free_map. We prevent races in this case with the 
+lock around the free map allocate and free map free calls. 
+
+Case 2: In this case, two processes are trying to extend
+the same file. Thus, the inode passed to inode_write_at will
+be the same in both threads. The race in file extension
+is prevented with the extend_inode lock. The first process
+to run acquires the lock. it then extends the inode 
+by the needed amount of its write, and when finished writing
+updates the length field of the on disk inode for the
+given file, and releases the extend_inode lock. The second
+process then runs, and acquires the lock. It then rechecks the 
+condition of file extension. If the file is now of sufficient
+length, the process simply releases the lock and continues
+an normal write. If the offset of the write is still greater 
+than the file size, the lock is held, the extending and writing
+of the inode is performed, and when complete, the extend_inode
+lock is releases, and the write completes. 
+
+>> A4: Suppose processes A and B both have file F open, both
+>> positioned at end-of-file.  If A reads and B writes F at the same
+>> time, A may read all, part, or none of what B writes.  However, A
+>> may not read data other than what B writes, e.g. if B writes
+>> nonzero data, A is not allowed to see all zeros.  Explain how your
+>> code avoids this race.
+
+We avoid this race by updating the length of a file as stored
+in the on disk inode only after an extending write has finished 
+writing. Thus, a reading thread checks the length of the file. If
+it its offset exceeds or equals length (EOF), the read returns
+0 bytes. While that read is taking place, another thread might
+be in the process of extending the file, but because the writing
+thread does not update the length of the on_disk_inode until
+the extending completes, the reading thread will still see the 
+old EOF, and thus not read past. 
+
+
+>> A5: Explain how your synchronization design provides "fairness".
+>> File access is "fair" if readers cannot indefinitely block writers
+>> or vice versa.  That is, many processes reading from a file cannot
+>> prevent forever another process from writing the file, and many
+>> processes writing to a file cannot prevent another process forever
+>> from reading the file.
+
+Our design employs a shared lock in the buffer cache. When reading of
+a file or writing of a file is performed, all reads and writes
+pass from disk to the buffer cache to the thread and vice versa. 
+Access to a block of file data residing in the buffer cache can either
+be exclusively held, or shared. In our implementation, we used the key
+worlds read for shared and write for exclusive. Given the relaxed requirements
+of allowing multiple readers and writers of the same data of a file at once,
+we acquire all cache needed cache entry locks in both read and write calls 
+in the read status, i.e. shared status. Thus, the presence of a reader
+cannot prevent a writer from operating. This design was verified in OH. 
+
+We use the exclusive lock in the cache internal code during eviction and 
+clearing of cache entries, as in these cases, we need to make sure only
+one access to a given entry. Thus, the exclusive lock acts as a protection
+mechanism against the internal data of a cache entry, and the shared
+lock allows us to track how many people currently have access to a 
+cache entry at a given time. If the cache entry try lock acquire fails
+we know the entry is in use by at least one thread. 
+
+---- RATIONALE ----
+
+>> A6: Is your inode structure a multilevel index?  If so, why did you
+>> choose this particular combination of direct, indirect, and doubly
+>> indirect blocks?  If not, why did you choose an alternative inode
+>> structure, and what advantages and disadvantages does your
+>> structure have, compared to a multilevel index?
+
+Yes, our inode structure is multilevel. Our design contains
+122 direct blocks, 1 indirect block, and 1 doubly indirect block.
+We chose this design for the following reasons. 
+
+First, we had to support a file of max size as computed in
+question A2. In order to do this, this requires the use of 
+doubly indirect blocks. 
+
+Second, given that we had to use a doubly indirect block, 
+we wanted to minimize the number of disk accesses by 
+using as much storage space as possible for direct and 
+indirect blocks. Thus, we only store the bare minimum
+of file length and boolean is_dir in the inode structure, 
+and the required magic number. This gives us space for 
+a maximum of 122 direct blocks, 1 indirect block, and 1 doubly
+indirect block. 
+
+Third, this particular arrangement limits the number of disk accesses 
+needed when reading a file because at a last resort, a file will
+require double indirection = 3 disk accesses. We optimize for the case 
+of accesses within the first 512*122 = 62464 bytes of a file by storing
+the blocks of those bytes of file data in direct blocks. 
+
+			    SUBDIRECTORIES
+			    ==============
+
+---- DATA STRUCTURES ----
+
+>> B1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+struct dir_entry 
+  {
+    block_sector_t inode_sector;
+    char name[NAME_MAX + 1];
+    bool in_use;
+  };
+purpose: a dir entry as stored in a dir file on disk
+
+struct dir 
+  {
+    struct inode *inode;
+    off_t pos;
+  };
+purpose: a directory as stored in memory
+
+struct file 
+  {
+    struct inode *inode;
+    off_t pos;
+    bool deny_write;
+    struct dir* dir;
+  };
+purpose: a file or directory as represented in memory
+
+struct thread
+  {
+...
+    struct dir* curr_dir;
+...
+  };
+purpose: store the current directory for a thread
+
+---- ALGORITHMS ----
+
+>> B2: Describe your code for traversing a user-specified path.  How
+>> do traversals of absolute and relative paths differ?
+
+Our path traversal is done in the method dir_resolve_path in directory.c.
+This method iterates through the path string and returns the inode of the
+parent directory (if parent == true; this is used in most cases) or else
+the inode of the last element in the path.
+This method works for both absolute and relative path names. It requires
+the current working directory to be passed in, which is used as the top
+directory in a relative path name. But if the first character of the path
+name is '/', then the root dir is used as the top element.
+The method iterates through the path name character by character. It makes
+sure each individual piece of the path is a file name of no more than
+NAME_MAX (14) characters, it makes sure those files exist, and it makes
+sure they are all directories (except for the last element in the path).
+To handle path names with '.' and '..', we create directory entries
+in every new directory with those names. '.' points (via its inode) to the
+directory that it's in, and '..' points to the parent directory. So when
+looking through a path name to find a specific directory/file, we do not
+need to do anything special to handle those relative paths.
+
+---- SYNCHRONIZATION ----
+
+>> B4: How do you prevent races on directory entries?  For example,
+>> only one of two simultaneous attempts to remove a single file
+>> should succeed, as should only one of two simultaneous attempts to
+>> create a file with the same name, and so on.
+
+We use locks in the inodes to prevent race conditions. Each inode has
+a directory_lock. This is acquired in several method calls:
+filesys_create/open/remove and dir_resolve_path. dir_resolve_path locks
+the inodes of each directory it goes through as it iterates down the
+path, and it returns with the parent/final inode locked.
+If filesys_remove is simultaneously called twice on the same file,
+the following would happen:
+The first thread to acquire the parent directory's lock in dir_resolve_path
+would remove the file. The second thread would be blocked until
+after the removal is complete. Then it would resolve its path to get the
+parent directory we are removing from. However, the call to dir_remove
+would return false indicating that the file is no longer in the parent
+directory.
+Similar behaviour occurs with the other file system operations.
+Filesys_open is synchronized to prevent any tampering with the directories
+when we are performing the file lookup.
+
+>> B5: Does your implementation allow a directory to be removed if it
+>> is open by a process or if it is in use as a process's current
+>> working directory?  If so, what happens to that process's future
+>> file system operations?  If not, how do you prevent it?
+
+No. Directories cannot be removed unless they are empty. We prevent
+this by inserting specific logic into dir_remove that is triggered
+when the object being removed is a directory. We ensure the below
+is synchronized because dir_remove requires the directory_lock
+for the parent directory inode to be acquired prior to entering
+the function.
+dir_remove already opens the inode of the file we are seeking
+to modify. We can thus easily check of that inode is a directory
+and if so we do our logic. We check if that inode is already open
+more than once (we know it's open at least once). If it is, we
+fail dir_remove (return false). Then we call dir_readdir to
+check if the directory has any elements in it. As dir_readdir
+skips '.' and '..' we don't need to account for those here.
+If dir_readdir returns true then there is something inside of
+the directory.
+thus, we will only allow the removal of a directory if it
+is not open by anything else and if it is empty. This behaviour
+is, again, thread safe because the parent directory of this
+directory is locked. For this directory to be modified,
+the parent directory lock would need to be acquired in order
+to access this directory in the first place, and if that has
+already taken place then this directory is open meaning it
+already fails the removal test.
+
+---- RATIONALE ----
+
+>> B6: Explain why you chose to represent the current directory of a
+>> process the way you did.
+
+We represent the current directory as a struct dir* pointer in
+struct thread. This pointer will point to an open directory,
+which is the current working directory for the thread.
+There are some caveats with this though - initially this
+pointer will be NULL for threads. If it is NULL, then that means
+that the current working directory is the root directory, and all
+of the code that handles reading the current working directory of
+a thread takes that into account - it will properly open up the
+root directory for a thread if its cwd is NULL. The reason why this
+value of NULL is necessary is because the threads are initialized
+before the file system, meaning that there is no way to open the root
+directory for the very first thread.
+We store open dir pointers to represent the current working directory
+because it makes it simple for our implementation of dir_remove.
+If a directory is the CWD of some thread, then that directory is open
+somewhere, which will prevent that directory from being removed.
+The matter of curr_dir being NULL representing the root directory
+doesn't affect our implementation, because the root directory cannot
+be removed.
+To inherit cwd's, we use dir_reopen on the parent's current working
+directory (setting that thread's curr_dir to the root directory if it
+is NULL first). To change cwd's, we just open the new directory,
+close the old one, and change the pointer.
+
+			     BUFFER CACHE
+			     ============
+
+---- DATA STRUCTURES ----
+
+>> C1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+======================================================================
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: a lock that allows multiple readers, but
+ only one writer.
+ NOTE: this implimentation taken from class notes, lecture
+ on synchronization.
+ -----------------------------------------------------------
+ */
+struct cache_lock {
+    int i; /* number of shared lockers, or -1 if exclusively locked */
+    struct lock internal_lock; /* mutual exclusion in updating cache_lock
+                                data */
+    struct condition cond; /* used to notify waiters when lock releases */
+};
+Purpose: shared lock, allows for multiple readers and writers
+	of a cache entry, or exclusive access if needed.
+======================================================================
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: This struct tracks the information that
+ pertains to a given cache entry.
+ NOTE: Per the spec, there are 64 of these entries. Thus,
+ we track these entries in an array that is global.
+ NOTE: the bytes pointer will point to a page of physical
+ memory from the kernel pool that is returned after a call
+ to palloc.
+ -----------------------------------------------------------
+ */
+struct cache_entry {
+    int sector_id; /*used to identify the sector from disk that is in this
+                    entry currently*/
+    int index;          /*index into the cache array of cache_entry's */
+    bool accessed;      /*true if the data has been accessed recently */
+    bool dirty;         /*true if the data has been written to */
+    void* bytes;        /*pointer to the bytes that this cache_entry manages */
+    struct cache_lock lock; /*lock that allows multpiple reads, but only one
+                             write */
+};
+
+Purpose: tracks the information for a given cache entry. There
+	are 64 of these, by design outlaid in the project specification.
+======================================================================
+/*
+ -----------------------------------------------------------
+ DESCRIPTTION: lock used when accessing the cache. Because
+ the cache is global, when modifing the cache, we
+ have to lock it. The only time we use this lock is during
+ eviction however, as each cache entry has its own lock,
+ and the cache itself is a static array.
+ -----------------------------------------------------------
+ */
+static struct lock eviction_lock;
+
+Purpose: ensures atomic update of the clock hand during
+	eviction. 
+======================================================================
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: index number of the next cache entry to check
+ during eviction. Note, when incrementing this field
+ must acquire the eviction lock, as this must be a
+ mututally exclusive operation.
+ -----------------------------------------------------------
+ */
+unsigned clock_hand;
+
+Purpose: clock hand used during eviction algorithm. Maintains the 
+	index of the cache entry to evict.
+======================================================================
+#define NUM_CACHE_ENTRIES 64
+#define NUM_KERNEL_PAGES 8
+#define NUM_CACHE_ENTRIES_PER_PAGE 8
+#define UNUSED_ENTRY_INDICATOR -1
+
+Purpose: constants of our cache implementation.
+======================================================================
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: global array of cache entries.
+ -----------------------------------------------------------
+ */
+struct cache_entry cache[NUM_CACHE_ENTRIES];
+
+Purpose: array of cache entries. 
+======================================================================
+struct mapping_package {
+    int sector_id;
+    int index_in_cache;
+};
+
+Purpose: Maps a disk sector number to a cache index. Used to check the
+	cache without having to acquire the cache lock. 
+======================================================================
+struct mapping_package mappings[NUM_CACHE_ENTRIES];
+
+Purpose: array of cache mappings
+======================================================================
+struct lock mappings_lock;
+
+Purpose: mappings array is accessed by multiple threads as it is 
+	global. Thus, need an lock to protect it.
+======================================================================
+/*
+ ----------------------------------------------------------------
+ DESCRIPTION: Allows threads to communicate to the read_ahead 
+    thread the sector numbers that they will need to have
+    read ahead.
+ ----------------------------------------------------------------
+ */
+struct read_ahead_package {
+    unsigned sector_number; /* sector to read */
+    struct list_elem elem;
+};
+
+Purpose: see description for purpose.
+======================================================================
+struct list read_ahead_requests_list;      /* list of read_ahead_packages */
+
+Purpose: list of read ahead requests made. The read ahead thread
+	processes this list. 
+======================================================================
+struct lock read_ahead_requests_list_lock; /* race condition protection */
+
+Purpose: as the read ahead list is shared by multiple threads, this
+	ensures only one can add to the list at a time, or the 
+	read ahead thread can remove from the list exclusively.
+=====================================================================
+
+
+---- ALGORITHMS ----
+
+>> C2: Describe how your cache replacement algorithm chooses a cache
+>> block to evict.
+
+We use the clock hand algorithm as stated in the project specification. 
+We simply check access of the cache. If the entry has been accessed, 
+we clear the access field and move on. If it has not been accessed, 
+we pick it as the entry to evict. 
+
+Note, if we have time, we are also thinking about adding
+a field to the cache entry to indicate if it is an inode. 
+If it is an inode, we would leave it in the cache for another
+pass of the eviction algorithm as the inode is frequently
+accessed. However, this is an optimization and not required by 
+the project specification, so we will only implement once
+we get all the tests to pass and if we have time remaining. 
+
+>> C3: Describe your implementation of write-behind.
+
+As stated in the project specification, write-behind
+is performed on eviction, during periodic cache
+flushing, and when the operating system shuts down. 
+
+When a block of data is written to, its corresponding
+cache entry is updated. This is in kernel memory and thus
+does not require i/o. Additionally, the dirty field in the
+cache entry gets set to true to indicate a write has taken
+place. 
+
+When that cache entry gets evicted, the eviction algorithm
+checks the dirty field of the cache entry being evicted. If
+true, the entry is written back to its corresponding disk sector.
+
+The cache flush happens the same way. We launch a thread that
+periodically wakes up from a sleep every set number of 
+ticks and flushes each of the entries in the cache back to disk. 
+After writing back to disk, the dirty field is set to false.
+
+Finally, a cache flush is also performed in the closing of the 
+filesystem. 
+
+Cache flushing can only happen in the flush cache thread 
+if the the cache is in operation. Thus, we use a global boolean
+to indicate when the cache can be flushed. After proper
+initialization of the cache, this is set to true. When 
+the cache is freed, this is set to false. 
+
+>> C4: Describe your implementation of read-ahead.
+
+Read-ahead, as outline in the project specification, 
+reads a sector from disk into the cache. We use a 
+dedicated thread to do this, as the project specification
+instructs us to do. 
+
+When a thread is reading a block, the next block of the file
+is computed and added to a list of read_ahead sectors. Then 
+the read ahead thread gets signaled that the list is non_empty.
+
+The read ahead thread waits on the condition of a non empty
+read ahead list, and when awoken, processes all read ahead
+request by loading them into the cache. 
+
+---- SYNCHRONIZATION ----
+
+>> C5: When one process is actively reading or writing data in a
+>> buffer cache block, how are other processes prevented from evicting
+>> that block?
+
+This is where the shared lock comes in handy. If a thread is actively 
+reading or writing data in a buffer cache entry, that thread will have 
+acquired the shared lock on the cache entry. During eviction, a cache
+entry must be required exclusively, which means that no processes have the 
+shared lock. 
+
+However, one thing to consider is the case of i/o. If a thread
+holds a shared lock and is writing to disk, we do not want that 
+lock to prevent the eviction algorithm from moving on until 
+after the i/o completes. Thus, we implement the try lock 
+acquire, which allows eviction to skip over a cache entry 
+if the cache entry is currently locked. 
+
+>> C6: During the eviction of a block from the cache, how are other
+>> processes prevented from attempting to access the block?
+
+Again, this is where the shared lock comes into play. During eviction, 
+when a cache entry is selected for eviction, the eviction algorithm
+acquires the cache lock exclusively. Once this exclusive lock
+is acquired, no other process can access this cache entry until
+the eviction algorithm releases the cache lock. 
+
+Furthermore, eviction is only called when the mappings lock is acquired. Thus
+it is not possible for a current mapping to be seen between a thread requesting
+a a cache entry that is being evicted, as eviction is an atomic process
+with respect to the cache mappings. 
+
+---- RATIONALE ----
+
+>> C7: Describe a file workload likely to benefit from buffer caching,
+>> and workloads likely to benefit from read-ahead and write-behind.
+
+
+
+
+
+			   SURVEY QUESTIONS
+			   ================
+
+Answering these questions is optional, but it will help us improve the
+course in future quarters.  Feel free to tell us anything you
+want--these questions are just to spur your thoughts.  You may also
+choose to respond anonymously in the course evaluations at the end of
+the quarter.
+
+>> In your opinion, was this assignment, or any one of the three problems
+>> in it, too easy or too hard?  Did it take too long or too little time?
+
+>> Did you find that working on a particular part of the assignment gave
+>> you greater insight into some aspect of OS design?
+
+>> Is there some particular fact or hint we should give students in
+>> future quarters to help them solve the problems?  Conversely, did you
+>> find any of our guidance to be misleading?
+
+>> Do you have any suggestions for the TAs to more effectively assist
+>> students in future quarters?
+
+>> Any other comments?
