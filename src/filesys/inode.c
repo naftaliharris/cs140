@@ -765,8 +765,11 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
         if (offset >= inode_len) {
             break;
         }
-        //here we make the read_ahead call if necesary.
-        block_sector_t read_ahead_block = byte_to_sector (inode, offset, false, 0);
+        //here we make the read_ahead call if necesary. If size is 0, read the next block in the file
+        off_t offset_of_read_ahead = offset;
+        if (size == 0) offset_of_read_ahead = offset + BLOCK_SECTOR_SIZE;
+        if (offset_of_read_ahead > inode_len) offset_of_read_ahead = inode_len;
+        block_sector_t read_ahead_block = byte_to_sector (inode, offset_of_read_ahead, false, 0);
         if (read_ahead_block != sector_idx && (int)read_ahead_block != -1) {
             struct read_ahead_package* request = malloc(sizeof(struct read_ahead_package));
             if (request != NULL) {

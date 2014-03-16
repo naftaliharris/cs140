@@ -128,14 +128,25 @@ void init_cache(void) {
  -----------------------------------------------------------
  */
 void cache_free(void) {
+    lock_acquire(&mappings_lock);
+    lock_acquire(&eviction_lock);
     can_flush = false;
     int i;
     for (i = 0; i < NUM_CACHE_ENTRIES; i++) {
+        struct cache_entry* entry = &cache[i];
+        if (entry->sector_id != UNUSED_ENTRY_INDICATOR) {
+            clear_mapping(entry->sector_id);
+        }
+        entry->sector_id = UNUSED_ENTRY_INDICATOR;
+    }
+    for (i = 0; i < NUM_KERNEL_PAGES; i++) {
         int index = i * NUM_CACHE_ENTRIES_PER_PAGE;
         struct cache_entry* entry = &cache[index];
         void* page_to_free = entry->bytes;
         palloc_free_page(page_to_free);
     }
+    lock_release(&eviction_lock);
+    lock_release(&mappings_lock);
 }
 
 
@@ -409,6 +420,9 @@ void write_to_cache(struct cache_entry* entry, const void* buffer, off_t offset,
  */
 void flush_cache(void) {
     int i;
+    if (can_flush == false) {
+        return;
+    }
     for (i = 0; i < NUM_CACHE_ENTRIES; i++) {
         struct cache_entry* entry = &cache[i];
         acquire_cache_lock_for_read(&entry->lock);
