@@ -73,13 +73,30 @@ void advance_clock_hand(void) {
     }
 }
 
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: Allows us to mantain a mapping of 
+    sector_ids to cache entry containing said 
+    sector_id for efficient lookup in cache. 
+ -----------------------------------------------------------
+ */
 struct mapping_package {
     int sector_id;
     int index_in_cache;
 };
 
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: array of mappings
+ -----------------------------------------------------------
+ */
 struct mapping_package mappings[NUM_CACHE_ENTRIES];
 
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: used to ensure atomic access of mappings. 
+ -----------------------------------------------------------
+ */
 struct lock mappings_lock;
 
 /*
@@ -124,7 +141,10 @@ void init_cache(void) {
  DESCRIPTION: frees the kernel pages that the cache uses.
  NOTE: Must be called after cache_flush.
  NOTE: after calling this function, all of the byte
- fields within the cache_entry's will be invalid.
+    fields within the cache_entry's will be invalid.
+ NOTE: allows benign race by setting can flush without lock
+    but errors on side of over safe, by seting it before
+    freeing cache. 
  -----------------------------------------------------------
  */
 void cache_free(void) {
@@ -314,7 +334,6 @@ struct cache_entry* get_cache_entry_for_sector(int sector_id, bool exclusive) {
         while (true) {
             lock_acquire(&mappings_lock);
             int index = check_existing_mappings(sector_id);
-            //lock_release(&mappings_lock);
             if (index == -1) {
                 break;
             }

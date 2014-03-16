@@ -17,6 +17,8 @@ Naftali Harris <naftali@stanford.edu>
 >> If you have any preliminary comments on your submission, notes for the
 >> TAs, or extra credit, please give them here.
 
+EXTRA CREDIT: VM enabled, passing all tests, 110% in make GRADE.
+
 >> Please cite any offline or online sources you consulted while
 >> preparing your submission, other than the Pintos documentation, course
 >> text, lecture notes, and course staff.
@@ -63,10 +65,12 @@ struct inode
     block_sector_t sector;              /* Sector number of disk location. */
     int open_cnt;                       /* Number of openers. */
     bool removed;                       /* True if deleted, false otherwise. */
-    bool is_directory;                  /* True if is direcrtory, false otherwise. Set on call to inode_open, as it is 												read from disk_inode */
+    bool is_directory;                  /* True if is direcrtory, false otherwise. 
+				Set on call to inode_open, as it is read from disk_inode */
     int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
     struct lock data_lock;              /* lock protecting internal inode data */
-    struct lock extend_inode_lock;      /* ensures writing past EOF and subsequent inode_extension is atomic */
+    struct lock extend_inode_lock;      /* ensures writing past EOF and subsequent 
+					inode_extension is atomic */
     struct lock directory_lock;         /* ensures atomic directory access */
 };
 
@@ -98,9 +102,9 @@ Purpose: because the free_map can be accessed from multiple
 >> A2: What is the maximum size of a file supported by your inode
 >> structure?  Show your work.
 
-Our inode contains 122 direct blocks, 1 indirect block, and 1
+Our inode contains 123 direct blocks, 1 indirect block, and 1
 doubly indirect block. This gives us a total of 
-122 + 128 + 128*128 = 16634 blocks = 8516608 bytes 
+123 + 128 + 128*128 = 16635 blocks = 8517120 bytes 
 
 Given our disk max size of 8MB, the max file size we could be 
 presented with is as follows. 
@@ -163,7 +167,8 @@ it its offset exceeds or equals length (EOF), the read returns
 be in the process of extending the file, but because the writing
 thread does not update the length of the on_disk_inode until
 the extending completes, the reading thread will still see the 
-old EOF, and thus not read past. 
+old EOF, and thus not read past. Note, we alway get length of 
+file from the on disk inode for this reason. 
 
 
 >> A5: Explain how your synchronization design provides "fairness".
@@ -178,11 +183,7 @@ a file or writing of a file is performed, all reads and writes
 pass from disk to the buffer cache to the thread and vice versa. 
 Access to a block of file data residing in the buffer cache can either
 be exclusively held, or shared. In our implementation, we used the key
-words read for shared and write for exclusive. Given the relaxed requirements
-of allowing multiple readers and writers of the same data of a file at once,
-we acquire all cache needed cache entry locks in both read and write calls 
-in the read status, i.e. shared status. Thus, the presence of a reader
-cannot prevent a writer from operating. This design was verified in OH. 
+words read for shared and write for exclusive.  
 
 We use the exclusive lock in the cache internal code during eviction and 
 clearing of cache entries, as in these cases, we need to make sure only
@@ -206,7 +207,7 @@ down the no_waiting semaphore. Since the semaphore implementation is fair,
 >> structure have, compared to a multilevel index?
 
 Yes, our inode structure is multilevel. Our design contains
-122 direct blocks, 1 indirect block, and 1 doubly indirect block.
+123 direct blocks, 1 indirect block, and 1 doubly indirect block.
 We chose this design for the following reasons. 
 
 First, we had to support a file of max size as computed in
@@ -219,14 +220,18 @@ using as much storage space as possible for direct and
 indirect blocks. Thus, we only store the bare minimum
 of file length and boolean is_dir in the inode structure, 
 and the required magic number. This gives us space for 
-a maximum of 122 direct blocks, 1 indirect block, and 1 doubly
+a maximum of 123 direct blocks, 1 indirect block, and 1 doubly
 indirect block. 
 
 Third, this particular arrangement limits the number of disk accesses 
 needed when reading a file because at a last resort, a file will
 require double indirection = 3 disk accesses. We optimize for the case 
-of accesses within the first 512*122 = 62464 bytes of a file by storing
+of accesses within the first 512*123 = 62976 bytes of a file by storing
 the blocks of those bytes of file data in direct blocks. 
+
+Summary: minimize the number of disk accesses by using the 
+most direct blocks possible while still supporting file
+sizes big enough.
 
 			    SUBDIRECTORIES
 			    ==============
@@ -312,7 +317,7 @@ after the removal is complete. Then it would resolve its path to get the
 parent directory we are removing from. However, the call to dir_remove
 would return false indicating that the file is no longer in the parent
 directory.
-Similar behaviour occurs with the other file system operations.
+Similar behavior occurs with the other file system operations.
 Filesys_open is synchronized to prevent any tampering with the directories
 when we are performing the file lookup.
 
@@ -337,7 +342,7 @@ skips '.' and '..' we don't need to account for those here.
 If dir_readdir returns true then there is something inside of
 the directory.
 thus, we will only allow the removal of a directory if it
-is not open by anything else and if it is empty. This behaviour
+is not open by anything else and if it is empty. This behavior
 is, again, thread safe because the parent directory of this
 directory is locked. For this directory to be modified,
 the parent directory lock would need to be acquired in order
@@ -387,19 +392,15 @@ close the old one, and change the pointer.
 /*
  -----------------------------------------------------------
  DESCRIPTION: a lock that allows multiple readers, but
- only one writer.
- NOTE: this implimentation taken from class notes, lecture
- on synchronization.
+ only one writer. Also is starvation free.
  -----------------------------------------------------------
  */
 struct cache_lock {
-    int i; /* number of shared lockers, or -1 if exclusively locked */
-    struct lock internal_lock; /* mutual exclusion in updating cache_lock
-                                data */
-    struct condition cond; /* used to notify waiters when lock releases */
+    struct semaphore no_waiting;
+    struct semaphore no_accessing;
+    struct semaphore readers_lock;
+    int readers;
 };
-Purpose: shared lock, allows for multiple readers and writers
-	of a cache entry, or exclusive access if needed.
 ======================================================================
 /*
  -----------------------------------------------------------
@@ -561,6 +562,10 @@ to indicate when the cache can be flushed. After proper
 initialization of the cache, this is set to true. When 
 the cache is freed, this is set to false. 
 
+We allow for benign races and do not lock this boolean,
+as we take precaution to only set to true after creation, and 
+to set to false before freeing the cache. 
+
 >> C4: Describe your implementation of read-ahead.
 
 Read-ahead, as outline in the project specification, 
@@ -571,10 +576,14 @@ instructs us to do.
 When a thread is reading a block, the next block of the file
 is computed and added to a list of read_ahead sectors. Then 
 the read ahead thread gets signaled that the list is non_empty.
+We do this for each of the next blocks needed within the read length, and
+the next block of the file after read length, checking for the end of 
+file condition.  
 
 The read ahead thread waits on the condition of a non empty
 read ahead list, and when awoken, processes all read ahead
-request by loading them into the cache. 
+request by loading them into the cache. Thus, we avoid busy
+waiting with thread_yield(). 
 
 ---- SYNCHRONIZATION ----
 
@@ -602,7 +611,8 @@ Again, this is where the shared lock comes into play. During eviction,
 when a cache entry is selected for eviction, the eviction algorithm
 acquires the cache lock exclusively. Once this exclusive lock
 is acquired, no other process can access this cache entry until
-the eviction algorithm releases the cache lock. 
+the eviction algorithm releases the cache lock, which only happens
+if the request for a cache entry was made for the read context.  
 
 Furthermore, eviction is only called when the mappings lock is acquired. Thus
 it is not possible for a current mapping to be seen between a thread requesting
@@ -645,7 +655,9 @@ is the case where a significant amount of writing is done to the same
 block of the file. By using a write-behind strategy, the majority of 
 updates to the block happen to its cached copy, and then these 
 updates are written back to the disk when the cache entry is evicted, or
-flush cache is scheduled.  
+flush cache is scheduled. Thus, by using write-behind, we minimize the 
+number of times that we write to and access the disk, thus improving 
+the speed of our file access.  
 
 
 

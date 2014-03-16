@@ -9,8 +9,17 @@
 #include "filesys/cache.h"
 #include "threads/thread.h"
 
-//TO-DO:
-//1.Add a lock to the free_map so that it is synchronized
+/*
+ -----------------------------------------------------------
+ Preliminary notes:
+ - in OH, asked if we had to handle freemap returning error
+    on allocation, as we had already begun to do so, but 
+    code is dense and project does not require it. OH 
+    said not to handle, to only catch the error return with 
+    ASSERT.
+ -----------------------------------------------------------
+ */
+
 
 /*
  -----------------------------------------------------------
@@ -100,8 +109,7 @@ bytes_to_sectors (off_t size)
 }
 
 
-
-
+//LP Added helper functions 
 static bool settup_direct_blocks(struct cache_entry* disk_inode_cache_entry, size_t* num_sectors_needed, size_t* num_sectors_allocated);
 static bool settup_indirect_blocks(struct cache_entry* disk_inode_cache_entry, size_t* num_sectors_needed, size_t* num_sectors_allocated);
 static bool settup_double_indirect_blocks(struct cache_entry* disk_inode_cache_entry, size_t* num_sectors_needed, size_t* num_sectors_allocated);
@@ -948,7 +956,8 @@ static off_t extend_inode(struct inode* inode, const void* buffer, off_t size, o
 
 /*
  ----------------------------------------------------------------------------
- DESCRIPTION: 
+ DESCRIPTION: adds direct blocks to an existing inode. Used in 
+    file extension.
  ----------------------------------------------------------------------------
  */
 static void add_direct_blocks(struct inode* inode, off_t* num_blocks_needed, off_t* index_of_next_block_to_add) {
@@ -972,7 +981,8 @@ static void add_direct_blocks(struct inode* inode, off_t* num_blocks_needed, off
 
 /*
  ----------------------------------------------------------------------------
- DESCRIPTION: 
+ DESCRIPTION: adds indirect blocks to an existing inode. Used in
+ file extension.
  ----------------------------------------------------------------------------
  */
 static void add_indirect_blocks(struct inode* inode, off_t* num_blocks_needed, off_t* index_of_next_block_to_add) {
@@ -1013,7 +1023,9 @@ static void add_indirect_blocks(struct inode* inode, off_t* num_blocks_needed, o
 
 /*
  ----------------------------------------------------------------------------
- DESCRIPTION:
+ DESCRIPTION: returns the index of the indrect block within the 
+    doubly indirect block for the given index. Must be an index of 
+    sufficient size magnitude in. 
  ----------------------------------------------------------------------------
  */
 static off_t get_indirect_block_index_in_double_indirect_block(off_t index) {
@@ -1029,7 +1041,8 @@ static off_t get_indirect_block_index_in_double_indirect_block(off_t index) {
 
 /*
  ----------------------------------------------------------------------------
- DESCRIPTION: 
+ DESCRIPTION: adds blocks to an existing indirect block. Used in inode
+    extension. 
  ----------------------------------------------------------------------------
  */
 static void add_to_existing_indirect_block(struct cache_entry* double_indirect_block_cache_entry, off_t* num_blocks_needed, off_t* index_of_next_block_to_add) {
@@ -1058,7 +1071,8 @@ static void add_to_existing_indirect_block(struct cache_entry* double_indirect_b
 
 /*
  ----------------------------------------------------------------------------
- DESCRIPTION: 
+ DESCRIPTION: adds double indirect blocks to an existing inode. Used in
+    file extension.
  ----------------------------------------------------------------------------
  */
 static void add_double_indirect_blocks(struct inode* inode, off_t* num_blocks_needed, off_t* index_of_next_block_to_add) {
@@ -1088,9 +1102,6 @@ static void add_double_indirect_blocks(struct inode* inode, off_t* num_blocks_ne
         release_cache_lock_for_read(&double_indirect_block_cache_entry->lock);
         return;
     }
-    /*if (((*index_of_next_block_to_add) - NUM_DIRECT_BLOCKS - (NUM_BLOCK_IDS_PER_BLOCK * NUM_INDIRECT_BLOCKS)) % NUM_BLOCK_IDS_PER_BLOCK != 0) {
-        printf("bad index");
-    }*/
     ASSERT(((*index_of_next_block_to_add) - NUM_DIRECT_BLOCKS - (NUM_BLOCK_IDS_PER_BLOCK * NUM_INDIRECT_BLOCKS)) % NUM_BLOCK_IDS_PER_BLOCK == 0);
     off_t indirect_start_index = get_indirect_block_index_in_double_indirect_block((*index_of_next_block_to_add));
     int double_indirect_index;
@@ -1126,7 +1137,8 @@ static void add_double_indirect_blocks(struct inode* inode, off_t* num_blocks_ne
 
 /*
  ----------------------------------------------------------------------------
- DESCRIPTION: 
+ DESCRIPTION: adds blocks to an inode. Called in inode extension if 
+    file extension will require additional blocks. 
  ----------------------------------------------------------------------------
  */
 static void add_blocks_to_inode(struct inode* inode, off_t num_blocks_needed, off_t index_of_next_block_to_add) {
@@ -1148,8 +1160,6 @@ static void add_blocks_to_inode(struct inode* inode, off_t num_blocks_needed, of
     }
 }
 
-
-
 /*
  ---------------------------------------------------------------------------
  Disables writes to INODE.
@@ -1164,9 +1174,6 @@ inode_deny_write (struct inode *inode)
     ASSERT (inode->deny_write_cnt <= inode->open_cnt);
     lock_release(&inode->data_lock);
 }
-
-
-
 
 /* 
  ---------------------------------------------------------------------------
@@ -1184,8 +1191,6 @@ inode_allow_write (struct inode *inode)
     inode->deny_write_cnt--;
     lock_release(&inode->data_lock);
 }
-
-
 
 /* 
  ---------------------------------------------------------------------------

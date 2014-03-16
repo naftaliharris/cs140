@@ -12,8 +12,6 @@
 #include "off_t.h"
 #include "threads/synch.h"
 
-//note for read ahead, just call get_cache_entry and then
-//release the lock when it is returned.
 
 /*
  -----------------------------------------------------------
@@ -196,8 +194,19 @@ void acquire_cache_lock_for_read(struct cache_lock* lock);
  */
 void release_cache_lock_for_read(struct cache_lock* lock);
 
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: No wating if lock held. Used during eviction
+ -----------------------------------------------------------
+ */
 bool try_acquire_cache_lock_for_write(struct cache_lock* lock);
 
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: No wating if lock held. Not used in 
+    our implimentation, but provided non-the-less. 
+ -----------------------------------------------------------
+ */
 bool try_acquire_cache_lock_for_read(struct cache_lock* lock);
 
 

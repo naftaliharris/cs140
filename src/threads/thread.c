@@ -1265,7 +1265,11 @@ void process_read_ahead_list(void* aux UNUSED) {
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
-
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: returns the cwd of calling thread.
+ --------------------------------------------------------------------
+ */
 struct dir*
 get_cwd(void) {
   if(thread_current()->curr_dir == NULL) {

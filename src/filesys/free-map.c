@@ -26,7 +26,9 @@ free_map_init (void)
    the first into *SECTORP.
    Returns true if successful, false if not enough consecutive
    sectors were available or if the free_map file could not be
-   written. */
+   written. 
+ NOTE: removed the file calls to prevent recursion in inode_extension. 
+ */
 bool
 free_map_allocate (size_t cnt, block_sector_t *sectorp)
 {
@@ -35,13 +37,6 @@ free_map_allocate (size_t cnt, block_sector_t *sectorp)
     block_sector_t sector = bitmap_scan_and_flip (free_map, 0, cnt, false);
     lock_release(&free_map_lock);
     
-    /*if (sector != BITMAP_ERROR
-        && free_map_file != NULL
-        && !bitmap_write (free_map, free_map_file))
-    {
-        bitmap_set_multiple (free_map, sector, cnt, false);
-        sector = BITMAP_ERROR;
-    }*/
     if (sector != BITMAP_ERROR) {
         *sectorp = sector;
     }
@@ -56,7 +51,6 @@ free_map_release (block_sector_t sector, size_t cnt)
     lock_acquire(&free_map_lock);
     ASSERT (bitmap_all (free_map, sector, cnt));
     bitmap_set_multiple (free_map, sector, cnt, false);
-    //bitmap_write (free_map, free_map_file);
     lock_release(&free_map_lock);
 }
 

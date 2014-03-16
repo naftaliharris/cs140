@@ -33,7 +33,9 @@ filesys_init (bool format)
 }
 
 /* Shuts down the file system module, writing any unwritten data
-   to disk. */
+   to disk. 
+ NOTE: flush cache before freeing it
+ */
 void
 filesys_done (void) 
 {
