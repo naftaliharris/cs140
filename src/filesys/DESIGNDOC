@@ -681,6 +681,8 @@ would continue this read ahead pattern. Thus, the asynchronous thread would
 awaken to load the requested next block, and mark it present in the 
 cache, so that the next read, which will request that block, will see it
 in the cache already and not have to wait for i/o to fetch from the disk. 
+From filesystem lecture, GREP was given as example where read-ahead 
+fetching would be beneficial. 
 
 Write Behind: one file workload that would benefit from write-behind 
 is the case where a significant amount of writing is done to the same
