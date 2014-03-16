@@ -225,9 +225,12 @@ indirect block.
 
 Third, this particular arrangement limits the number of disk accesses 
 needed when reading a file because at a last resort, a file will
-require double indirection = 3 disk accesses. We optimize for the case 
+require double indirection = 4 disk accesses. We optimize for the case 
 of accesses within the first 512*123 = 62976 bytes of a file by storing
-the blocks of those bytes of file data in direct blocks. 
+the blocks of those bytes of file data in direct blocks. In lecture
+we learned that most files are < 10kB in size. Thus, we optimize
+for the most likely file size, and incur additional disk accesses
+in the abnormal case of files > 10kb. 
 
 Summary: minimize the number of disk accesses by using the 
 most direct blocks possible while still supporting file
@@ -667,6 +670,8 @@ writing its local stack buffer back to disk. However, this would not
 allow multiple threads to access the same file and see other's changes, 
 as the last write back to disk would trump all. Thus, the buffer cache provides
 one copy for all sharing threads to work from.
+Note: buffer caching helps to minimize the number of times read-modify-write 
+must be executed (Filesystems lecture)
 
 Read Ahead: one file workload that benefits from read ahead is the case
 of reading consecutive blocks of a file. In this case, read ahead would
