@@ -4,6 +4,8 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "vm/frame.h"
+#include "threads/vaddr.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -136,6 +138,14 @@ kill (struct intr_frame *f)
    can find more information about both of these in the
    description of "Interrupt 14--Page Fault Exception (#PF)" in
    [IA32-v3a] section 5.15 "Exception and Interrupt Reference". 
+ NOTE: the address that faulted is fault_addr, we use it to 
+    look up the spte if necessary.
+ NOTE: first we check if the faulting address is associated with    
+    an spte. If it is we load the spte and we are done. If it is
+    not, we have to check if the faulting address is a valid 
+    stack access. If it is, we grow the stack, and we are done.
+ NOTE: in the case of growing the stack, pass the rounded down
+    version of the fualting address to the grow_stack function.
  ----------------------------------------------------------------
  */
 static void
@@ -167,9 +177,33 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-  /* To implement virtual memory, delete the rest of the function
-     body, and replace it with code that brings in the page to
-     which fault_addr refers. */
+  //LP Project 3 code
+    if (not_present && user) {
+        struct spte* spte = find_spte(fault_addr, thread_current());
+        bool success = false;
+        if (spte != NULL) {
+            lock_acquire(&spte->page_lock);
+             success = frame_handler_palloc(false, spte, false, false);
+        } else {
+            if (is_valid_stack_access(f->esp, fault_addr)) {
+                void* next_stack_page = (void*)pg_round_down(fault_addr);
+                success = grow_stack(next_stack_page);
+            }
+        }
+        if (!success) {
+            thread_current()->vital_info->exit_status = -1;
+            if (thread_current()->is_running_user_program) {
+                printf("%s: exit(%d)\n", thread_name(), -1);
+            }
+            thread_exit ();
+        } else {
+            return;
+        }
+    }
+    //END LP Poject 3 code
+    
+
+  /* User segfault Code should never get here*/    
   printf ("Page fault at %p: %s error %s page in %s context.\n",
           fault_addr,
           not_present ? "not present" : "rights violation",

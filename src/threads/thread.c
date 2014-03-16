@@ -21,6 +21,7 @@
 #include "userprog/process.h"
 #include "threads/malloc.h"
 #endif
+#include "vm/page.h"
 
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
@@ -110,6 +111,8 @@ static void init_vital_info(struct thread* t);
 /* LP Project 4 additions */
 void flush_cache_function(void* aux UNUSED);
 void process_read_ahead_list(void* aux UNUSED);
+
+
 
 
 /*
@@ -274,7 +277,7 @@ void thread_init (void)
     /*Here we initialize the thread system. */
     /*We do any thread_system init here */
     lock_init (&tid_lock);
-    lock_init (&file_system_lock);
+    //lock_init (&file_system_lock);
     lock_init (&read_ahead_requests_list_lock);
     list_init (&read_ahead_requests_list);
     cond_init (&read_ahead_list_populated);
@@ -880,6 +883,10 @@ static void init_thread (struct thread *t, const char *name, int priority)
     init_file_system_info(t);
     init_child_managment_info(t);
     
+    //project 3
+    lock_init(&t->spte_table_lock);
+    lock_init(&t->pagedir_lock);
+    
     old_level = intr_disable ();
     list_push_back (&all_list, &t->allelem);
     intr_set_level (old_level);
@@ -1130,6 +1137,9 @@ void donate_priority(void) {
         if (currThread->priority > currLock->priority) {
             currLock->priority = currThread->priority;
         }
+        if (currThread == NULL || currLock == NULL) {
+            printf("cur thread null");
+        }
         if (currThread->priority > currLock->holder->priority) {
             currLock->holder->priority = currThread->priority;
         }
@@ -1250,7 +1260,7 @@ void process_read_ahead_list(void* aux UNUSED) {
         thread_yield();
     }
 }
-
+
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);

@@ -1,6 +1,7 @@
 #include "userprog/syscall.h"
 #include <stdio.h>
 #include <syscall-nr.h>
+#include <list.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/malloc.h"
@@ -15,14 +16,15 @@
 #include "lib/string.h"
 #include "threads/vaddr.h"
 #include "userprog/pagedir.h"
+#include "vm/mmap.h"
 
 
 static void syscall_handler (struct intr_frame *);
 
 // BEGIN LP DEFINED HELPER FUNCTIONS//
-static void check_usr_ptr(const void* u_ptr);
-static void check_usr_string(const char* str);
-static void check_usr_buffer(const void* buffer, unsigned length);
+static void check_usr_ptr(const void* u_ptr, void* esp);
+static void check_usr_string(const char* str, void* esp);
+static void check_usr_buffer(const void* buffer, unsigned length, void* esp, bool check_writable);
 static uint32_t read_frame(struct intr_frame* f, int byteOffset);
 static int add_to_open_file_list(struct file* fp);
 static struct file_package* get_file_package_from_open_list(int fd);
@@ -31,23 +33,30 @@ static struct file_package* get_file_package_from_open_list(int fd);
 // BEGIN LP DEFINED SYSTEM CALL HANDLERS //
 static void LP_halt (void) NO_RETURN;
 static void LP_exit (int status) NO_RETURN;
-static pid_t LP_exec (const char* command_line);
+static pid_t LP_exec (const char* command_line, void* esp);
 static int LP_wait (pid_t pid);
-static bool LP_create (const char *file, unsigned initial_size);
-static bool LP_remove (const char *file);
-static int LP_open (const char *file);
+static bool LP_create (const char *file, unsigned initial_size, void* esp);
+static bool LP_remove (const char *file, void* esp);
+static int LP_open (const char *file, void* esp);
 static int LP_filesize (int fd);
-static int LP_read (int fd, void *buffer, unsigned length);
-static int LP_write (int fd, const void *buffer, unsigned length);
+static int LP_read (int fd, void *buffer, unsigned length, void* esp);
+static int LP_write (int fd, const void *buffer, unsigned length, void* esp);
 static void LP_seek (int fd, unsigned position);
 static unsigned LP_tell (int fd);
 static void LP_close (int fd);
+static mapid_t mmap (int fd, void *addr);
+static void munmap (mapid_t mapping);
 // END   LP DEFINED SYSTEM CALL HANDLERS //
 
+//BEGIN LP Project 3 additions
+static void pinning_for_system_call(const void* begin, unsigned length, bool should_pin);
+static unsigned strlen_pin(const char* string);
+//END LP Project 3 additions
 
-static bool chdir(const char* dir);
-static bool mkdir(const char* dir);
-static bool readdir(int fd, char* name);
+
+static bool chdir(const char* dir, void* esp);
+static bool mkdir(const char* dir, void* esp);
+static bool readdir(int fd, char* name, void* esp);
 static bool isdir(int fd);
 static int inumber(int fd);
 
@@ -89,7 +98,7 @@ syscall_handler (struct intr_frame *f )
             break;
         case SYS_EXEC:
             arg1 = read_frame(f, 4);
-            f->eax = (uint32_t)LP_exec((char*)arg1);
+            f->eax = (uint32_t)LP_exec((char*)arg1, f->esp);
             break;
         case SYS_WAIT:
             arg1 = read_frame(f, 4);
@@ -98,15 +107,15 @@ syscall_handler (struct intr_frame *f )
         case SYS_CREATE:
             arg1 = read_frame(f, 4);
             arg2 = read_frame(f, 8);
-            f->eax = (uint32_t)LP_create((const char*)arg1, (unsigned)arg2);
+            f->eax = (uint32_t)LP_create((const char*)arg1, (unsigned)arg2, f->esp);
             break;
         case SYS_REMOVE:
             arg1 = read_frame(f, 4);
-            f->eax = (uint32_t)LP_remove((const char*)arg1);
+            f->eax = (uint32_t)LP_remove((const char*)arg1, f->esp);
             break;
         case SYS_OPEN:
             arg1 = read_frame(f, 4);
-            f->eax = (uint32_t)LP_open((const char*)arg1);
+            f->eax = (uint32_t)LP_open((const char*)arg1, f->esp);
             break;
         case SYS_FILESIZE:
             arg1 = read_frame(f, 4);
@@ -116,13 +125,13 @@ syscall_handler (struct intr_frame *f )
             arg1 = read_frame(f, 4);
             arg2 = read_frame(f, 8);
             arg3 = read_frame(f, 12);
-            f->eax = (int)LP_read((int)arg1, (void*)arg2, (unsigned)arg3);
+            f->eax = (int)LP_read((int)arg1, (void*)arg2, (unsigned)arg3, f->esp);
             break;
         case SYS_WRITE:
             arg1 = read_frame(f, 4);
             arg2 = read_frame(f, 8);
             arg3 = read_frame(f, 12);
-            f->eax = (uint32_t)LP_write((int)arg1, (const void*)arg2, (unsigned)arg3);
+            f->eax = (uint32_t)LP_write((int)arg1, (const void*)arg2, (unsigned)arg3, f->esp);
             break;
         case SYS_SEEK:
             arg1 = read_frame(f, 4);
@@ -139,16 +148,16 @@ syscall_handler (struct intr_frame *f )
             break;
         case SYS_CHDIR:
           arg1 = read_frame(f, 4);
-          f->eax = (uint32_t)chdir((const char*)arg1);
+          f->eax = (uint32_t)chdir((const char*)arg1, f->esp);
           break;
         case SYS_MKDIR:
           arg1 = read_frame(f, 4);
-          f->eax = (uint32_t)mkdir((const char*)arg1);
+          f->eax = (uint32_t)mkdir((const char*)arg1, f->esp);
           break;
         case SYS_READDIR:
           arg1 = read_frame(f, 4);
           arg2 = read_frame(f, 8);
-          f->eax = (uint32_t)readdir((int)arg1, (char*)arg2);
+          f->eax = (uint32_t)readdir((int)arg1, (char*)arg2, f->esp);
           break;
         case SYS_ISDIR:
           arg1 = read_frame(f, 4);
@@ -158,6 +167,15 @@ syscall_handler (struct intr_frame *f )
           arg1 = read_frame(f, 4);
           f->eax = (uint32_t)inumber((int)arg1);
           break;
+        case SYS_MMAP:
+            arg1 = read_frame(f, 4);
+            arg2 = read_frame(f, 8);
+            f->eax = mmap((int)arg1, (void*)arg2);
+            break;
+        case SYS_MUNMAP:
+            arg1 = read_frame(f, 4);
+            munmap((mapid_t) arg1);
+            break;
         default:
             LP_exit(-1); //should never get here. If we do, exit with -1.
             break;
@@ -223,10 +241,14 @@ static void LP_exit (int status) {
     a successful load, or -1 if the load failed. 
  --------------------------------------------------------------------
  */
-static pid_t LP_exec (const char* command_line) {
-    check_usr_string(command_line);
+static pid_t LP_exec (const char* command_line, void* esp) {
+    check_usr_string(command_line, esp);
     struct thread* curr_thread = thread_current();
+    
+    pinning_for_system_call(command_line, strlen(command_line), true);
+    
     pid_t pid = process_execute(command_line);
+    pinning_for_system_call(command_line, strlen(command_line), false);
     if (pid == TID_ERROR) {
         return -1;
     }
@@ -257,10 +279,13 @@ static int LP_wait (pid_t pid) {
  filesys_create is threadsafe
  --------------------------------------------------------------------
  */
-static bool LP_create (const char *file, unsigned initial_size) {
-    check_usr_string(file);
-    //lock_acquire(&file_system_lock);    
+
+static bool LP_create (const char *file, unsigned initial_size, void* esp) {
+    check_usr_string(file, esp);
+    //lock_acquire(&file_system_lock);
+    pinning_for_system_call(file, strlen(file), true);
     bool outcome = filesys_create(file, false, initial_size);
+    pinning_for_system_call(file, strlen(file), false);
     //lock_release(&file_system_lock);
     
     return outcome;
@@ -275,11 +300,14 @@ static bool LP_create (const char *file, unsigned initial_size) {
  filesys_remove is threadsafe
  --------------------------------------------------------------------
  */
-static bool LP_remove (const char *file) {
-    check_usr_string(file);
+
+static bool LP_remove (const char *file, void* esp) {
+    check_usr_string(file, esp);
     
     //lock_acquire(&file_system_lock);
+    pinning_for_system_call(file, strlen(file), true);
     bool outcome = filesys_remove(file);
+    pinning_for_system_call(file, strlen(file), false);
     //lock_release(&file_system_lock);
     
     return outcome;
@@ -293,14 +321,17 @@ static bool LP_remove (const char *file) {
  filesys_open is threadsafe
  --------------------------------------------------------------------
  */
-static int LP_open (const char *file) {
-    check_usr_string(file);
+static int LP_open (const char *file, void* esp) {
+    check_usr_string(file, esp);
+    pinning_for_system_call(file, strlen(file), true);
     //lock_acquire(&file_system_lock);
     struct file* fp = filesys_open(file);
     if (fp == NULL) {
+        pinning_for_system_call(file, strlen(file), false);
         //lock_release(&file_system_lock);
         return -1;
     }
+    pinning_for_system_call(file, strlen(file), false);
     int fd = add_to_open_file_list(fp);
     //lock_release(&file_system_lock);
     return fd;
@@ -332,8 +363,9 @@ static int LP_filesize (int fd) {
     than end of file). Fd 0 reads from the keyboard using input_getc().
  --------------------------------------------------------------------
  */
-static int LP_read (int fd, void *buffer, unsigned length) {
-    check_usr_buffer(buffer, length);
+static int LP_read (int fd, void *buffer, unsigned length, void* esp) {
+    check_usr_buffer(buffer, length, esp, true);
+    pinning_for_system_call(buffer, length, true);
     
     if (fd == STDIN_FILENO) {
         char* char_buff = (char*)buffer;
@@ -341,6 +373,7 @@ static int LP_read (int fd, void *buffer, unsigned length) {
         for (i = 0; i < length; i++) {
             char_buff[i] = input_getc();
         }
+        pinning_for_system_call(buffer, length, false);
         return length;
     }
     
@@ -348,9 +381,11 @@ static int LP_read (int fd, void *buffer, unsigned length) {
     struct file_package* package = get_file_package_from_open_list(fd);
     if (package == NULL || file_is_dir(package->fp)) {
         //lock_release(&file_system_lock);
+        pinning_for_system_call(buffer, length, false);
         return -1;
     }
     int num_bytes_read = file_read_at(package->fp, buffer, length, package->position);
+    pinning_for_system_call(buffer, length, false);
     package->position += num_bytes_read;
     //lock_release(&file_system_lock);
     return num_bytes_read;
@@ -363,11 +398,13 @@ static int LP_read (int fd, void *buffer, unsigned length) {
     than size if some bytes could not be written.
  --------------------------------------------------------------------
  */
-static int LP_write (int fd, const void *buffer, unsigned length) {
-    check_usr_buffer(buffer, length);
+static int LP_write (int fd, const void *buffer, unsigned length, void* esp) {
+    check_usr_buffer(buffer, length, esp, false);
+    pinning_for_system_call(buffer, length, true);
     
     if (fd == STDOUT_FILENO) {
         putbuf(buffer, length);
+        pinning_for_system_call(buffer, length, false);
         return length;
     }
     
@@ -375,9 +412,11 @@ static int LP_write (int fd, const void *buffer, unsigned length) {
     struct file_package* package = get_file_package_from_open_list(fd);
     if (package == NULL || file_is_dir(package->fp)) {
         //lock_release(&file_system_lock);
+        pinning_for_system_call(buffer, length, false);
         return -1;
     }
     int num_bytes_written = file_write_at(package->fp, buffer, length, package->position);
+    pinning_for_system_call(buffer, length, false);
     package->position += num_bytes_written;
     //lock_release(&file_system_lock);
     return num_bytes_written;
@@ -451,7 +490,108 @@ static void LP_close (int fd) {
 
 
 
+static mapid_t
+mmap(int fd, void *addr)
+{
+    /* Validate the parameters */
+    if (((uint32_t)addr) % PGSIZE != 0) {
+        return -1;
+    }
+    if (fd == 0 || fd == 1) {
+        return -1;
+    }
 
+    /* Ensure the fd has been assigned to the user */
+    //lock_acquire(&file_system_lock);
+    struct file_package* package = get_file_package_from_open_list(fd);
+    if (package == NULL) {
+        //lock_release(&file_system_lock);
+        LP_exit(-1);
+    }
+    off_t size = file_length(package->fp);
+    //lock_release(&file_system_lock);
+    
+    /* Ensure that the requested VM region wouldn't contain invalid addresses
+     * or overlap other user memory */
+    struct thread *t = thread_current();
+    void *page;
+    for (page = addr; page < addr + size; page += PGSIZE)
+    {
+        if (page == NULL) {
+            return -1;
+        }
+        if (!is_user_vaddr(page)) {
+            return -1;
+        }
+        if (find_spte(page, t) != NULL) {
+            return -1;
+        }
+    }
+
+    /* Fill in the mmap state data */
+    struct mmap_state *mmap_s = malloc(sizeof(struct mmap_state));
+    if (mmap_s == NULL) {
+        thread_current()->vital_info->exit_status = -1;
+        if (thread_current()->is_running_user_program) {
+            printf("%s: exit(%d)\n", thread_name(), -1);
+        }
+        thread_exit();
+    }
+
+    //lock_acquire(&file_system_lock);
+    mmap_s->fp = file_reopen(package->fp);
+    if (mmap_s->fp == NULL)
+    {
+        //lock_release(&file_system_lock);
+        return -1;
+    }
+    //lock_release(&file_system_lock);
+
+    mmap_s->vaddr = addr;
+    mmap_s->mapping = t->mapid_counter;
+    list_push_back(&t->mmapped_files, &mmap_s->elem);
+
+    /* Finally, create the necessary SPTEs */
+    for (page = addr; page < addr + size; page += PGSIZE)
+    {
+        uint32_t read_bytes = page + PGSIZE < addr + size ? PGSIZE
+                                                          : addr + size - page;
+        uint32_t zero_bytes = PGSIZE - read_bytes;
+        struct spte* spte = create_spte_and_add_to_table(MMAPED_PAGE,             /* Location */
+                                     page,                    /* Address */
+                                     true,                    /* Writeable */
+                                     false,                   /* Loaded */
+                                     mmap_s->fp,              /* File */
+                                     page - addr,             /* File offset */
+                                     read_bytes,
+                                     zero_bytes);
+        if (spte == NULL) {
+            PANIC("null spte");
+        }
+        lock_release(&spte->page_lock);
+    }
+    return t->mapid_counter++;
+}
+
+static void
+munmap(mapid_t mapping)
+{
+    /* Find the mmap_state */
+    struct thread *t = thread_current();
+    struct list_elem *e = list_head(&t->mmapped_files);
+    while ((e = list_next (e)) != list_end (&t->mmapped_files)) 
+    {
+        struct mmap_state *mmap_s = list_entry(e, struct mmap_state, elem);
+        if (mmap_s->mapping == mapping) {
+            //lock_acquire(&file_system_lock);
+            unsigned size = file_length(mmap_s->fp);
+            //lock_release(&file_system_lock);
+            pinning_for_system_call(mmap_s->vaddr, size, true);
+            munmap_state(mmap_s, t);
+            return;
+        }
+    }
+}
 
 /*
  --------------------------------------------------------------------
@@ -460,12 +600,14 @@ static void LP_close (int fd) {
   false on failure.
  --------------------------------------------------------------------
  */
-static bool chdir(const char* dir) {
-  check_usr_string(dir);
+static bool chdir(const char* dir, void* esp) {
+  check_usr_string(dir, esp);
+  pinning_for_system_call(dir, strlen(dir), true);
   //lock_acquire(&file_system_lock);
   struct thread* t = thread_current();
   char* unused;
   struct inode* dirInode = dir_resolve_path(dir, get_cwd(), &unused, false);
+  pinning_for_system_call(dir, strlen(dir), false);
   if (dirInode == NULL)
     return false;
   lock_release(&dirInode->directory_lock);
@@ -495,11 +637,13 @@ static bool chdir(const char* dir) {
  filesys_create is threadsafe
  --------------------------------------------------------------------
  */
-static bool mkdir(const char* dir) {
-  check_usr_string(dir);
+static bool mkdir(const char* dir, void* esp) {
+  check_usr_string(dir, esp);
+  pinning_for_system_call(dir, strlen(dir), true);
   //lock_acquire(&file_system_lock);
   bool success = filesys_create(dir, true, 16);
   //lock_release(&file_system_lock);
+  pinning_for_system_call(dir, strlen(dir), false);
   return success;
 }
 
@@ -514,19 +658,23 @@ static bool mkdir(const char* dir) {
  If not a valid file descriptor, exit the thread
  --------------------------------------------------------------------
  */
-static bool readdir(int fd, char* name) {
-  check_usr_buffer(name, NAME_MAX + 1);
+static bool readdir(int fd, char* name, void* esp) {
+  check_usr_buffer(name, NAME_MAX + 1, esp, true);
+  pinning_for_system_call(name, NAME_MAX + 1, true);
   //lock_acquire(&file_system_lock);
   struct file_package* package = get_file_package_from_open_list(fd);
   if (package == NULL) {
       //lock_release(&file_system_lock);
+      pinning_for_system_call(name, NAME_MAX + 1, false);
       LP_exit(-1);
   }
   if(!file_is_dir(package->fp)) {
+    pinning_for_system_call(name, NAME_MAX + 1, false);
     return false;
   }
   bool result = dir_readdir(package->fp->dir, name);
   //lock_release(&file_system_lock);
+  pinning_for_system_call(name, NAME_MAX + 1, false);
   return result;
 }
 
@@ -616,6 +764,27 @@ static int add_to_open_file_list(struct file* fp) {
 }
 
 /*
+ */
+static unsigned strlen_pin(const char* string) {
+    void* last_page = NULL;
+    void* curr_page = NULL;
+    unsigned str_len = 0;
+    char* str = (char*)string;
+    while (true) {
+        const void* ptr = (const void*)str;
+        curr_page = pg_round_down(ptr);
+        if (curr_page != last_page) {
+            pinning_for_system_call(curr_page, 0, true);
+            last_page = curr_page;
+        }
+        if (*str == '\0') break;
+        str_len++;
+        str = (char*)str + 1;
+    }
+    return str_len;
+}
+
+/*
  --------------------------------------------------------------------
  Description: Checks to ensure that all pointers within the usr's
     supplied buffer are proper for user space. 
@@ -625,15 +794,23 @@ static int add_to_open_file_list(struct file* fp) {
  --------------------------------------------------------------------
  */
 #define BYTES_PER_PAGE PGSIZE
-static void check_usr_buffer(const void* buffer, unsigned length) {
-    check_usr_ptr(buffer);
+static void check_usr_buffer(const void* buffer, unsigned length, void* esp, bool check_writable) {
+    check_usr_ptr(buffer, esp);
+    struct spte* spte = find_spte((void*)buffer, thread_current());
+    if (check_writable && spte->is_writeable == false) {
+        LP_exit(-1);
+    }
     unsigned curr_offset = BYTES_PER_PAGE;
     while (true) {
         if (curr_offset >= length) break;
-        check_usr_ptr((const void*)((char*)buffer + curr_offset));
+        check_usr_ptr((const void*)((char*)buffer + curr_offset), esp);
+        struct spte* spte = find_spte((void*)((char*)buffer + curr_offset), thread_current());
+        if (spte->is_writeable == false) {
+            LP_exit(-1);
+        }
         curr_offset += BYTES_PER_PAGE;
     }
-    check_usr_ptr((const void*)((char*)buffer + length));
+    check_usr_ptr((const void*)((char*)buffer + length), esp);
 }
 
 
@@ -650,17 +827,24 @@ static void check_usr_buffer(const void* buffer, unsigned length) {
  NOTE: If this function completes and returns, than we know the pointer
     is valid, and we continue operation in the kernel processing
     the system call.
+ NOTE: We need to replace the call to pagedir_get_page with a call
+    to get spte, as the page we are accessing might not be mapped.
  --------------------------------------------------------------------
  */
-static void check_usr_ptr(const void* ptr) {
+static void check_usr_ptr(const void* ptr, void* esp) {
     if (ptr == NULL) {
         LP_exit(-1);
     }
     if (!is_user_vaddr(ptr)) {
         LP_exit(-1);
     } 
-    if (pagedir_get_page(thread_current()->pagedir, ptr) == NULL) {
-        LP_exit(-1);
+    if (find_spte((void*)ptr, thread_current()) == NULL) {
+        if (is_valid_stack_access(esp, (void*)ptr)) {
+            void* new_stack_page = pg_round_down(ptr);
+            grow_stack(new_stack_page);
+        } else {
+            LP_exit(-1);
+        }
     }
 }
 
@@ -671,10 +855,10 @@ static void check_usr_ptr(const void* ptr) {
     and are properly mapped. 
  --------------------------------------------------------------------
  */
-static void check_usr_string(const char* str) {
+static void check_usr_string(const char* str, void* esp) {
     while (true) {
         const void* ptr = (const void*)str;
-        check_usr_ptr(ptr);
+        check_usr_ptr(ptr, esp);
         if (*str == '\0') break;
         str = (char*)str + 1;
     }
@@ -693,7 +877,55 @@ static void check_usr_string(const char* str) {
  */
 static uint32_t read_frame(struct intr_frame* f, int byteOffset) {
     void* addr = f->esp + byteOffset;
-    check_usr_ptr(addr);
+    check_usr_ptr(addr, f->esp);
     return *(uint32_t*)addr;
+}
+
+/*
+ --------------------------------------------------------------------
+ DESCRIPTION: This function pins all of the pages that make up the 
+    space from begin to length.
+ NOTE: length is given in bytes
+ NOTE: We assume that the validation of pointers has allready been
+    done, so that these addresses are all valid.
+ NOTE: We define pages by rounding down to the page boundary. If we 
+    call pg_dir_round_up + 1, we will be in the next page. The 
+    differnce between thus rounded up value + 1 and the current
+    address is the offset of the address in the page.
+ NOTE: if we ever encounter length being less than distance to 
+    next page, we have covered all of the necessary pages.
+ NOTE: if should_pin is true, we pin, otherwise, we un_pin
+ NOTE: must be called first with pin, then unpin!
+ --------------------------------------------------------------------
+ */
+static void pinning_for_system_call(const void* begin, unsigned length, bool should_pin) {
+    void* curr_addr = (void*)begin;
+    void* curr_page = pg_round_down(curr_addr);
+    if (should_pin) {
+        pin_page(curr_page);
+    } else {
+        un_pin_page(curr_page);
+    }
+    while (length > PGSIZE) {
+        //add page size to curr_address to get next page
+        //subtract page size from length
+        curr_addr = (void*)((char*)curr_addr + PGSIZE);
+        curr_page = pg_round_down(curr_addr);
+        if (should_pin) {
+            pin_page(curr_page);
+        } else {
+            un_pin_page(curr_page);
+        }
+        length -= PGSIZE;
+    }
+    curr_addr = (void*)((char*)curr_addr + length);
+    void* last_page = pg_round_down(curr_addr);
+    if ((uint32_t)last_page != (uint32_t)curr_page) {
+        if (should_pin) {
+            pin_page(last_page);
+        } else {
+            un_pin_page(last_page);
+        }
+    }
 }
 

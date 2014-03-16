@@ -7,6 +7,9 @@
 #include <stdint.h>
 #include "threads/fixed-point.h"
 #include "filesys/directory.h"
+#include "vm/page.h"
+#include "vm/mmap.h"
+#include <hash.h>
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -163,6 +166,25 @@ struct thread
     /* current working directory */
     struct dir* curr_dir;
 #endif
+
+#ifdef VM
+    /* Project 3 Additions */
+
+    /* pagedir lock */
+    struct lock pagedir_lock;
+    /* spte table lock */
+    struct lock spte_table_lock;
+    /* Supplementary Page Table */
+    struct hash spte_table;
+
+    /* Next mapid_t to use */
+    mapid_t mapid_counter;
+
+    /* List of mmapped files */
+    struct list mmapped_files;
+
+    /* End Project 3 Additions */
+#endif
     
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
@@ -228,7 +250,7 @@ struct condition read_ahead_list_populated;/* prevents busy waiting in read_ahea
                                             
 
 /* global lock to be used for file_system access */
-struct lock file_system_lock;
+//struct lock file_system_lock;
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
