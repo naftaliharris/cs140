@@ -21,6 +21,10 @@ Naftali Harris <naftali@stanford.edu>
 >> preparing your submission, other than the Pintos documentation, course
 >> text, lecture notes, and course staff.
 
+/* The design of these shared locks comes from pseudocode at:
+ * http://en.wikipedia.org/wiki/Readers%E2%80%93writers_problem
+ */
+
 		     INDEXED AND EXTENSIBLE FILES
 		     ============================
 
@@ -609,6 +613,39 @@ with respect to the cache mappings.
 
 >> C7: Describe a file workload likely to benefit from buffer caching,
 >> and workloads likely to benefit from read-ahead and write-behind.
+
+Buffer caching: one file workload that would benefit from buffer caching
+is the case in which the same data blocks of a file are read and/or written
+to repeatedly. Without the buffer cache, all read and write of the same
+blocks would have to pass over the bus, going from disk to memory 
+and back again, repeatedly. However, in the case of the buffer cache,
+the needed blocks are brought in to the in memory cache, operations
+are performed on the cached entries, and then written back to disk
+when finished. A concrete example of this is the case of accessing
+an inode for file allocation. Consider creating a file of size 122*512 bytes.
+In this case, given our indexing scheme, this would require writing to the 
+inode block 122 times for the 122 direct blocks. In a non-caching 
+context, this would require writing to the disk sector of the inode 122 times,
+which is slow. In the context of the cache, the inode block is loaded
+from the disk sector into the cache, writes of the inode update the cache 
+entry, and then when finished, (ideally, in the case of no eviction), write
+once back to the disk with all changes to the block made. 
+
+Read Ahead: one file workload that benefits from read ahead is the case
+of reading consecutive blocks of a file. In this case, read ahead would
+load the next block of the file into the cache when the first block 
+was requested, and subsequent accesses of the file in this pattern 
+would continue this read ahead pattern. Thus, the asynchronous thread would
+awaken to load the requested next block, and mark it present in the 
+cache, so that the next read, which will request that block, will see it
+in the cache already and not have to wait for i/o to fetch from the disk. 
+
+Write Behind: one file workload that would benefit from write-behind 
+is the case where a significant amount of writing is done to the same
+block of the file. By using a write-behind strategy, the majority of 
+updates to the block happen to its cached copy, and then these 
+updates are written back to the disk when the cache entry is evicted, or
+flush cache is scheduled.  
 
 
 
