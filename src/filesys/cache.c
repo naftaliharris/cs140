@@ -435,6 +435,11 @@ void write_to_cache(struct cache_entry* entry, const void* buffer, off_t offset,
  NOTE: Only flush if the cache_entry is in use
  NOTE: Because we are not writing to the cache_entry
  we can aquire the cache_entry lock in the shared context
+ NOTE: As discussed in OH, cache flushing needs to 
+    happen on every entry. Therefore, it is ok to 
+    wait for io in this case, as every entry needs to flush
+    back to ensure disk coherence and provide saftey
+    in the face of a crash.
  -----------------------------------------------------------
  */
 void flush_cache(void) {
