@@ -5,6 +5,8 @@
 #include "threads/init.h"
 #include "threads/pte.h"
 #include "threads/palloc.h"
+#include "vm/page.h"
+#include "threads/thread.h"
 
 static uint32_t *active_pd (void);
 static void invalidate_pagedir (uint32_t *);
@@ -40,10 +42,13 @@ pagedir_destroy (uint32_t *pd)
         uint32_t *pte;
         
         for (pte = pt; pte < pt + PGSIZE / sizeof *pte; pte++)
-          if (*pte & PTE_P) 
+          if (!(*pte & PTE_U) && *pte & PTE_P) 
             palloc_free_page (pte_get_page (*pte));
         palloc_free_page (pt);
       }
+    //LP ADDition, project 3, frees all pages we currently
+    //own in physical memory.
+  free_spte_table(&thread_current()->spte_table);
   palloc_free_page (pd);
 }
 
@@ -172,6 +177,18 @@ pagedir_clear_page (uint32_t *pd, void *upage)
     }
 }
 
+bool
+pagedir_is_present (uint32_t *pd, void *upage) 
+{
+  uint32_t *pte;
+
+  ASSERT (pg_ofs (upage) == 0);
+  ASSERT (is_user_vaddr (upage));
+
+  pte = lookup_page (pd, upage, false);
+  return pte != NULL && (*pte & PTE_P) != 0;
+}
+
 /* Returns true if the PTE for virtual page VPAGE in PD is dirty,
    that is, if the page has been modified since the PTE was
    installed.
@@ -228,6 +245,15 @@ pagedir_set_accessed (uint32_t *pd, const void *vpage, bool accessed)
           invalidate_pagedir (pd);
         }
     }
+}
+
+/* Returns true if the PTE for virtual page VPAGE in PD is writeable. */
+bool
+pagedir_is_writeable (uint32_t *pd, const void *vpage) 
+{
+  uint32_t *pte = lookup_page (pd, vpage, false);
+  ASSERT (pte != NULL);
+  return (*pte & PTE_W) != 0;
 }
 
 /* Loads page directory PD into the CPU's page directory base

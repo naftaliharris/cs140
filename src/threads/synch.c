@@ -253,7 +253,7 @@ lock_acquire (struct lock *lock)
     if (!thread_mlfqs) { 
         if (lock->holder != NULL) {
             thread_current()->lock_waiting_on = lock;
-            donate_priority();
+            //donate_priority();
         }
     }
     
@@ -289,6 +289,7 @@ lock_try_acquire (struct lock *lock)
     bool success;
     
     ASSERT (lock != NULL);
+    
     ASSERT (!lock_held_by_current_thread (lock));
     
     success = sema_try_down (&lock->semaphore);
@@ -331,7 +332,7 @@ lock_release (struct lock *lock)
     if (!thread_mlfqs) {
         list_remove(&(lock->elem)); 
         lock->priority = PRI_MIN;
-        shed_priority();
+        //shed_priority();
     }
     lock->holder = NULL;
     sema_up (&lock->semaphore);
