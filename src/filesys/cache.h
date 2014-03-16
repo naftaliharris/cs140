@@ -18,16 +18,14 @@
 /*
  -----------------------------------------------------------
  DESCRIPTION: a lock that allows multiple readers, but
- only one writer.
- NOTE: this implimentation taken from class notes, lecture
- on synchronization.
+ only one writer. Also is starvation free.
  -----------------------------------------------------------
  */
 struct cache_lock {
-    int i; /* number of shared lockers, or -1 if exclusively locked */
-    struct lock internal_lock; /* mutual exclusion in updating cache_lock
-                                data */
-    struct condition cond; /* used to notify waiters when lock releases */
+    struct semaphore no_waiting;
+    struct semaphore no_accessing;
+    struct semaphore readers_lock;
+    int readers;
 };
 
 /*

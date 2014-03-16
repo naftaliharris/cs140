@@ -174,7 +174,7 @@ a file or writing of a file is performed, all reads and writes
 pass from disk to the buffer cache to the thread and vice versa. 
 Access to a block of file data residing in the buffer cache can either
 be exclusively held, or shared. In our implementation, we used the key
-worlds read for shared and write for exclusive. Given the relaxed requirements
+words read for shared and write for exclusive. Given the relaxed requirements
 of allowing multiple readers and writers of the same data of a file at once,
 we acquire all cache needed cache entry locks in both read and write calls 
 in the read status, i.e. shared status. Thus, the presence of a reader
@@ -187,6 +187,11 @@ mechanism against the internal data of a cache entry, and the shared
 lock allows us to track how many people currently have access to a 
 cache entry at a given time. If the cache entry try lock acquire fails
 we know the entry is in use by at least one thread. 
+
+The shared lock implementation that we use ensures fairness by requiring that
+any attempt to access the data, either for reading or for writing, must first
+down the no_waiting semaphore. Since the semaphore implementation is fair,
+(FIFO), this ensures that neither readers nor writers are ever starved.
 
 ---- RATIONALE ----
 

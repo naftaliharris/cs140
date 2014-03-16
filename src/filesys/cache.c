@@ -452,16 +452,20 @@ void clear_cache_entry_if_present(int sector_id) {
 
 
 /* ================SHARED LOCK CODE============================ */
+/* The design of these shared locks comes from pseudocode at:
+ * http://en.wikipedia.org/wiki/Readers%E2%80%93writers_problem
+ */
 
 /*
  -----------------------------------------------------------
  DESCRIPTION: Initializes the cache lock fields
  -----------------------------------------------------------
  */
-void init_cache_lock(struct cache_lock* lock) {
-    lock->i = 0;
-    lock_init(&lock->internal_lock);
-    cond_init(&lock->cond);
+void init_cache_lock(struct cache_lock* rw_lock) {
+    sema_init(&rw_lock->no_waiting, 1);
+    sema_init(&rw_lock->no_accessing, 1);
+    sema_init(&rw_lock->readers_lock, 1);
+    rw_lock->readers = 0;
 }
 
 /*
@@ -469,13 +473,35 @@ void init_cache_lock(struct cache_lock* lock) {
  DESCRIPTION: None
  -----------------------------------------------------------
  */
-void acquire_cache_lock_for_write(struct cache_lock* lock) {
-    lock_acquire(&lock->internal_lock);
-    while (lock->i) {
-        cond_wait(&lock->cond, &lock->internal_lock);
+void acquire_cache_lock_for_write(struct cache_lock* rw_lock) {
+    sema_down(&rw_lock->no_waiting);
+    sema_down(&rw_lock->no_accessing);
+    sema_up(&rw_lock->no_waiting);
+}
+
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: None
+ -----------------------------------------------------------
+ */
+void release_cache_lock_for_write(struct cache_lock* rw_lock) {
+    sema_up(&rw_lock->no_accessing);
+}
+
+/*
+ -----------------------------------------------------------
+ DESCRIPTION: None
+ -----------------------------------------------------------
+ */
+void acquire_cache_lock_for_read(struct cache_lock* rw_lock) {
+    sema_down(&rw_lock->no_waiting);
+    sema_down(&rw_lock->readers_lock);
+    int readers = rw_lock->readers++;
+    sema_up(&rw_lock->readers_lock);
+    if (readers == 0) {
+        sema_down(&rw_lock->no_accessing);
     }
-    lock->i = -1;
-    lock_release(&lock->internal_lock);
+    sema_up(&rw_lock->no_waiting);
 }
 
 /*
@@ -483,39 +509,13 @@ void acquire_cache_lock_for_write(struct cache_lock* lock) {
  DESCRIPTION: None
  -----------------------------------------------------------
  */
-void release_cache_lock_for_write(struct cache_lock* lock) {
-    lock_acquire(&lock->internal_lock);
-    lock->i = 0;
-    cond_broadcast(&lock->cond, &lock->internal_lock);
-    lock_release(&lock->internal_lock);
-}
-
-/*
- -----------------------------------------------------------
- DESCRIPTION: None
- -----------------------------------------------------------
- */
-void acquire_cache_lock_for_read(struct cache_lock* lock) {
-    lock_acquire(&lock->internal_lock);
-    while (lock->i < 0) {
-        cond_wait(&lock->cond, &lock->internal_lock);
+void release_cache_lock_for_read(struct cache_lock* rw_lock) {
+    sema_down(&rw_lock->readers_lock);
+    int readers = --rw_lock->readers;
+    sema_up(&rw_lock->readers_lock);
+    if (readers == 0) {
+        sema_up(&rw_lock->no_accessing);
     }
-    lock->i++;
-    lock_release(&lock->internal_lock);
-}
-
-/*
- -----------------------------------------------------------
- DESCRIPTION: None
- -----------------------------------------------------------
- */
-void release_cache_lock_for_read(struct cache_lock* lock) {
-    lock_acquire(&lock->internal_lock);
-    lock->i--;
-    if (!(lock->i)) {
-        cond_signal(&lock->cond, &lock->internal_lock);
-    }
-    lock_release(&lock->internal_lock);
 }
 
 /*
@@ -527,14 +527,14 @@ void release_cache_lock_for_read(struct cache_lock* lock) {
     lock for write purposes.
  -----------------------------------------------------------
  */
-bool try_acquire_cache_lock_for_write(struct cache_lock* lock) {
-    lock_acquire(&lock->internal_lock);
-    if (lock->i == 0) {
-        lock->i = -1;
-        lock_release(&lock->internal_lock);
-        return true;
+bool try_acquire_cache_lock_for_write(struct cache_lock* rw_lock) {
+    if (sema_try_down(&rw_lock->no_waiting)) {
+        if (sema_try_down(&rw_lock->no_accessing)) {
+            sema_up(&rw_lock->no_waiting);
+            return true;
+        }
+        sema_up(&rw_lock->no_waiting);
     }
-    lock_release(&lock->internal_lock);
     return false;
 }
 
@@ -547,14 +547,20 @@ bool try_acquire_cache_lock_for_write(struct cache_lock* lock) {
     lock for read purposes.
  -----------------------------------------------------------
  */
-bool try_acquire_cache_lock_for_read(struct cache_lock* lock) {
-    lock_acquire(&lock->internal_lock);
-    if (lock->i >= -1) {
-        lock->i++;
-        lock_release(&lock->internal_lock);
-        return true;
+bool try_acquire_cache_lock_for_read(struct cache_lock* rw_lock) {
+    if (sema_try_down(&rw_lock->no_waiting)) {
+        if (sema_try_down(&rw_lock->readers_lock)) {
+            int readers = rw_lock->readers++;
+            sema_up(&rw_lock->readers_lock);
+            if (readers == 0) {
+                bool success = sema_try_down(&rw_lock->no_accessing);
+                sema_up(&rw_lock->no_waiting);
+                return success;
+            }
+            sema_up(&rw_lock->no_waiting);
+            return true;
+        }
+        sema_up(&rw_lock->no_waiting);
     }
-    lock_release(&lock->internal_lock);
     return false;
 }
-
