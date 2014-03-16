@@ -540,9 +540,6 @@ void pin_page(void* virtual_address) {
 void un_pin_page(void* virtual_address) {
     struct spte* spte = find_spte(virtual_address, thread_current());
     lock_acquire(&spte->page_lock);
-    if(!lock_held_by_current_thread(&spte->frame->frame_lock)) {
-      PANIC("e");
-      }
     ASSERT(lock_held_by_current_thread(&spte->frame->frame_lock));
     lock_release(&spte->frame->frame_lock);
     lock_release(&spte->page_lock);
