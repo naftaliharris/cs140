@@ -277,7 +277,7 @@ void thread_init (void)
     /*Here we initialize the thread system. */
     /*We do any thread_system init here */
     lock_init (&tid_lock);
-    lock_init (&file_system_lock);
+    //lock_init (&file_system_lock);
     lock_init (&read_ahead_requests_list_lock);
     list_init (&read_ahead_requests_list);
     cond_init (&read_ahead_list_populated);

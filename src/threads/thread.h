@@ -250,7 +250,7 @@ struct condition read_ahead_list_populated;/* prevents busy waiting in read_ahea
                                             
 
 /* global lock to be used for file_system access */
-struct lock file_system_lock;
+//struct lock file_system_lock;
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.

@@ -245,10 +245,10 @@ static pid_t LP_exec (const char* command_line, void* esp) {
     check_usr_string(command_line, esp);
     struct thread* curr_thread = thread_current();
     
-    unsigned length = strlen_pin(command_line);
+    pinning_for_system_call(command_line, strlen(command_line), true);
     
     pid_t pid = process_execute(command_line);
-    pinning_for_system_call(command_line, length, false);
+    pinning_for_system_call(command_line, strlen(command_line), false);
     if (pid == TID_ERROR) {
         return -1;
     }
@@ -283,9 +283,9 @@ static int LP_wait (pid_t pid) {
 static bool LP_create (const char *file, unsigned initial_size, void* esp) {
     check_usr_string(file, esp);
     //lock_acquire(&file_system_lock);
-    unsigned length = strlen(file);
-    bool outcome = filesys_create(file, initial_size);
-    pinning_for_system_call(file, length, false);
+    pinning_for_system_call(file, strlen(file), true);
+    bool outcome = filesys_create(file, false, initial_size);
+    pinning_for_system_call(file, strlen(file), false);
     //lock_release(&file_system_lock);
     
     return outcome;
@@ -305,9 +305,9 @@ static bool LP_remove (const char *file, void* esp) {
     check_usr_string(file, esp);
     
     //lock_acquire(&file_system_lock);
-    unsigned length = strlen(file);
+    pinning_for_system_call(file, strlen(file), true);
     bool outcome = filesys_remove(file);
-    pinning_for_system_call(file, length, false);
+    pinning_for_system_call(file, strlen(file), false);
     //lock_release(&file_system_lock);
     
     return outcome;
@@ -323,18 +323,15 @@ static bool LP_remove (const char *file, void* esp) {
  */
 static int LP_open (const char *file, void* esp) {
     check_usr_string(file, esp);
-    if (!check_file_name_length(file)) {
-        return -1;
-    }
+    pinning_for_system_call(file, strlen(file), true);
     //lock_acquire(&file_system_lock);
-    unsigned length = strlen(file);
     struct file* fp = filesys_open(file);
     if (fp == NULL) {
-        pinning_for_system_call(file, length, false);
+        pinning_for_system_call(file, strlen(file), false);
         //lock_release(&file_system_lock);
         return -1;
     }
-    pinning_for_system_call(file, length, false);
+    pinning_for_system_call(file, strlen(file), false);
     int fd = add_to_open_file_list(fp);
     //lock_release(&file_system_lock);
     return fd;
@@ -505,14 +502,14 @@ mmap(int fd, void *addr)
     }
 
     /* Ensure the fd has been assigned to the user */
-    lock_acquire(&file_system_lock);
-    struct file* fp = get_file_from_open_list(fd);
-    if (fp == NULL) {
-        lock_release(&file_system_lock);
-        return -1;
+    //lock_acquire(&file_system_lock);
+    struct file_package* package = get_file_package_from_open_list(fd);
+    if (package == NULL) {
+        //lock_release(&file_system_lock);
+        LP_exit(-1);
     }
-    off_t size = file_length(fp);
-    lock_release(&file_system_lock);
+    off_t size = file_length(package->fp);
+    //lock_release(&file_system_lock);
     
     /* Ensure that the requested VM region wouldn't contain invalid addresses
      * or overlap other user memory */
@@ -541,14 +538,14 @@ mmap(int fd, void *addr)
         thread_exit();
     }
 
-    lock_acquire(&file_system_lock);
-    mmap_s->fp = file_reopen(fp);
+    //lock_acquire(&file_system_lock);
+    mmap_s->fp = file_reopen(package->fp);
     if (mmap_s->fp == NULL)
     {
-        lock_release(&file_system_lock);
+        //lock_release(&file_system_lock);
         return -1;
     }
-    lock_release(&file_system_lock);
+    //lock_release(&file_system_lock);
 
     mmap_s->vaddr = addr;
     mmap_s->mapping = t->mapid_counter;
@@ -586,9 +583,9 @@ munmap(mapid_t mapping)
     {
         struct mmap_state *mmap_s = list_entry(e, struct mmap_state, elem);
         if (mmap_s->mapping == mapping) {
-            lock_acquire(&file_system_lock);
+            //lock_acquire(&file_system_lock);
             unsigned size = file_length(mmap_s->fp);
-            lock_release(&file_system_lock);
+            //lock_release(&file_system_lock);
             pinning_for_system_call(mmap_s->vaddr, size, true);
             munmap_state(mmap_s, t);
             return;
@@ -605,30 +602,29 @@ munmap(mapid_t mapping)
  */
 static bool chdir(const char* dir, void* esp) {
   check_usr_string(dir, esp);
+  pinning_for_system_call(dir, strlen(dir), true);
   //lock_acquire(&file_system_lock);
   struct thread* t = thread_current();
   char* unused;
   struct inode* dirInode = dir_resolve_path(dir, get_cwd(), &unused, false);
+  pinning_for_system_call(dir, strlen(dir), false);
   if (dirInode == NULL)
     return false;
   lock_release(&dirInode->directory_lock);
   
   if(!dirInode->is_directory) {
       //lock_release(&file_system_lock);
-      pinning_for_system_call(dir, strlen(dir), false);
       return false;
   }
   struct dir* new_dir = dir_open(dirInode);
   if(new_dir == NULL)
   {
     //lock_release(&file_system_lock);
-    pinning_for_system_call(dir, strlen(dir), false);
     return false;
   }
   dir_close(t->curr_dir);
   t->curr_dir = new_dir;
   //lock_release(&file_system_lock);
-  pinning_for_system_call(dir, strlen(dir), false);
   return true;
 }
 
@@ -643,6 +639,7 @@ static bool chdir(const char* dir, void* esp) {
  */
 static bool mkdir(const char* dir, void* esp) {
   check_usr_string(dir, esp);
+  pinning_for_system_call(dir, strlen(dir), true);
   //lock_acquire(&file_system_lock);
   bool success = filesys_create(dir, true, 16);
   //lock_release(&file_system_lock);
@@ -663,6 +660,7 @@ static bool mkdir(const char* dir, void* esp) {
  */
 static bool readdir(int fd, char* name, void* esp) {
   check_usr_buffer(name, NAME_MAX + 1, esp, true);
+  pinning_for_system_call(name, NAME_MAX + 1, true);
   //lock_acquire(&file_system_lock);
   struct file_package* package = get_file_package_from_open_list(fd);
   if (package == NULL) {
@@ -671,6 +669,7 @@ static bool readdir(int fd, char* name, void* esp) {
       LP_exit(-1);
   }
   if(!file_is_dir(package->fp)) {
+    pinning_for_system_call(name, NAME_MAX + 1, false);
     return false;
   }
   bool result = dir_readdir(package->fp->dir, name);

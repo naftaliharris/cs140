@@ -113,9 +113,9 @@ static void load_file_page(struct spte* spte) {
         memset(spte->frame->physical_mem_frame_base, 0, PGSIZE);
         return;
     }
-    lock_acquire(&file_system_lock);
+    //lock_acquire(&file_system_lock);
     uint32_t bytes_read = file_read_at (spte->file_ptr, spte->frame->physical_mem_frame_base, spte->read_bytes, spte->offset_in_file);
-    lock_release(&file_system_lock);
+    //lock_release(&file_system_lock);
     if (bytes_read != spte->read_bytes) {
         thread_current()->vital_info->exit_status = -1;
         if (thread_current()->is_running_user_program) {
@@ -230,10 +230,10 @@ static void evict_mmaped_page(struct spte* spte) {
     if (dirty) {
         pagedir_set_dirty(pagedir, page_id, false);
         lock_release(&spte->owner_thread->pagedir_lock);
-        lock_acquire(&file_system_lock);
+        //lock_acquire(&file_system_lock);
         file_write_at (spte->file_ptr, spte->frame->physical_mem_frame_base, spte->read_bytes,
                        spte->offset_in_file);
-        lock_release(&file_system_lock);
+        //lock_release(&file_system_lock);
     } else {
         lock_release(&spte->owner_thread->pagedir_lock);
     }
@@ -251,9 +251,9 @@ struct list_elem *
 munmap_state(struct mmap_state *mmap_s, struct thread *t)
 {
     void *page;
-    lock_acquire(&file_system_lock);
+    //lock_acquire(&file_system_lock);
     int size = file_length(mmap_s->fp);
-    lock_release(&file_system_lock);
+    //lock_release(&file_system_lock);
     
     /* Write back dirty pages, and free all pages in use */
     for (page = mmap_s->vaddr; page < mmap_s->vaddr + size; page += PGSIZE)
@@ -278,9 +278,9 @@ munmap_state(struct mmap_state *mmap_s, struct thread *t)
         free(entry);
     }
 
-    lock_acquire(&file_system_lock);
+    //lock_acquire(&file_system_lock);
     file_close(mmap_s->fp);
-    lock_release(&file_system_lock);
+    //lock_release(&file_system_lock);
     
     struct list_elem *next = list_remove(&mmap_s->elem);
     free(mmap_s);
@@ -540,6 +540,9 @@ void pin_page(void* virtual_address) {
 void un_pin_page(void* virtual_address) {
     struct spte* spte = find_spte(virtual_address, thread_current());
     lock_acquire(&spte->page_lock);
+    if(!lock_held_by_current_thread(&spte->frame->frame_lock)) {
+      PANIC("e");
+      }
     ASSERT(lock_held_by_current_thread(&spte->frame->frame_lock));
     lock_release(&spte->frame->frame_lock);
     lock_release(&spte->page_lock);
