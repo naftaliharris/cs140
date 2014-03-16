@@ -162,7 +162,7 @@ lock is releases, and the write completes.
 We avoid this race by updating the length of a file as stored
 in the on disk inode only after an extending write has finished 
 writing. Thus, a reading thread checks the length of the file. If
-it its offset exceeds or equals length (EOF), the read returns
+its offset exceeds or equals length (EOF), the read returns
 0 bytes. While that read is taking place, another thread might
 be in the process of extending the file, but because the writing
 thread does not update the length of the on_disk_inode until
@@ -231,7 +231,16 @@ the blocks of those bytes of file data in direct blocks.
 
 Summary: minimize the number of disk accesses by using the 
 most direct blocks possible while still supporting file
-sizes big enough.
+sizes big enough. Another alternative would be to 
+use more indirect blocks in the inode to further reduce the 
+number of double indirect block accesses. However, this would
+also require taking the hit of an added disk access
+on a block that otherwise would have been direct. Additionally, 
+as mentioned in the project specification, by indexing, we 
+allow for variable length files without the problem of 
+external fragmentation. It is possible for internal fragmentation
+within the last block of a file, but the project specification
+does not require us to account for this case. 
 
 			    SUBDIRECTORIES
 			    ==============
@@ -524,13 +533,24 @@ We simply check access of the cache. If the entry has been accessed,
 we clear the access field and move on. If it has not been accessed, 
 we pick it as the entry to evict. 
 
+In the eviction process, in line with write-behind, if the 
+cache entry is dirty, we write the entry back to the sector_id, 
+and then clear the cache entry and move on. 
+
 Note, if we have time, we are also thinking about adding
 a field to the cache entry to indicate if it is an inode. 
 If it is an inode, we would leave it in the cache for another
 pass of the eviction algorithm as the inode is frequently
 accessed. However, this is an optimization and not required by 
 the project specification, so we will only implement once
-we get all the tests to pass and if we have time remaining. 
+we get all the tests to pass and if we have time remaining.
+
+Note, indeed, we did not have time to update the cache
+replacement algorithm to handle inodes. However, the 
+above is the method we would have used to do so. As is, 
+our cache replacement algorithm operates just like the 
+clock algorithm from lecture, checking and clearing accessed
+bits to determine the cache entry t evict.  
 
 >> C3: Describe your implementation of write-behind.
 
@@ -568,7 +588,7 @@ to set to false before freeing the cache.
 
 >> C4: Describe your implementation of read-ahead.
 
-Read-ahead, as outline in the project specification, 
+Read-ahead, as outlined in the project specification, 
 reads a sector from disk into the cache. We use a 
 dedicated thread to do this, as the project specification
 instructs us to do. 
@@ -639,7 +659,14 @@ context, this would require writing to the disk sector of the inode 122 times,
 which is slow. In the context of the cache, the inode block is loaded
 from the disk sector into the cache, writes of the inode update the cache 
 entry, and then when finished, (ideally, in the case of no eviction), write
-once back to the disk with all changes to the block made. 
+once back to the disk with all changes to the block made. This is also
+good in the case where multiple threads are sharing a file. If there is 
+only one thread, said thread could replicate the buffer cache by reading
+the needed blocks into a local stack buffer and then operating there, and then
+writing its local stack buffer back to disk. However, this would not
+allow multiple threads to access the same file and see other's changes, 
+as the last write back to disk would trump all. Thus, the buffer cache provides
+one copy for all sharing threads to work from.
 
 Read Ahead: one file workload that benefits from read ahead is the case
 of reading consecutive blocks of a file. In this case, read ahead would
